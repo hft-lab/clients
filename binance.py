@@ -13,7 +13,7 @@ import requests
 
 from config import Config
 from core.base_client import BaseClient
-from core.enums import ConnectMethodEnum, EventTypeEnum, PositionSideEnum, ResponseStatus
+from core.enums import ConnectMethodEnum, EventTypeEnum, PositionSideEnum, ResponseStatus, ClientsOrderStatuses
 
 
 class BinanceClient(BaseClient):
@@ -110,7 +110,7 @@ class BinanceClient(BaseClient):
         while True:
             try:
                 loop.run_until_complete(self._run_loop(type))
-            except Exception:
+            except Exception: # noqa
                 traceback.print_exc()
 
     async def _run_loop(self, type) -> None:
@@ -236,7 +236,10 @@ class BinanceClient(BaseClient):
 
     def _get_balance(self) -> [float, float]:
         url_path = "/fapi/v2/balance"
-        payload = {"timestamp": int(time.time() * 1000)}
+        payload = {
+            "timestamp": int(time.time() * 1000),
+            "recvWindow": int((time.time() + 2) * 1000)
+        }
 
         query_string = self._prepare_query(payload)
         payload["signature"] = self._create_signature(query_string)
@@ -291,6 +294,50 @@ class BinanceClient(BaseClient):
         query_string = self._prepare_query(payload)
         res = requests.delete(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers).json()
         return res
+
+    async def get_order_by_id(self, order_id: str, session: aiohttp.ClientSession):
+        url_path = "/fapi/v1/order"
+        payload = {
+            "timestamp": int(time.time() * 1000),
+            "symbol": self.symbol,
+            "orderId": order_id,
+            "recvWindow": int((time.time() + 2) * 1000)
+        }
+
+        query_string = self._prepare_query(payload)
+        payload["signature"] = self._create_signature(query_string)
+        query_string = self._prepare_query(payload)
+
+        async with session.get(url=self.BASE_URL + url_path + "?" + query_string, headers=self.headers) as resp:
+            res = await resp.json()
+            print(f'BINANCE {res}')
+
+            if res.get('code'):
+                return {
+                    'exchange_order_id': order_id,
+                    'exchange': self.EXCHANGE_NAME,
+                    'status': f'FAILED {res.get("msg")}',
+                    'factual_price': 0,
+                    'factual_amount_coin': 0,
+                    'factual_amount_usd': 0
+                }
+
+            if res.get('status') in ClientsOrderStatuses.DELAYED_FULLY_EXECUTED:
+                status = OrderStatus.DELAYED_FULLY_EXECUTED
+            elif res.get('status') in ClientsOrderStatuses.NOT_EXECUTED and float(res['origQty']) > float(
+                    res['executedQty']):
+                status = OrderStatus.PARTIALLY_EXECUTED
+            else:
+                status = OrderStatus.NOT_EXECUTED
+
+            return {
+                'exchange_order_id': order_id,
+                'exchange': self.EXCHANGE_NAME,
+                'status': status,
+                'factual_price': float(res['avgPrice']),
+                'factual_amount_coin': float(res['origQty']),
+                'factual_amount_usd': float(res['origQty']) * float(res['avgPrice'])
+            }
 
     def _get_listen_key(self) -> None:
         response = requests.post(
