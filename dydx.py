@@ -18,7 +18,7 @@ from web3 import Web3
 
 from config import Config
 from core.base_client import BaseClient
-from clients.enums import ResponseStatus
+from clients.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
 
 
 class DydxClient(BaseClient):
@@ -137,6 +137,39 @@ class DydxClient(BaseClient):
     # async def test_create_order(self, amount: str, price: str, side: str, type: str) -> dict:
     #     async with aiohttp.ClientSession() as session:
     #        await self.create_order(amount, price, side, session, type)
+    async def get_order_by_id(self, order_id: str, session: aiohttp.ClientSession):
+        data = {}
+        now_iso_string = generate_now_iso()
+        request_path = f'/v3/orders/{order_id}'
+        signature = self.client.private.sign(
+            request_path=request_path,
+            method='GET',
+            iso_timestamp=now_iso_string,
+            data=remove_nones(data),
+        )
+
+        headers = {
+            'DYDX-SIGNATURE': signature,
+            'DYDX-API-KEY': self.API_KEYS['key'],
+            'DYDX-TIMESTAMP': now_iso_string,
+            'DYDX-PASSPHRASE': self.API_KEYS['passphrase']
+        }
+
+        async with session.get(url=self.BASE_URL + request_path, headers=headers,
+                               data=json.dumps(remove_nones(data))) as resp:
+            res = await resp.json()
+            if res := res.get('order'):
+                return {
+                    'exchange_order_id': order_id,
+                    'exchange': self.EXCHANGE_NAME,
+                    'status': OrderStatus.DELAYED_FULLY_EXECUTED if res.get(
+                        'status') == ClientsOrderStatuses.FILLED else OrderStatus.NOT_EXECUTED,
+                    'factual_price': float(res['price']),
+                    'factual_amount_coin': float(res['size']),
+                    'factual_amount_usd': float(res['size']) * float(res['price'])
+                }
+            else:
+                print(res)
 
     async def create_order(self, amount: float, price: float, side: str, session: aiohttp.ClientSession,
                            type: str = 'LIMIT', expire: int = 10000, client_id: str = None, expiration=None) -> dict:
@@ -270,6 +303,7 @@ class DydxClient(BaseClient):
         }
         await self._connected.wait()
         await self._ws.send_json(msg)
+
 
     async def _subscribe_orderbook(self, symbol):
         msg = {
@@ -538,6 +572,8 @@ class DydxClient(BaseClient):
                             # print('ACCOUNT!!!:')
                             # print(obj['contents']['account'])
                             # print()
+
+
 
     def get_orderbook(self):
         return self.orderbook
