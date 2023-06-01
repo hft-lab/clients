@@ -191,7 +191,7 @@ class BinanceClient(BaseClient):
     def _balance(self) -> None:
         while True:
             self.balance['total'], self.balance['avl_balance'] = self._get_balance()
-            time.sleep(1)
+            time.sleep(5)
 
     def _get_position(self):
         url_path = "/fapi/v2/account"
@@ -216,7 +216,7 @@ class BinanceClient(BaseClient):
                         'lever': self.leverage
                     }})
         else:
-            time.sleep(1)
+            time.sleep(5)
             self._get_position()
 
     async def get_funding_history(self, session):
@@ -251,7 +251,7 @@ class BinanceClient(BaseClient):
                     return float(s['balance']) + float(s['crossUnPnl']), float(s['availableBalance'])
         else:
             print(res)
-            time.sleep(1)
+            time.sleep(5)
             return self._get_balance()
 
     async def __create_order(self, amount: float, price: float, side: str, session: aiohttp.ClientSession,
@@ -295,6 +295,9 @@ class BinanceClient(BaseClient):
         return res
 
     async def get_order_by_id(self, order_id: str, session: aiohttp.ClientSession):
+        if self.orders.get(order_id):
+            res = self.orders.get(order_id)
+
         return self.orders.get(order_id)
 
     def _get_listen_key(self) -> None:
@@ -315,6 +318,7 @@ class BinanceClient(BaseClient):
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     data = orjson.loads(msg.data)
+                    print(f'{data=}')
                     if data['e'] == EventTypeEnum.ACCOUNT_UPDATE and data['a']['P']:
                         for p in data['a']['P']:
                             if p['ps'] in PositionSideEnum.all_position_sides() and float(p['pa']):
