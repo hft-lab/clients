@@ -6,17 +6,14 @@ import hmac
 import threading
 import time
 
-from datetime import datetime
-
 from urllib.parse import urlencode
 
 import aiohttp
 import orjson
 import requests
 
-from config import Config
 from core.base_client import BaseClient
-from core.enums import ConnectMethodEnum, ResponseStatus
+from clients.enums import ConnectMethodEnum, ResponseStatus
 
 
 class KrakenClient(BaseClient):

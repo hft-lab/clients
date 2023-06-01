@@ -12,7 +12,7 @@ import orjson
 import requests
 from config import Config
 from core.base_client import BaseClient
-from core.enums import ConnectMethodEnum, EventTypeEnum, PositionSideEnum, ResponseStatus, OrderStatus, \
+from clients.enums import ConnectMethodEnum, EventTypeEnum, PositionSideEnum, ResponseStatus, OrderStatus, \
     ClientsOrderStatuses
 
 
@@ -41,6 +41,7 @@ class BinanceClient(BaseClient):
             'sell': 0,
             'buy': 0
         }
+        self.orders = {}
         self.positions = {
             self.symbol: {
                 'amount': 0,

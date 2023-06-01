@@ -13,9 +13,8 @@ import requests
 import random
 import queue
 
-from config import Config
 from core.base_client import BaseClient
-from core.enums import ResponseStatus
+from clients.enums import ResponseStatus
 
 
 class OkxClient(BaseClient):

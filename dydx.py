@@ -18,7 +18,7 @@ from web3 import Web3
 
 from config import Config
 from core.base_client import BaseClient
-from core.enums import ResponseStatus, PositionSideEnum
+from clients.enums import ResponseStatus
 
 
 class DydxClient(BaseClient):

@@ -1,11 +1,9 @@
 import asyncio
 from datetime import datetime
 import json
-import math
 import threading
 import time
 import urllib.parse
-from pprint import pprint
 
 import aiohttp
 from bravado.client import SwaggerClient
@@ -13,7 +11,7 @@ from bravado.requests_client import RequestsClient
 
 from config import Config
 from core.base_client import BaseClient
-from core.enums import ResponseStatus
+from clients.enums import ResponseStatus
 from tools.APIKeyAuthenticator import APIKeyAuthenticator as auth
 
 
