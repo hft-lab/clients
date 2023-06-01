@@ -10,10 +10,10 @@ from urllib.parse import urlencode
 import aiohttp
 import orjson
 import requests
-
 from config import Config
 from core.base_client import BaseClient
-from core.enums import ConnectMethodEnum, EventTypeEnum, PositionSideEnum, ResponseStatus, ClientsOrderStatuses
+from core.enums import ConnectMethodEnum, EventTypeEnum, PositionSideEnum, ResponseStatus, OrderStatus, \
+    ClientsOrderStatuses
 
 
 class BinanceClient(BaseClient):
@@ -110,7 +110,7 @@ class BinanceClient(BaseClient):
         while True:
             try:
                 loop.run_until_complete(self._run_loop(type))
-            except Exception: # noqa
+            except Exception:  # noqa
                 traceback.print_exc()
 
     async def _run_loop(self, type) -> None:
@@ -218,7 +218,6 @@ class BinanceClient(BaseClient):
             time.sleep(1)
             self._get_position()
 
-
     async def get_funding_history(self, session):
         url_path = "/fapi/v1/fundingRate"
         payload = {
@@ -232,7 +231,6 @@ class BinanceClient(BaseClient):
 
         async with session.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers) as resp:
             pprint(await resp.json())
-
 
     def _get_balance(self) -> [float, float]:
         url_path = "/fapi/v2/balance"
@@ -296,48 +294,7 @@ class BinanceClient(BaseClient):
         return res
 
     async def get_order_by_id(self, order_id: str, session: aiohttp.ClientSession):
-        url_path = "/fapi/v1/order"
-        payload = {
-            "timestamp": int(time.time() * 1000),
-            "symbol": self.symbol,
-            "orderId": order_id,
-            "recvWindow": int((time.time() + 2) * 1000)
-        }
-
-        query_string = self._prepare_query(payload)
-        payload["signature"] = self._create_signature(query_string)
-        query_string = self._prepare_query(payload)
-
-        async with session.get(url=self.BASE_URL + url_path + "?" + query_string, headers=self.headers) as resp:
-            res = await resp.json()
-            print(f'BINANCE {res}')
-
-            if res.get('code'):
-                return {
-                    'exchange_order_id': order_id,
-                    'exchange': self.EXCHANGE_NAME,
-                    'status': f'FAILED {res.get("msg")}',
-                    'factual_price': 0,
-                    'factual_amount_coin': 0,
-                    'factual_amount_usd': 0
-                }
-
-            if res.get('status') in ClientsOrderStatuses.DELAYED_FULLY_EXECUTED:
-                status = OrderStatus.DELAYED_FULLY_EXECUTED
-            elif res.get('status') in ClientsOrderStatuses.NOT_EXECUTED and float(res['origQty']) > float(
-                    res['executedQty']):
-                status = OrderStatus.PARTIALLY_EXECUTED
-            else:
-                status = OrderStatus.NOT_EXECUTED
-
-            return {
-                'exchange_order_id': order_id,
-                'exchange': self.EXCHANGE_NAME,
-                'status': status,
-                'factual_price': float(res['avgPrice']),
-                'factual_amount_coin': float(res['origQty']),
-                'factual_amount_usd': float(res['origQty']) * float(res['avgPrice'])
-            }
+        return self.orders.get(order_id)
 
     def _get_listen_key(self) -> None:
         response = requests.post(
@@ -370,9 +327,32 @@ class BinanceClient(BaseClient):
                                     'lever': self.leverage
                                 }})
 
-                    elif data['e'] == EventTypeEnum.ORDER_TRADE_UPDATE and data['o']['m'] is False \
-                            and self.symbol.upper() == data['o']['s'].upper():
+
+                    elif data['e'] == EventTypeEnum.ORDER_TRADE_UPDATE:
+
                         self.last_price[data['o']['S'].lower()] = float(data['o']['ap'])
+
+                        if data['o']['X'] == ClientsOrderStatuses.NEW:
+                            status = OrderStatus.PROCESSING
+                        elif data['o']['X'] == ClientsOrderStatuses.FILLED and data['o']['m'] is False:
+                            status = OrderStatus.INSTANT_FULLY_EXECUTED
+                        elif data['o']['X'] == ClientsOrderStatuses.FILLED and data['o']['m'] is True:
+                            status = OrderStatus.DELAYED_FULLY_EXECUTED
+                        elif data['o']['X'] == ClientsOrderStatuses.PARTIALLY_FILLED:
+                            status = OrderStatus.PARTIALLY_EXECUTED
+                        else:
+                            status = OrderStatus.NOT_EXECUTED
+
+                        result = {
+                            'exchange_order_id': data['o']['i'],
+                            'exchange': self.EXCHANGE_NAME,
+                            'status': status,
+                            'factual_price': 0 if status == OrderStatus.PROCESSING else float(data['o']['ap']),
+                            'factual_amount_coin': 0 if status == OrderStatus.PROCESSING else float(data['o']['z']),
+                            'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else float(data['o']['z']) * float(data['o']['ap'])
+                        }
+
+                        self.orders.update({data['o']['i']: result})
 
 
 if __name__ == '__main__':
@@ -382,6 +362,7 @@ if __name__ == '__main__':
     async def f():
         async with aiohttp.ClientSession() as session:
             await client.get_funding_history(session)
+
 
     asyncio.run(f())
 
