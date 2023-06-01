@@ -358,14 +358,13 @@ class BinanceClient(BaseClient):
 
 if __name__ == '__main__':
     client = BinanceClient(Config.BINANCE, Config.LEVERAGE)
+    client.run_updater()
 
+    time.sleep(10)
 
-    async def f():
-        async with aiohttp.ClientSession() as session:
-            await client.get_funding_history(session)
-
-
-    asyncio.run(f())
+    while True:
+        print(client.orders)
+        time.sleep(1)
 
     # client.run_updater()
     # time.sleep(15)

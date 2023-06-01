@@ -137,6 +137,31 @@ class DydxClient(BaseClient):
     # async def test_create_order(self, amount: str, price: str, side: str, type: str) -> dict:
     #     async with aiohttp.ClientSession() as session:
     #        await self.create_order(amount, price, side, session, type)
+
+    async def get_income(self, session: aiohttp.ClientSession):
+        data = {}
+        now_iso_string = generate_now_iso()
+        request_path = f'/v3/funding'
+        signature = self.client.private.sign(
+            request_path=request_path,
+            method='GET',
+            iso_timestamp=now_iso_string,
+            data=remove_nones(data),
+        )
+
+        headers = {
+            'DYDX-SIGNATURE': signature,
+            'DYDX-API-KEY': self.API_KEYS['key'],
+            'DYDX-TIMESTAMP': now_iso_string,
+            'DYDX-PASSPHRASE': self.API_KEYS['passphrase']
+        }
+
+        async with session.get(url=self.BASE_URL + request_path, headers=headers,
+                               data=json.dumps(remove_nones(data))) as resp:
+            res = await resp.json()
+            pprint(res)
+
+
     async def get_order_by_id(self, order_id: str, session: aiohttp.ClientSession):
         data = {}
         now_iso_string = generate_now_iso()
@@ -178,9 +203,7 @@ class DydxClient(BaseClient):
         amount = self.fit_amount(amount)
         price = self.fit_price(price)
         now_iso_string = generate_now_iso()
-        expiration = expiration or epoch_seconds_to_iso(
-            expire_date,
-        )
+        expiration = expiration or epoch_seconds_to_iso(expire_date)
         client_id = client_id if client_id else random_client_id()
         order_to_sign = SignableOrder(
             network_id=NETWORK_ID_MAINNET,
@@ -657,7 +680,11 @@ class DydxClient(BaseClient):
 
 if __name__ == '__main__':
     client = DydxClient(Config.DYDX, Config.LEVERAGE)
-    client.get_funding()
+    async def f():
+        async with aiohttp.ClientSession() as s:
+            await client.get_income(s)
+
+    asyncio.run(f())
 
     # time.sleep(15)
     #
