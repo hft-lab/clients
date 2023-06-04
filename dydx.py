@@ -694,14 +694,6 @@ class DydxClient(BaseClient):
 #     print()
 #     print()
 
-# while True:
-# orderbook = client.get_orderbook()
-# print(client.get_fills())
-# positions = client.get_positions()
-# print(client.get_fills())
-# print(client.get_balance())
-# print(client.markets['markets']['BTC-USD'])
-# a = client.client.private.get_orders(market=['SOL-USD']).data
 
 if __name__ == '__main__':
     client = DydxClient(Config.DYDX, Config.LEVERAGE)
