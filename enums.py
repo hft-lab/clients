@@ -25,13 +25,18 @@ class BotState:
 
 class RabbitMqQueues:
     TELEGRAM = 'logger.event.send_message'
+    DEALS_REPORT = 'logger.event.insert_deals_reports'
+    BALANCE_CHECK = 'logger.event.insert_balance_check'
+    BALANCING_REPORTS = 'logger.event.insert_balancing_reports'
+    PING = 'logger.event.insert_ping_logger'
+    BALANCE_JUMP = 'logger.event.insert_balance_jumps'
 
-    # FOR BALANCING ALGORYTHM
-    BALANCES = 'logger.event.insert_balances'
-    BALANCE_DETALIZATION = 'logger.event.insert_balance_detalization'  # noqa
-    DISBALANCE = 'logger.event.insert_disbalances'  # noqa
+    # NEW -----------------------------------------------------------------
+    ARBITRAGE_POSSIBILITIES = 'logger.event.insert_arbitrage_possibilities'
     ORDERS = 'logger.event.insert_orders'
-    UPDATE_ORDERS = 'logger.event.update_orders'
+    BALANCES = 'logger.event.insert_balances'
+    BALANCE_DETALIZATION = 'logger.event.insert_balance_detalization'
+    DISBALANCE = 'logger.event.insert_disbalances'
 
     @staticmethod
     def get_exchange_name(routing_key: str):
