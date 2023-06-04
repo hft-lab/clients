@@ -30,6 +30,7 @@ class RabbitMqQueues:
     BALANCING_REPORTS = 'logger.event.insert_balancing_reports'
     PING = 'logger.event.insert_ping_logger'
     BALANCE_JUMP = 'logger.event.insert_balance_jumps'
+    UPDATE_ORDERS = 'logger.event.update_orders'
 
     # NEW -----------------------------------------------------------------
     ARBITRAGE_POSSIBILITIES = 'logger.event.insert_arbitrage_possibilities'
@@ -68,3 +69,4 @@ class ClientsOrderStatuses:
     NEW = 'NEW'
     PARTIALLY_FILLED = 'PARTIALLY_FILLED'
     EXPIRED = 'EXPIRED'
+    PENDING = 'PENDING'

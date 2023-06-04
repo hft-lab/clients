@@ -444,19 +444,44 @@ class DydxClient(BaseClient):
 
     def _update_orders(self, orders):
         for order in orders:
-            if self.orders.get(order['market']):
-                if not order['status'] in ['CANCELED', 'FILLED']:
-                    self.orders[order['market']].update({order['id']: order})
-                    time_create = self.timestamp_from_date(order['createdAt'])
-                    print(f"DYDX ORDER PLACE TIME: {time_create - self.time_sent} sec")
-                else:
-                    if self.orders.get(order['id']):
-                        self.orders.pop(order['id'])
+            if order['status'] == ClientsOrderStatuses.PENDING:
+                status = OrderStatus.PROCESSING
+            elif order['status'] == ClientsOrderStatuses.FILLED and float(order['limitFee']) == self.taker_fee:
+                status = OrderStatus.INSTANT_FULLY_EXECUTED
+            elif order['status'] == ClientsOrderStatuses.FILLED and float(order['limitFee']) != self.taker_fee:
+                status = OrderStatus.DELAYED_FULLY_EXECUTED
+            elif order['status'] == ClientsOrderStatuses.CANCELED and float(order['remainingSize']):
+                status = OrderStatus.PARTIALLY_EXECUTED
             else:
-                # print(f"DYDX _UPDATE_ORDER: {order}")
-                # time_create = self.timestamp_from_date(order['createdAt'])
-                # print(f"DYDX ORDER PLACE TIME: {time_create - self.time_sent} sec")
-                self.orders.update({order['market']: {order['id']: order}})
+                status = OrderStatus.NOT_EXECUTED
+
+            result = {
+                'exchange_order_id': order['id'],
+                'exchange': self.EXCHANGE_NAME,
+                'status': status,
+                'factual_price': 0 if status == OrderStatus.PROCESSING else float(order['price']),
+                'factual_amount_coin': 0 if status == OrderStatus.PROCESSING else float(order['size']),
+                'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else float(order['size']) * float(
+                    order['price'])
+            }
+
+            self.orders.update({order['id']: result})
+
+
+
+            # if self.orders.get(order['market']):
+            #     if not order['status'] in ['CANCELED', 'FILLED']:
+            #         self.orders[order['market']].update({order['id']: order})
+            #         time_create = self.timestamp_from_date(order['createdAt'])
+            #         print(f"DYDX ORDER PLACE TIME: {time_create - self.time_sent} sec")
+            #     else:
+            #         if self.orders.get(order['id']):
+            #             self.orders.pop(order['id'])
+            # else:
+            #     # print(f"DYDX _UPDATE_ORDER: {order}")
+            #     # time_create = self.timestamp_from_date(order['createdAt'])
+            #     # print(f"DYDX ORDER PLACE TIME: {time_create - self.time_sent} sec")
+            #     self.orders.update({order['market']: {order['id']: order}})
             # order_example = [{'id': '28c21ee875838a5e349cf96d678d8c6151a250f979d6a025b3f79dcca703558',
             # 'clientId': '7049071120643888', 'market': 'SNX-USD',
             # 'accountId': 'f47ae945-06ae-5c47-aaad-450c0ffc6164', 'side': 'SELL', 'size': '483.3',
@@ -680,16 +705,9 @@ class DydxClient(BaseClient):
 
 if __name__ == '__main__':
     client = DydxClient(Config.DYDX, Config.LEVERAGE)
-    async def f():
-        async with aiohttp.ClientSession() as s:
-            await client.get_income(s)
+    client.run_updater()
+    time.sleep(15)
 
-    asyncio.run(f())
-
-    # time.sleep(15)
-    #
-    # while True:
-    #     print(f"{client.get_available_balance('sell')=}")
-    #     print(f"{client.get_available_balance('buy')=}")
-    #     print('\n')
-    #     time.sleep(1000000)
+    while True:
+        print()
+        time.sleep(1)
