@@ -444,6 +444,7 @@ class DydxClient(BaseClient):
 
     def _update_orders(self, orders):
         for order in orders:
+            print(f'{order=}')
             if order['status'] == ClientsOrderStatuses.PENDING:
                 status = OrderStatus.PROCESSING
             elif order['status'] == ClientsOrderStatuses.FILLED and float(order['limitFee']) == self.taker_fee:
@@ -465,7 +466,8 @@ class DydxClient(BaseClient):
                     order['price'])
             }
 
-            self.orders.update({order['id']: result})
+            if self.symbol == order.get('symbol'):
+                self.orders.update({order['id']: result})
 
 
 

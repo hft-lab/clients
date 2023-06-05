@@ -357,7 +357,9 @@ class BinanceClient(BaseClient):
                             'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else float(data['o']['z']) * float(data['o']['ap'])
                         }
 
-                        self.orders.update({data['o']['i']: result})
+                        if self.symbol == data['o']['s']:
+                            self.orders.update({data['id']: result})
+
 
 
 if __name__ == '__main__':
