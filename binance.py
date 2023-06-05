@@ -318,7 +318,6 @@ class BinanceClient(BaseClient):
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     data = orjson.loads(msg.data)
-                    print(f'{data=}')
                     if data['e'] == EventTypeEnum.ACCOUNT_UPDATE and data['a']['P']:
                         for p in data['a']['P']:
                             if p['ps'] in PositionSideEnum.all_position_sides() and float(p['pa']):

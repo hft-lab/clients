@@ -466,7 +466,7 @@ class DydxClient(BaseClient):
                     order['price'])
             }
 
-            if self.symbol == order.get('symbol'):
+            if self.symbol == order.get('market'):
                 self.orders.update({order['id']: result})
 
 
