@@ -59,6 +59,9 @@ class BinanceClient(BaseClient):
                 'timestamp': 0
             }
         }
+        self.expect_amount_coin = 0
+        self.expect_price = 0
+
         self._loop_public = asyncio.new_event_loop()
         self._loop_private = asyncio.new_event_loop()
         self._loop_message = asyncio.new_event_loop()
@@ -256,10 +259,12 @@ class BinanceClient(BaseClient):
 
     async def __create_order(self, amount: float, price: float, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_ID=None) -> dict:
+        self.expect_amount_coin = float(round(float(round(amount / self.step_size) * self.step_size), self.quantity_precision))
+        self.expect_price = float(round(float(round(price / self.tick_size) * self.tick_size), self.price_precision))
+
         url_path = "https://fapi.binance.com/fapi/v1/order?"
         query_string = f"timestamp={int(time.time() * 1000)}&symbol={self.symbol}&side={side}&type=LIMIT&" \
-                       f"price={float(round(float(round(price / self.tick_size) * self.tick_size), self.price_precision))}" \
-                       f"&quantity={float(round(float(round(amount / self.step_size) * self.step_size), self.quantity_precision))}&timeInForce=GTC"
+                       f"price={self.expect_price}&quantity={self.expect_amount_coin}&timeInForce=GTC"
         query_string += f'&signature={self._create_signature(query_string)}'
 
         async with session.post(url=url_path + query_string, headers=self.headers) as resp:

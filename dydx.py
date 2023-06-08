@@ -52,6 +52,9 @@ class DydxClient(BaseClient):
         self.balance = {'free': 0, 'total': 0}
         self.orderbook = {}
 
+        self.expect_amount_coin = 0
+        self.expect_price = 0
+
         self.keys = keys
         self.user = self.client.private.get_user().data
         self.account = self.client.private.get_account().data
@@ -198,10 +201,13 @@ class DydxClient(BaseClient):
 
     async def create_order(self, amount: float, price: float, side: str, session: aiohttp.ClientSession,
                            type: str = 'LIMIT', expire: int = 10000, client_id: str = None, expiration=None) -> dict:
+
         self.time_sent = time.time()
         expire_date = int(round(time.time()) + expire)
-        amount = self.fit_amount(amount)
-        price = self.fit_price(price)
+
+        self.expect_amount_coin  = self.fit_amount(amount)
+        self.expect_price = self.fit_price(price)
+
         now_iso_string = generate_now_iso()
         expiration = expiration or epoch_seconds_to_iso(expire_date)
         client_id = client_id if client_id else random_client_id()
@@ -211,8 +217,8 @@ class DydxClient(BaseClient):
             client_id=client_id,
             market=self.symbol,
             side=side.upper(),
-            human_size=amount,
-            human_price=price,
+            human_size=self.expect_amount_coin,
+            human_price=self.expect_price,
             limit_fee='0.0008',
             expiration_epoch_seconds=expire_date,
         )
@@ -221,8 +227,8 @@ class DydxClient(BaseClient):
             'side': side.upper(),
             'type': type.upper(),
             'timeInForce': 'GTT',
-            'size': amount,
-            'price': price,
+            'size': self.expect_amount_coin,
+            'price': self.expect_price,
             'limitFee': '0.0008',
             'expiration': expiration,
             'postOnly': False,
