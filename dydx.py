@@ -469,7 +469,9 @@ class DydxClient(BaseClient):
                 'factual_price': 0 if status == OrderStatus.PROCESSING else float(order['price']),
                 'factual_amount_coin': 0 if status == OrderStatus.PROCESSING else float(order['size']),
                 'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else float(order['size']) * float(
-                    order['price'])
+                    order['price']),
+                'datetime_update': datetime.utcnow(),
+                'ts_update': time.time() * 1000
             }
 
             if self.symbol == order.get('market'):

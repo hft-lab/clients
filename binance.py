@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import hashlib
 import hmac
 import threading
@@ -358,7 +359,9 @@ class BinanceClient(BaseClient):
                             'status': status,
                             'factual_price': 0 if status == OrderStatus.PROCESSING else float(data['o']['ap']),
                             'factual_amount_coin': 0 if status == OrderStatus.PROCESSING else float(data['o']['z']),
-                            'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else float(data['o']['z']) * float(data['o']['ap'])
+                            'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else float(data['o']['z']) * float(data['o']['ap']),
+                            'datetime_update': datetime.datetime.utcnow(),
+                            'ts_update': time.time() * 1000
                         }
 
                         if self.symbol == data['o']['s'] and result['status'] != OrderStatus.PROCESSING:
