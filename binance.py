@@ -265,7 +265,7 @@ class BinanceClient(BaseClient):
 
         url_path = "https://fapi.binance.com/fapi/v1/order?"
         query_string = f"timestamp={int(time.time() * 1000)}&symbol={self.symbol}&side={side}&type=LIMIT&" \
-                       f"price={self.expect_price}&quantity={self.expect_amount_coin}&timeInForce=GTC"
+                       f"price={self.expect_price}&quantity={self.expect_amount_coin}&timeInForce=GTC&recvWindow=5000"
         query_string += f'&signature={self._create_signature(query_string)}'
 
         async with session.post(url=url_path + query_string, headers=self.headers) as resp:

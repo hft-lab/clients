@@ -205,9 +205,10 @@ class DydxClient(BaseClient):
         self.time_sent = time.time()
         expire_date = int(round(time.time()) + expire)
 
-        self.expect_amount_coin  = self.fit_amount(amount)
-        self.expect_price = self.fit_price(price)
-
+        expect_amount_coin  = self.fit_amount(amount)
+        self.expect_amount_coin = float(expect_amount_coin)
+        expect_price = self.fit_price(price)
+        self.expect_price = float(expect_price)
         now_iso_string = generate_now_iso()
         expiration = expiration or epoch_seconds_to_iso(expire_date)
         client_id = client_id if client_id else random_client_id()
@@ -217,8 +218,8 @@ class DydxClient(BaseClient):
             client_id=client_id,
             market=self.symbol,
             side=side.upper(),
-            human_size=self.expect_amount_coin,
-            human_price=self.expect_price,
+            human_size=expect_amount_coin,
+            human_price=expect_price,
             limit_fee='0.0008',
             expiration_epoch_seconds=expire_date,
         )
@@ -228,7 +229,7 @@ class DydxClient(BaseClient):
             'type': type.upper(),
             'timeInForce': 'GTT',
             'size': self.expect_amount_coin,
-            'price': self.expect_price,
+            'price': expect_price,
             'limitFee': '0.0008',
             'expiration': expiration,
             'postOnly': False,
