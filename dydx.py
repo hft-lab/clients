@@ -228,7 +228,7 @@ class DydxClient(BaseClient):
             'side': side.upper(),
             'type': type.upper(),
             'timeInForce': 'GTT',
-            'size': self.expect_amount_coin,
+            'size': expect_amount_coin,
             'price': expect_price,
             'limitFee': '0.0008',
             'expiration': expiration,
@@ -419,7 +419,6 @@ class DydxClient(BaseClient):
         return position
 
     def _update_positions(self, positions):
-        print(f'DYDX UPDATE POSITIONS: {positions}')
         for position in positions:
             position = self._append_format_pos(position)
             self.positions.update({position['market']: position})
@@ -615,7 +614,6 @@ class DydxClient(BaseClient):
                         self._channel_orderbook_update(obj)
                 elif obj['channel'] == 'v3_accounts':
                     if obj['contents'].get('positions'):
-                        print('> ' * 50)
                         if len(obj['contents']['positions']):
                             self._update_positions(obj['contents']['positions'])
                     if obj['contents'].get('orders'):
