@@ -301,10 +301,37 @@ class BinanceClient(BaseClient):
         return res
 
     async def get_order_by_id(self, order_id: str, session: aiohttp.ClientSession):
-        if self.orders.get(order_id):
-            res = self.orders.get(order_id)
+        url_path = "/fapi/v1/order"
+        payload = {
+            "timestamp": int(time.time() * 1000),
+            "symbol": self.symbol,
+            "orderId": int(order_id),
+            "recvWindow": int((time.time() + 2) * 1000)
+        }
 
-        return self.orders.get(order_id)
+        query_string = self._prepare_query(payload)
+        payload["signature"] = self._create_signature(query_string)
+        query_string = self._prepare_query(payload)
+
+        async with session.get(url=self.BASE_URL + url_path + "?" + query_string, headers=self.headers) as resp:
+            res = await resp.json()
+
+            if res.get('status') == ClientsOrderStatuses.FILLED and res.get('time', 0) == res.get('updateTime'):
+                status = OrderStatus.INSTANT_FULLY_EXECUTED
+            elif res.get('status') == ClientsOrderStatuses.FILLED and float(res['origQty']) > float(
+                    res['executedQty']):
+                status = OrderStatus.PARTIALLY_EXECUTED
+            else:
+                status = OrderStatus.NOT_EXECUTED
+
+            return {
+                'exchange_order_id': order_id,
+                'exchange': self.EXCHANGE_NAME,
+                'status': status,
+                'factual_price': float(res['avgPrice']),
+                'factual_amount_coin': float(res['executedQty']),
+                'factual_amount_usd': float(res['executedQty']) * float(res['avgPrice'])
+            }
 
     def _get_listen_key(self) -> None:
         response = requests.post(
@@ -371,17 +398,11 @@ class BinanceClient(BaseClient):
 
 if __name__ == '__main__':
     client = BinanceClient(Config.BINANCE, Config.LEVERAGE)
-    client.run_updater()
 
-    time.sleep(10)
 
-    while True:
-        print(client.orders)
-        time.sleep(1)
+    async def f():
+        async with aiohttp.ClientSession() as s:
+            await client.get_order_by_id('8389765602994765202', s)
 
-    # client.run_updater()
-    # time.sleep(15)
-    #
-    # while True:
-    #     pprint(client.positions)
-    #     time.sleep(1)
+    asyncio.run(f())
+
