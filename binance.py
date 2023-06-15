@@ -330,7 +330,9 @@ class BinanceClient(BaseClient):
                 'status': status,
                 'factual_price': float(res['avgPrice']),
                 'factual_amount_coin': float(res['executedQty']),
-                'factual_amount_usd': float(res['executedQty']) * float(res['avgPrice'])
+                'factual_amount_usd': float(res['executedQty']) * float(res['avgPrice']),
+                'datetime_update': datetime.datetime.utcnow(),
+                'ts_update': time.time() * 1000
             }
 
     def _get_listen_key(self) -> None:

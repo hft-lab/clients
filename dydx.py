@@ -194,7 +194,9 @@ class DydxClient(BaseClient):
                         'status') == ClientsOrderStatuses.FILLED else OrderStatus.NOT_EXECUTED,
                     'factual_price': float(res['price']),
                     'factual_amount_coin': float(res['size']),
-                    'factual_amount_usd': float(res['size']) * float(res['price'])
+                    'factual_amount_usd': float(res['size']) * float(res['price']),
+                    'datetime_update': datetime.utcnow(),
+                    'ts_update': time.time() * 1000
                 }
             else:
                 print(res)
