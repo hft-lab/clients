@@ -265,7 +265,8 @@ class BinanceClient(BaseClient):
         url_path = "/fapi/v1/fundingRate"
         payload = {
             "timestamp": int(time.time() * 1000),
-            'symbol': symbol
+            'symbol': symbol,
+            'limit': 100
         }
 
         query_string = self._prepare_query(payload)
@@ -293,12 +294,15 @@ class BinanceClient(BaseClient):
                 symbol = fund['symbol']
                 if not symbols.get(symbol):
                     symbols.update({symbol: await self.get_funding_history(session, symbol)})
-                rate = [x['fundingRate'] for x in symbols[symbol] if x['fundingTime'] == fund['time']]
+                rate = [x['fundingRate'] for x in symbols[symbol] if abs(x['fundingTime'] - fund['time']) < 30]
                 if rate:
                     price = await self.get_historical_price(session, symbol, fund['time'])
                     fund.update({'rate': rate[0],
                                  'price': price,
-                                 'position': (float(fund['income']) / -float(rate[0])) / price})
+                                 'positionSize': (float(fund['income']) / -float(rate[0])) / price,
+                                 'market': symbol,
+                                 'payment': fund['income'],
+                                 'datetime': str(datetime.datetime.fromtimestamp(fund['time'] / 1000))})
         return funding_payments
 
     async def __create_order(self, amount: float, price: float, side: str, session: aiohttp.ClientSession,
@@ -448,6 +452,7 @@ if __name__ == '__main__':
             print(await client.get_funding_payments(session))
             # print(await client.get_historical_price(session, 'BTCUSDT', 1686297600000))
             # print(await client.get_funding_history(session, 'BTCUSDT'))
+            # print(await client.get_funding_history(session, 'ETHUSDT'))
 
 
     # policy = asyncio.WindowsSelectorEventLoopPolicy()

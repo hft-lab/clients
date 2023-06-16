@@ -140,7 +140,7 @@ class DydxClient(BaseClient):
     #     async with aiohttp.ClientSession() as session:
     #        await self.create_order(amount, price, side, session, type)
 
-    async def get_income(self, session: aiohttp.ClientSession):
+    async def get_funding_payments(self, session: aiohttp.ClientSession):
         data = {}
         now_iso_string = generate_now_iso()
         request_path = f'/v3/funding?limit=100'
@@ -161,6 +161,12 @@ class DydxClient(BaseClient):
         async with session.get(url=self.BASE_URL + request_path, headers=headers,
                                data=json.dumps(remove_nones(data))) as resp:
             res = await resp.json()
+            fundings = res['fundingPayments']
+            for fund in fundings:
+                datetime_obj = datetime.fromisoformat(fund['effectiveAt'][:-1])
+                timestamp_ms = datetime_obj.timestamp() * 1000
+                fund.update({'time': timestamp_ms,
+                             'datetime': fund['effectiveAt']})
             return res
 
 
@@ -713,7 +719,7 @@ if __name__ == '__main__':
 
     async def funding(client):
         async with aiohttp.ClientSession() as session:
-            return await client.get_income(session=session)
+            return await client.get_funding_payments(session=session)
 
 
     while True:
