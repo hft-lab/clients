@@ -115,7 +115,6 @@ class DydxClient(BaseClient):
         #     print(amount, self.step_size, self.quantity_precision)
         #     # amount = str(float(round(float(amount % self.step_size), self.quantity_precision)))
         #     amount =
-
         return str(float(round(float(round(amount / self.step_size, self.quantity_precision) * self.step_size),
                                self.quantity_precision)))
 
@@ -144,12 +143,12 @@ class DydxClient(BaseClient):
     async def get_income(self, session: aiohttp.ClientSession):
         data = {}
         now_iso_string = generate_now_iso()
-        request_path = f'/v3/funding'
+        request_path = f'/v3/funding?limit=100'
         signature = self.client.private.sign(
             request_path=request_path,
             method='GET',
             iso_timestamp=now_iso_string,
-            data=remove_nones(data),
+            data=remove_nones(data)
         )
 
         headers = {
@@ -162,7 +161,7 @@ class DydxClient(BaseClient):
         async with session.get(url=self.BASE_URL + request_path, headers=headers,
                                data=json.dumps(remove_nones(data))) as resp:
             res = await resp.json()
-            pprint(res)
+            return res
 
 
     async def get_order_by_id(self, order_id: str, session: aiohttp.ClientSession):
@@ -284,10 +283,12 @@ class DydxClient(BaseClient):
             }
 
 
-    def get_funding(self):
-        pprint(self.client.public.get_historical_funding(
-            market=self.symbol,
-        ).data)
+    def get_funding_history(self):
+        return self.client.public.get_historical_funding(market=self.symbol).data
+
+    def get_funding_payments(self):
+        return self.client.private.get_funding_payments(market=self.symbol, limit=300).data
+
     def run_updater(self):
         self.wst.start()
         # except Exception as e:
@@ -705,12 +706,17 @@ class DydxClient(BaseClient):
 #     print()
 #     print()
 
-
 if __name__ == '__main__':
     client = DydxClient(Config.DYDX, Config.LEVERAGE)
-    client.run_updater()
-    time.sleep(15)
+    # client.run_updater()
+    # time.sleep(15)
+
+    async def funding(client):
+        async with aiohttp.ClientSession() as session:
+            return await client.get_income(session=session)
+
 
     while True:
-        print()
-        time.sleep(1)
+        funding_history = asyncio.run(funding(client))
+        print(len(funding_history['fundingPayments']))
+        time.sleep(10)

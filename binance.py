@@ -5,6 +5,7 @@ import hmac
 import threading
 import time
 import traceback
+import sys
 from pprint import pprint
 from urllib.parse import urlencode
 
@@ -223,20 +224,6 @@ class BinanceClient(BaseClient):
             time.sleep(5)
             self._get_position()
 
-    async def get_funding_history(self, session):
-        url_path = "/fapi/v1/fundingRate"
-        payload = {
-            "timestamp": int(time.time() * 1000),
-            'symbol': self.symbol
-        }
-
-        query_string = self._prepare_query(payload)
-        payload["signature"] = self._create_signature(query_string)
-        query_string = self._prepare_query(payload)
-
-        async with session.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers) as resp:
-            pprint(await resp.json())
-
     def _get_balance(self) -> [float, float]:
         url_path = "/fapi/v2/balance"
         payload = {
@@ -257,6 +244,62 @@ class BinanceClient(BaseClient):
             print(res)
             time.sleep(5)
             return self._get_balance()
+
+    async def get_historical_price(self, session, symbol, time_):
+        url_path = "/fapi/v1/markPriceKlines"
+        payload = {
+            'symbol': symbol,
+            "interval": '1m',
+            "startTime": time_ - 1,
+            'endTime': time_ + 1
+        }
+        query_string = self._prepare_query(payload)
+        payload["signature"] = self._create_signature(query_string)
+        query_string = self._prepare_query(payload)
+        async with session.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers) as resp:
+            price = await resp.json()
+            price = (float(price[0][1]) + float(price[0][4])) / 2
+            return price
+
+    async def get_funding_history(self, session, symbol):
+        url_path = "/fapi/v1/fundingRate"
+        payload = {
+            "timestamp": int(time.time() * 1000),
+            'symbol': symbol
+        }
+
+        query_string = self._prepare_query(payload)
+        payload["signature"] = self._create_signature(query_string)
+        query_string = self._prepare_query(payload)
+
+        async with session.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers) as resp:
+            return await resp.json()
+
+    async def get_funding_payments(self, session):
+        url_path = "/fapi/v1/income"
+        payload = {
+            'incomeType': 'FUNDING_FEE',
+            "timestamp": int(time.time() * 1000),
+            "recvWindow": int((time.time() + 2) * 1000),
+            'limit': 100
+        }
+        query_string = self._prepare_query(payload)
+        payload["signature"] = self._create_signature(query_string)
+        query_string = self._prepare_query(payload)
+        symbols = {}
+        async with session.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers) as resp:
+            funding_payments = await resp.json()
+            for fund in funding_payments:
+                symbol = fund['symbol']
+                if not symbols.get(symbol):
+                    symbols.update({symbol: await self.get_funding_history(session, symbol)})
+                rate = [x['fundingRate'] for x in symbols[symbol] if x['fundingTime'] == fund['time']]
+                if rate:
+                    price = await self.get_historical_price(session, symbol, fund['time'])
+                    fund.update({'rate': rate[0],
+                                 'price': price,
+                                 'position': (float(fund['income']) / -float(rate[0])) / price})
+        return funding_payments
 
     async def __create_order(self, amount: float, price: float, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_ID=None) -> dict:
@@ -397,14 +440,17 @@ class BinanceClient(BaseClient):
                             self.orders.update({data['o']['i']: result})
 
 
-
 if __name__ == '__main__':
     client = BinanceClient(Config.BINANCE, Config.LEVERAGE)
 
+    async def funding():
+        async with aiohttp.ClientSession() as session:
+            print(await client.get_funding_payments(session))
+            # print(await client.get_historical_price(session, 'BTCUSDT', 1686297600000))
+            # print(await client.get_funding_history(session, 'BTCUSDT'))
 
-    async def f():
-        async with aiohttp.ClientSession() as s:
-            await client.get_order_by_id('8389765602994765202', s)
 
-    asyncio.run(f())
+    # policy = asyncio.WindowsSelectorEventLoopPolicy()
+    # asyncio.set_event_loop_policy(policy)
+    asyncio.run(funding())
 
