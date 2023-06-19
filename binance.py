@@ -256,9 +256,11 @@ class BinanceClient(BaseClient):
         query_string = self._prepare_query(payload)
         payload["signature"] = self._create_signature(query_string)
         query_string = self._prepare_query(payload)
+
         async with session.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers) as resp:
             price = await resp.json()
             price = (float(price[0][1]) + float(price[0][4])) / 2
+
             return price
 
     async def get_funding_history(self, session, symbol):
@@ -288,13 +290,18 @@ class BinanceClient(BaseClient):
         payload["signature"] = self._create_signature(query_string)
         query_string = self._prepare_query(payload)
         symbols = {}
+
         async with session.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers) as resp:
             funding_payments = await resp.json()
+
             for fund in funding_payments:
                 symbol = fund['symbol']
+
                 if not symbols.get(symbol):
                     symbols.update({symbol: await self.get_funding_history(session, symbol)})
+
                 rate = [x['fundingRate'] for x in symbols[symbol] if abs(x['fundingTime'] - fund['time']) < 30]
+
                 if rate:
                     price = await self.get_historical_price(session, symbol, fund['time'])
                     fund.update({'rate': rate[0],
@@ -303,6 +310,7 @@ class BinanceClient(BaseClient):
                                  'market': symbol,
                                  'payment': fund['income'],
                                  'datetime': str(datetime.datetime.fromtimestamp(fund['time'] / 1000))})
+
         return funding_payments
 
     async def __create_order(self, amount: float, price: float, side: str, session: aiohttp.ClientSession,
