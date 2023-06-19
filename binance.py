@@ -162,7 +162,7 @@ class BinanceClient(BaseClient):
                             {
                                 self.symbol: {
                                     'asks': [[float(x) for x in j] for j in payload['a']],
-                                    'bids': [[float(x) for x in j] for j in payload['b']],
+                                    'bids': [[float(x) for x in j] for j in reversed(payload['b'])],
                                     'timestamp': payload['E']
                                 }
                             }
