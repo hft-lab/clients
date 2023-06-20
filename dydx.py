@@ -166,7 +166,8 @@ class DydxClient(BaseClient):
                 datetime_obj = datetime.fromisoformat(fund['effectiveAt'][:-1])
                 timestamp_ms = datetime_obj.timestamp() * 1000
                 fund.update({'time': timestamp_ms,
-                             'datetime': fund['effectiveAt']})
+                             'datetime': fund['effectiveAt'],
+                             'asset': 'USDC'})
             return res
 
 
@@ -292,8 +293,8 @@ class DydxClient(BaseClient):
     def get_funding_history(self):
         return self.client.public.get_historical_funding(market=self.symbol).data
 
-    def get_funding_payments(self):
-        return self.client.private.get_funding_payments(market=self.symbol, limit=300).data
+    # def get_funding_payments(self):
+    #     return self.client.private.get_funding_payments(market=self.symbol, limit=300).data
 
     def run_updater(self):
         self.wst.start()

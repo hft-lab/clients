@@ -309,7 +309,8 @@ class BinanceClient(BaseClient):
                                  'positionSize': (float(fund['income']) / -float(rate[0])) / price,
                                  'market': symbol,
                                  'payment': fund['income'],
-                                 'datetime': str(datetime.datetime.fromtimestamp(fund['time'] / 1000))})
+                                 'datetime': str(datetime.datetime.fromtimestamp(fund['time'] / 1000)),
+                                 'asset': 'USDT'})
 
         return funding_payments
 
