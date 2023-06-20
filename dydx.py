@@ -164,11 +164,12 @@ class DydxClient(BaseClient):
             fundings = res['fundingPayments']
             for fund in fundings:
                 datetime_obj = datetime.fromisoformat(fund['effectiveAt'][:-1])
-                timestamp_ms = datetime_obj.timestamp() * 1000
+                timestamp_ms = int(datetime_obj.timestamp() * 1000)
                 fund.update({'time': timestamp_ms,
-                             'datetime': fund['effectiveAt'],
-                             'asset': 'USDC'})
-            return res
+                             'datetime': datetime.strptime(fund['effectiveAt'], '%Y-%m-%dT%H:%M:%S.%fZ'),
+                             'asset': 'USDC',
+                             'tranId': 'hasNoTranId'})
+            return fundings
 
 
     async def get_order_by_id(self, order_id: str, session: aiohttp.ClientSession):

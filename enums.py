@@ -38,6 +38,7 @@ class RabbitMqQueues:
     BALANCES = 'logger.event.insert_balances'
     BALANCE_DETALIZATION = 'logger.event.insert_balance_detalization'
     DISBALANCE = 'logger.event.insert_disbalances'
+    FUNDINGS = 'logger.event.insert_funding'
 
     @staticmethod
     def get_exchange_name(routing_key: str):
