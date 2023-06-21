@@ -77,6 +77,8 @@ class BinanceClient(BaseClient):
         self.req_check = threading.Thread(target=self._check_symbol_value)
         self.lk_check = threading.Thread(target=self._ping_listen_key)
 
+        self.balance['total'], self.balance['avl_balance'] = self._get_balance()
+
         self._get_listen_key()
         self._get_position()
 
@@ -356,6 +358,25 @@ class BinanceClient(BaseClient):
         res = requests.delete(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers).json()
         return res
 
+    async def get_orderbook_by_symbol(self, symbol) -> None:
+        async with aiohttp.ClientSession() as session:
+            url_path = "/fapi/v1/depth"
+            payload = {
+                "symbol": symbol,
+            }
+
+            query_string = self._prepare_query(payload)
+
+            async with session.get(url=self.BASE_URL + url_path + "?" + query_string, headers=self.headers) as resp:
+                res = await resp.json()
+
+                if 'asks' in res and 'bids' in res:
+                    self.orderbook[symbol] = {
+                        'asks': [[float(x[0]), float(x[1])] for x in res['asks']],
+                        'bids': [[float(x[0]), float(x[1])] for x in res['bids']]
+                    }
+
+
     async def get_order_by_id(self, order_id: str, session: aiohttp.ClientSession):
         url_path = "/fapi/v1/order"
         payload = {
@@ -458,7 +479,7 @@ if __name__ == '__main__':
 
     async def funding():
         async with aiohttp.ClientSession() as session:
-            print(await client.get_funding_payments(session))
+            print(await client.get_orderbook_by_symbol('BTCUSDT'))
             # print(await client.get_historical_price(session, 'BTCUSDT', 1686297600000))
             # print(await client.get_funding_history(session, 'BTCUSDT'))
             # print(await client.get_funding_history(session, 'ETHUSDT'))

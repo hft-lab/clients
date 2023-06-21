@@ -6,6 +6,7 @@ import time
 from pprint import pprint
 
 import aiohttp
+import requests
 from dydx3 import Client
 from dydx3.constants import API_HOST_MAINNET
 from dydx3.constants import NETWORK_ID_MAINNET
@@ -171,7 +172,6 @@ class DydxClient(BaseClient):
                              'tranId': 'hasNoTranId'})
             return fundings
 
-
     async def get_order_by_id(self, order_id: str, session: aiohttp.ClientSession):
         data = {}
         now_iso_string = generate_now_iso()
@@ -214,7 +214,7 @@ class DydxClient(BaseClient):
         self.time_sent = time.time()
         expire_date = int(round(time.time()) + expire)
 
-        expect_amount_coin  = self.fit_amount(amount)
+        expect_amount_coin = self.fit_amount(amount)
         self.expect_amount_coin = float(expect_amount_coin)
         expect_price = self.fit_price(price)
         self.expect_price = float(expect_price)
@@ -290,7 +290,6 @@ class DydxClient(BaseClient):
                 'status': status
             }
 
-
     def get_funding_history(self):
         return self.client.public.get_historical_funding(market=self.symbol).data
 
@@ -344,7 +343,6 @@ class DydxClient(BaseClient):
         }
         await self._connected.wait()
         await self._ws.send_json(msg)
-
 
     async def _subscribe_orderbook(self, symbol):
         msg = {
@@ -488,8 +486,6 @@ class DydxClient(BaseClient):
             if self.symbol == order.get('market'):
                 self.orders.update({order['id']: result})
 
-
-
             # if self.orders.get(order['market']):
             #     if not order['status'] in ['CANCELED', 'FILLED']:
             #         self.orders[order['market']].update({order['id']: order})
@@ -606,7 +602,7 @@ class DydxClient(BaseClient):
             if position.get('amount_usd'):
                 position_value += position['amount_usd']
 
-        available_margin = self.balance['total'] * self.leverage
+        available_margin = float(self.balance['total']) * self.leverage
 
         if side == 'buy':
             return available_margin - position_value
@@ -641,6 +637,34 @@ class DydxClient(BaseClient):
                             # print(obj['contents']['account'])
                             # print()
 
+    async def get_orderbook_by_symbol(self, symbol) -> None:
+        async with aiohttp.ClientSession() as session:
+            data = {}
+            now_iso_string = generate_now_iso()
+            request_path = f'/v3/orderbook/{symbol}'
+            signature = self.client.private.sign(
+                request_path=request_path,
+                method='GET',
+                iso_timestamp=now_iso_string,
+                data=remove_nones(data),
+            )
+
+            headers = {
+                'DYDX-SIGNATURE': signature,
+                'DYDX-API-KEY': self.API_KEYS['key'],
+                'DYDX-TIMESTAMP': now_iso_string,
+                'DYDX-PASSPHRASE': self.API_KEYS['passphrase']
+            }
+
+            async with session.get(url=self.BASE_URL + request_path, headers=headers,
+                                   data=json.dumps(remove_nones(data))) as resp:
+                res = await resp.json()
+
+                if 'asks' in res and 'bids' in res:
+                    self.orderbook[symbol] = {
+                            'asks': [[float(x['price']), float(x['size'])] for x in res['asks']],
+                            'bids': [[float(x['price']), float(x['size'])] for x in res['bids']]
+                        }
 
 
     def get_orderbook(self):
@@ -716,15 +740,16 @@ class DydxClient(BaseClient):
 
 if __name__ == '__main__':
     client = DydxClient(Config.DYDX, Config.LEVERAGE)
+
+
     # client.run_updater()
     # time.sleep(15)
 
-    async def funding(client):
-        async with aiohttp.ClientSession() as session:
-            return await client.get_funding_payments(session=session)
-
-
-    while True:
-        funding_history = asyncio.run(funding(client))
-        print(len(funding_history['fundingPayments']))
-        time.sleep(10)
+    # async def funding(client):
+    #     async with aiohttp.ClientSession() as session:
+    #         # return await client.get_orderbook_by_symbol('BTC-USD')
+    #
+    #
+    # while True:
+    #     print(asyncio.run(funding(client)))
+    #     time.sleep(10)
