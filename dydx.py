@@ -598,12 +598,24 @@ class DydxClient(BaseClient):
 
     def get_available_balance(self, side):
         position_value = 0
+        position_value_abs = 0
         for symbol, position in self.positions.items():
             if position.get('amount_usd'):
                 position_value += position['amount_usd']
+                position_value_abs += abs(position['amount_usd'])
 
-        available_margin = float(self.balance['total']) * self.leverage
-
+        available_margin = self.balance['total'] * self.leverage
+        if position_value_abs > available_margin:
+            if position_value > 0:
+                if side == 'buy':
+                    return 0
+                elif side == 'sell':
+                    return position_value
+            else:
+                if side == 'buy':
+                    return abs(position_value)
+                elif side == 'sell':
+                    return 0
         if side == 'buy':
             return available_margin - position_value
         elif side == 'sell':

@@ -176,14 +176,26 @@ class BinanceClient(BaseClient):
     def _prepare_query(params: dict) -> str:
         return urlencode(params)
 
-    def __get_available_balance(self, side):
+    def get_available_balance(self, side):
         position_value = 0
-        for market, position in self.positions.items():
-            if position.get('amount'):  # and market.upper() == self.symbol.upper():
+        position_value_abs = 0
+        for symbol, position in self.positions.items():
+            if position.get('amount_usd'):
                 position_value += position['amount_usd']
+                position_value_abs += abs(position['amount_usd'])
 
         available_margin = self.balance['total'] * self.leverage
-
+        if position_value_abs > available_margin:
+            if position_value > 0:
+                if side == 'buy':
+                    return 0
+                elif side == 'sell':
+                    return position_value
+            else:
+                if side == 'buy':
+                    return abs(position_value)
+                elif side == 'sell':
+                    return 0
         if side == 'buy':
             return available_margin - position_value
         elif side == 'sell':
