@@ -5,8 +5,6 @@ import hmac
 import threading
 import time
 import traceback
-import sys
-from pprint import pprint
 from urllib.parse import urlencode
 
 import aiohttp
@@ -81,9 +79,6 @@ class BinanceClient(BaseClient):
 
         self._get_listen_key()
         self._get_position()
-
-    def get_available_balance(self, side: str) -> float:
-        return self.__get_available_balance(side)
 
     async def create_order(self, amount, price, side, session: aiohttp.ClientSession,
                            expire: int = 100, client_ID: str = None) -> dict:
@@ -304,7 +299,6 @@ class BinanceClient(BaseClient):
         payload["signature"] = self._create_signature(query_string)
         query_string = self._prepare_query(payload)
         symbols = {}
-
         async with session.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers) as resp:
             funding_payments = await resp.json()
 
@@ -332,8 +326,7 @@ class BinanceClient(BaseClient):
                              expire=5000, client_ID=None) -> dict:
         self.expect_amount_coin = float(round(float(round(amount / self.step_size) * self.step_size), self.quantity_precision))
         self.expect_price = float(round(float(round(price / self.tick_size) * self.tick_size), self.price_precision))
-
-        url_path = "https://fapi.binance.com/fapi/v1/order?"
+        url_path = self.BASE_URL
         query_string = f"timestamp={int(time.time() * 1000)}&symbol={self.symbol}&side={side}&type=LIMIT&" \
                        f"price={self.expect_price}&quantity={self.expect_amount_coin}&timeInForce=GTC&recvWindow=5000"
         query_string += f'&signature={self._create_signature(query_string)}'
@@ -387,7 +380,6 @@ class BinanceClient(BaseClient):
                         'asks': [[float(x[0]), float(x[1])] for x in res['asks']],
                         'bids': [[float(x[0]), float(x[1])] for x in res['bids']]
                     }
-
 
     async def get_order_by_id(self, order_id: str, session: aiohttp.ClientSession):
         url_path = "/fapi/v1/order"
@@ -454,10 +446,7 @@ class BinanceClient(BaseClient):
                                     'realized_pnl_usd': 0,
                                     'lever': self.leverage
                                 }})
-
-
                     elif data['e'] == EventTypeEnum.ORDER_TRADE_UPDATE:
-
                         self.last_price[data['o']['S'].lower()] = float(data['o']['ap'])
 
                         if data['o']['X'] == ClientsOrderStatuses.NEW:
