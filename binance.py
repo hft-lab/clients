@@ -326,12 +326,12 @@ class BinanceClient(BaseClient):
                              expire=5000, client_ID=None) -> dict:
         self.expect_amount_coin = float(round(float(round(amount / self.step_size) * self.step_size), self.quantity_precision))
         self.expect_price = float(round(float(round(price / self.tick_size) * self.tick_size), self.price_precision))
-        url_path = self.BASE_URL
+        url_path = '/fapi/v1/order?'
         query_string = f"timestamp={int(time.time() * 1000)}&symbol={self.symbol}&side={side}&type=LIMIT&" \
                        f"price={self.expect_price}&quantity={self.expect_amount_coin}&timeInForce=GTC&recvWindow=5000"
         query_string += f'&signature={self._create_signature(query_string)}'
 
-        async with session.post(url=url_path + query_string, headers=self.headers) as resp:
+        async with session.post(url=self.BASE_URL + url_path + query_string, headers=self.headers) as resp:
             res = await resp.json()
             print(f'BINANCE RESPONSE: {res}')
             timestamp = 0000000000000
