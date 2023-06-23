@@ -259,8 +259,8 @@ class BinanceClient(BaseClient):
         payload = {
             'symbol': symbol,
             "interval": '1m',
-            "startTime": time_ - 1,
-            'endTime': time_ + 1
+            "startTime": time_ - 3,
+            'endTime': time_ + 3
         }
         query_string = self._prepare_query(payload)
         payload["signature"] = self._create_signature(query_string)
@@ -268,9 +268,12 @@ class BinanceClient(BaseClient):
 
         async with session.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers) as resp:
             price = await resp.json()
-            price = (float(price[0][1]) + float(price[0][4])) / 2
-
-            return price
+            if price:
+                price = (float(price[0][1]) + float(price[0][4])) / 2
+                return price
+            else:
+                time_ = int(time_ / 10000) * 10000
+                return await self.get_historical_price(session, symbol, time_)
 
     async def get_funding_history(self, session, symbol):
         url_path = "/fapi/v1/fundingRate"
@@ -299,6 +302,7 @@ class BinanceClient(BaseClient):
         payload["signature"] = self._create_signature(query_string)
         query_string = self._prepare_query(payload)
         symbols = {}
+
         async with session.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers) as resp:
             funding_payments = await resp.json()
 
@@ -308,7 +312,7 @@ class BinanceClient(BaseClient):
                 if not symbols.get(symbol):
                     symbols.update({symbol: await self.get_funding_history(session, symbol)})
 
-                rate = [x['fundingRate'] for x in symbols[symbol] if abs(x['fundingTime'] - fund['time']) < 30]
+                rate = [x['fundingRate'] for x in symbols[symbol] if abs(x['fundingTime'] - fund['time']) < 3000]
 
                 if rate:
                     price = await self.get_historical_price(session, symbol, fund['time'])
