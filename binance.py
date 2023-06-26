@@ -402,7 +402,7 @@ class BinanceClient(BaseClient):
             res = await resp.json()
 
             if res.get('status') == ClientsOrderStatuses.FILLED and res.get('time', 0) == res.get('updateTime'):
-                status = OrderStatus.INSTANT_FULLY_EXECUTED
+                status = OrderStatus.FULLY_EXECUTED
             elif res.get('status') == ClientsOrderStatuses.FILLED and float(res['origQty']) > float(
                     res['executedQty']):
                 status = OrderStatus.PARTIALLY_EXECUTED
@@ -456,9 +456,9 @@ class BinanceClient(BaseClient):
                         if data['o']['X'] == ClientsOrderStatuses.NEW:
                             status = OrderStatus.PROCESSING
                         elif data['o']['X'] == ClientsOrderStatuses.FILLED and data['o']['m'] is False:
-                            status = OrderStatus.INSTANT_FULLY_EXECUTED
+                            status = OrderStatus.FULLY_EXECUTED
                         elif data['o']['X'] == ClientsOrderStatuses.FILLED and data['o']['m'] is True:
-                            status = OrderStatus.DELAYED_FULLY_EXECUTED
+                            status = OrderStatus.FULLY_EXECUTED
                         elif data['o']['X'] == ClientsOrderStatuses.PARTIALLY_FILLED:
                             status = OrderStatus.PARTIALLY_EXECUTED
                         else:

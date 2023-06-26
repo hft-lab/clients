@@ -62,7 +62,8 @@ class DydxClient(BaseClient):
         self.markets = self.client.public.get_markets().data
         self.leverage = leverage
 
-        self.balance = {'free': self.account['account']['equity'], 'total': self.account['account']['freeCollateral']}
+        self.balance = {'free': float(self.account['account']['equity']),
+                        'total': float(self.account['account']['freeCollateral'])}
         self.position_id = self.account['account']['positionId']
 
         # self.maker_fee = float(self.user['user']['makerFeeRate'])
@@ -197,7 +198,7 @@ class DydxClient(BaseClient):
                 return {
                     'exchange_order_id': order_id,
                     'exchange': self.EXCHANGE_NAME,
-                    'status': OrderStatus.DELAYED_FULLY_EXECUTED if res.get(
+                    'status': OrderStatus.FULLY_EXECUTED if res.get(
                         'status') == ClientsOrderStatuses.FILLED else OrderStatus.NOT_EXECUTED,
                     'factual_price': float(res['price']),
                     'factual_amount_coin': float(res['size']),
@@ -462,13 +463,11 @@ class DydxClient(BaseClient):
             print(f'{order=}')
             if order['status'] == ClientsOrderStatuses.PENDING:
                 status = OrderStatus.PROCESSING
-            elif order['status'] == ClientsOrderStatuses.FILLED and float(order['limitFee']) == self.taker_fee:
-                status = OrderStatus.INSTANT_FULLY_EXECUTED
-            elif order['status'] == ClientsOrderStatuses.FILLED and float(order['limitFee']) != self.taker_fee:
-                status = OrderStatus.DELAYED_FULLY_EXECUTED
-            elif order['status'] == ClientsOrderStatuses.CANCELED and float(order['remainingSize']):
+            elif order['status'] == ClientsOrderStatuses.FILLED:
+                status = OrderStatus.FULLY_EXECUTED
+            elif order['status'] == ClientsOrderStatuses.CANCELED and not order['remainingSize'] == order['size']:
                 status = OrderStatus.PARTIALLY_EXECUTED
-            else:
+            elif order['status'] == ClientsOrderStatuses.CANCELED and order['remainingSize'] == order['size']:
                 status = OrderStatus.NOT_EXECUTED
 
             result = {
@@ -752,16 +751,24 @@ class DydxClient(BaseClient):
 
 if __name__ == '__main__':
     client = DydxClient(Config.DYDX, Config.LEVERAGE)
+    client.run_updater()
+    time.sleep(15)
 
+    async def create_order(client):
+        async with aiohttp.ClientSession() as session:
+            order_response = await client.create_order(0.01,
+                                                       35000,
+                                                       'buy',
+                                                       session,
+                                                       type='LIMIT',
+                                                       expire=10000,
+                                                       client_id=None,
+                                                       expiration=None)
+            print(f"{order_response=}")
 
-    # client.run_updater()
-    # time.sleep(15)
-
-    # async def funding(client):
-    #     async with aiohttp.ClientSession() as session:
-    #         # return await client.get_orderbook_by_symbol('BTC-USD')
+            # return await client.get_orderbook_by_symbol('BTC-USD')
     #
     #
-    # while True:
-    #     print(asyncio.run(funding(client)))
-    #     time.sleep(10)
+    print(asyncio.run(create_order(client)))
+    time.sleep(10)
+

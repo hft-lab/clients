@@ -58,9 +58,9 @@ class ResponseStatus:
 
 class OrderStatus:
     NOT_EXECUTED = 'Not Executed'
-    DELAYED_FULLY_EXECUTED = 'Delayed Fully Executed'
+    # DELAYED_FULLY_EXECUTED = 'Delayed Fully Executed'
     PARTIALLY_EXECUTED = 'Partially Executed'
-    INSTANT_FULLY_EXECUTED = 'Instant Fully Executed'
+    FULLY_EXECUTED = 'Fully Executed'
     PROCESSING = 'Processing'
 
 
