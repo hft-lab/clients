@@ -461,6 +461,7 @@ class DydxClient(BaseClient):
     def _update_orders(self, orders):
         for order in orders:
             print(f'{order=}')
+            status = None
             if order['status'] == ClientsOrderStatuses.PENDING:
                 if self.orders.get(order['id']):
                     continue
@@ -472,21 +473,21 @@ class DydxClient(BaseClient):
                 status = OrderStatus.PARTIALLY_EXECUTED
             elif order['status'] == ClientsOrderStatuses.CANCELED and order['remainingSize'] == order['size']:
                 status = OrderStatus.NOT_EXECUTED
+            if status:
+                result = {
+                    'exchange_order_id': order['id'],
+                    'exchange': self.EXCHANGE_NAME,
+                    'status': status,
+                    'factual_price': 0 if status == OrderStatus.PROCESSING else float(order['price']),
+                    'factual_amount_coin': 0 if status == OrderStatus.PROCESSING else float(order['size']),
+                    'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else float(order['size']) * float(
+                        order['price']),
+                    'datetime_update': datetime.utcnow(),
+                    'ts_update': time.time() * 1000
+                }
 
-            result = {
-                'exchange_order_id': order['id'],
-                'exchange': self.EXCHANGE_NAME,
-                'status': status,
-                'factual_price': 0 if status == OrderStatus.PROCESSING else float(order['price']),
-                'factual_amount_coin': 0 if status == OrderStatus.PROCESSING else float(order['size']),
-                'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else float(order['size']) * float(
-                    order['price']),
-                'datetime_update': datetime.utcnow(),
-                'ts_update': time.time() * 1000
-            }
-
-            if self.symbol == order.get('market'):
-                self.orders.update({order['id']: result})
+                if self.symbol == order.get('market'):
+                    self.orders.update({order['id']: result})
 
             # if self.orders.get(order['market']):
             #     if not order['status'] in ['CANCELED', 'FILLED']:
