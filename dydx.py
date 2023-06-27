@@ -273,7 +273,7 @@ class DydxClient(BaseClient):
         async with session.post(url=self.BASE_URL + request_path, headers=headers,
                                 data=json.dumps(remove_nones(data))) as resp:
             res = await resp.json()
-            print(f'DYDEX RESPONSE: {res}')
+            print(f'DYDX RESPONSE: {res}')
             timestamp = 0000000000000
             if res.get('errors'):
                 status = ResponseStatus.ERROR
@@ -462,8 +462,11 @@ class DydxClient(BaseClient):
         for order in orders:
             print(f'{order=}')
             if order['status'] == ClientsOrderStatuses.PENDING:
-                status = OrderStatus.PROCESSING
-            elif order['status'] == ClientsOrderStatuses.FILLED:
+                if self.orders.get(order['id']):
+                    continue
+                else:
+                    status = OrderStatus.PROCESSING
+            if order['status'] == ClientsOrderStatuses.FILLED:
                 status = OrderStatus.FULLY_EXECUTED
             elif order['status'] == ClientsOrderStatuses.CANCELED and not order['remainingSize'] == order['size']:
                 status = OrderStatus.PARTIALLY_EXECUTED
@@ -771,4 +774,3 @@ if __name__ == '__main__':
     #
     print(asyncio.run(create_order(client)))
     time.sleep(10)
-
