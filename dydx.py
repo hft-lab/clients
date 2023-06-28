@@ -614,10 +614,10 @@ class DydxClient(BaseClient):
                 if side == 'buy':
                     return 0
                 elif side == 'sell':
-                    return position_value
+                    return available_margin + position_value
             else:
                 if side == 'buy':
-                    return abs(position_value)
+                    return available_margin + abs(position_value)
                 elif side == 'sell':
                     return 0
         if side == 'buy':
