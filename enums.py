@@ -24,7 +24,7 @@ class BotState:
 
 
 class RabbitMqQueues:
-    TELEGRAM = 'logger.event.send_message'
+    TELEGRAM = 'logger.event.send_to_telegram'
     DEALS_REPORT = 'logger.event.insert_deals_reports'
     BALANCE_CHECK = 'logger.event.insert_balance_check'
     BALANCING_REPORTS = 'logger.event.insert_balancing_reports'
@@ -71,3 +71,4 @@ class ClientsOrderStatuses:
     PARTIALLY_FILLED = 'PARTIALLY_FILLED'
     EXPIRED = 'EXPIRED'
     PENDING = 'PENDING'
+
