@@ -451,8 +451,9 @@ class BinanceClient(BaseClient):
                                     'lever': self.leverage
                                 }})
                     elif data['e'] == EventTypeEnum.ORDER_TRADE_UPDATE:
+                        print(f'{data=}')
                         self.last_price[data['o']['S'].lower()] = float(data['o']['ap'])
-
+                        status = None
                         if data['o']['X'] == ClientsOrderStatuses.NEW:
                             status = OrderStatus.PROCESSING
                         elif data['o']['X'] == ClientsOrderStatuses.FILLED and data['o']['m'] is False:
@@ -461,22 +462,23 @@ class BinanceClient(BaseClient):
                             status = OrderStatus.FULLY_EXECUTED
                         elif data['o']['X'] == ClientsOrderStatuses.PARTIALLY_FILLED:
                             status = OrderStatus.PARTIALLY_EXECUTED
-                        else:
+                        elif data['o']['X'] == ClientsOrderStatuses.CANCELED and data['o']['z'] == '0':
                             status = OrderStatus.NOT_EXECUTED
 
-                        result = {
-                            'exchange_order_id': data['o']['i'],
-                            'exchange': self.EXCHANGE_NAME,
-                            'status': status,
-                            'factual_price': 0 if status == OrderStatus.PROCESSING else float(data['o']['ap']),
-                            'factual_amount_coin': 0 if status == OrderStatus.PROCESSING else float(data['o']['z']),
-                            'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else float(data['o']['z']) * float(data['o']['ap']),
-                            'datetime_update': datetime.datetime.utcnow(),
-                            'ts_update': time.time() * 1000
-                        }
+                        if status:
+                            result = {
+                                'exchange_order_id': data['o']['i'],
+                                'exchange': self.EXCHANGE_NAME,
+                                'status': status,
+                                'factual_price': 0 if status == OrderStatus.PROCESSING else float(data['o']['ap']),
+                                'factual_amount_coin': 0 if status == OrderStatus.PROCESSING else float(data['o']['z']),
+                                'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else float(data['o']['z']) * float(data['o']['ap']),
+                                'datetime_update': datetime.datetime.utcnow(),
+                                'ts_update': time.time() * 1000
+                            }
 
-                        if self.symbol == data['o']['s'] and result['status'] != OrderStatus.PROCESSING:
-                            self.orders.update({data['o']['i']: result})
+                            if self.symbol == data['o']['s'] and result['status'] != OrderStatus.PROCESSING:
+                                self.orders.update({data['o']['i']: result})
 
 
 if __name__ == '__main__':

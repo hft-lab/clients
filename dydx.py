@@ -469,19 +469,20 @@ class DydxClient(BaseClient):
                     status = OrderStatus.PROCESSING
             if order['status'] == ClientsOrderStatuses.FILLED:
                 status = OrderStatus.FULLY_EXECUTED
-            elif order['status'] == ClientsOrderStatuses.CANCELED and not order['remainingSize'] == order['size']:
+            elif order['status'] == ClientsOrderStatuses.CANCELED and order['remainingSize'] != order['size']:
                 status = OrderStatus.PARTIALLY_EXECUTED
             elif order['status'] == ClientsOrderStatuses.CANCELED and order['remainingSize'] == order['size']:
                 status = OrderStatus.NOT_EXECUTED
+
             if status:
+                executed_size = float(order['size']) - float(order['remainingSize'])
                 result = {
                     'exchange_order_id': order['id'],
                     'exchange': self.EXCHANGE_NAME,
                     'status': status,
                     'factual_price': 0 if status == OrderStatus.PROCESSING else float(order['price']),
-                    'factual_amount_coin': 0 if status == OrderStatus.PROCESSING else float(order['size']),
-                    'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else float(order['size']) * float(
-                        order['price']),
+                    'factual_amount_coin': 0 if status == OrderStatus.PROCESSING else executed_size,
+                    'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else executed_size * float(order['price']),
                     'datetime_update': datetime.utcnow(),
                     'ts_update': time.time() * 1000
                 }
@@ -677,10 +678,9 @@ class DydxClient(BaseClient):
 
                 if 'asks' in res and 'bids' in res:
                     self.orderbook[symbol] = {
-                            'asks': [[float(x['price']), float(x['size'])] for x in res['asks']],
-                            'bids': [[float(x['price']), float(x['size'])] for x in res['bids']]
-                        }
-
+                        'asks': [[float(x['price']), float(x['size'])] for x in res['asks']],
+                        'bids': [[float(x['price']), float(x['size'])] for x in res['bids']]
+                    }
 
     def get_orderbook(self):
         return self.orderbook
@@ -758,6 +758,7 @@ if __name__ == '__main__':
     client.run_updater()
     time.sleep(15)
 
+
     async def create_order(client):
         async with aiohttp.ClientSession() as session:
             order_response = await client.create_order(0.01,
@@ -771,6 +772,8 @@ if __name__ == '__main__':
             print(f"{order_response=}")
 
             # return await client.get_orderbook_by_symbol('BTC-USD')
+
+
     #
     #
     print(asyncio.run(create_order(client)))
