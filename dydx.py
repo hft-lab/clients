@@ -173,7 +173,7 @@ class DydxClient(BaseClient):
                              'tranId': 'hasNoTranId'})
             return fundings
 
-    async def get_order_by_id(self, order_id: str, session: aiohttp.ClientSession):
+    async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession):
         data = {}
         now_iso_string = generate_now_iso()
         request_path = f'/v3/orders/{order_id}'
@@ -755,26 +755,12 @@ class DydxClient(BaseClient):
 
 if __name__ == '__main__':
     client = DydxClient(Config.DYDX, Config.LEVERAGE)
-    client.run_updater()
-    time.sleep(15)
+    # client.run_updater()
+    # time.sleep(15)
 
 
     async def create_order(client):
         async with aiohttp.ClientSession() as session:
-            order_response = await client.create_order(0.01,
-                                                       35000,
-                                                       'buy',
-                                                       session,
-                                                       type='LIMIT',
-                                                       expire=10000,
-                                                       client_id=None,
-                                                       expiration=None)
-            print(f"{order_response=}")
+           print(await client.get_order_by_id('7e32fa734fa848a31771c3a5a3d1584c151d442047f2c1fc45213128a773118', session))
 
-            # return await client.get_orderbook_by_symbol('BTC-USD')
-
-
-    #
-    #
-    print(asyncio.run(create_order(client)))
-    time.sleep(10)
+    asyncio.run(create_order(client))

@@ -385,11 +385,11 @@ class BinanceClient(BaseClient):
                         'bids': [[float(x[0]), float(x[1])] for x in res['bids']]
                     }
 
-    async def get_order_by_id(self, order_id: str, session: aiohttp.ClientSession):
+    async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession):
         url_path = "/fapi/v1/order"
         payload = {
             "timestamp": int(time.time() * 1000),
-            "symbol": self.symbol,
+            "symbol": symbol,
             "orderId": int(order_id),
             "recvWindow": int((time.time() + 2) * 1000)
         }
