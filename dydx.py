@@ -46,6 +46,7 @@ class DydxClient(BaseClient):
             web3_provider=f'https://mainnet.infura.io/v3/{keys["infura_key"]}',
             api_key_credentials=self.API_KEYS
         )
+        self.error_info = None
         self.orders = {}
         self.fills = {}
         self.positions = {self.symbol: {}}
@@ -277,6 +278,7 @@ class DydxClient(BaseClient):
             timestamp = 0000000000000
             if res.get('errors'):
                 status = ResponseStatus.ERROR
+                self.error_info = res
             elif res.get('order') and res['order'].get('status'):
                 timestamp = int(
                     datetime.timestamp(datetime.strptime(res['order']['createdAt'], '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)

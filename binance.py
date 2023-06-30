@@ -29,6 +29,7 @@ class BinanceClient(BaseClient):
         self.__secret_key = keys['secret_key']
         self.headers = {'X-MBX-APIKEY': self.__api_key}
         self.symbol_is_active = False
+        self.error_info = None
         self.quantity_precision = 0
         self.tick_size = None
         self.step_size = None
@@ -341,6 +342,7 @@ class BinanceClient(BaseClient):
             timestamp = 0000000000000
             if res.get('code') and -5023 < res['code'] < -1099:
                 status = ResponseStatus.ERROR
+                self.error_info = res
             elif res.get('status'):
                 status = ResponseStatus.SUCCESS
                 self.LAST_ORDER_ID = res['orderId']
