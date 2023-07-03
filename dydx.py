@@ -257,7 +257,8 @@ class DydxClient(BaseClient):
                             'order_place_time': 0,
                             'env': '-',
                             'datetime_update': datetime.utcnow(),
-                            'ts_update': time.time()
+                            'ts_update': time.time(),
+                            'client_id': order['clientId']
                         }
                     )
             except:
