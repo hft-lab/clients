@@ -5,6 +5,7 @@ import hmac
 import threading
 import time
 import traceback
+import uuid
 from urllib.parse import urlencode
 
 import aiohttp
@@ -81,9 +82,9 @@ class BinanceClient(BaseClient):
         self._get_listen_key()
         self._get_position()
 
-    async def create_order(self, amount, price, side, session: aiohttp.ClientSession,
+    async def create_order(self, price, side, session: aiohttp.ClientSession,
                            expire: int = 100, client_ID: str = None) -> dict:
-        return await self.__create_order(amount, price, side.upper(), session, expire, client_ID)
+        return await self.__create_order(price, side.upper(), session, expire, client_ID)
 
     def cancel_all_orders(self, orderID=None) -> dict:
         return self.__cancel_open_orders()
@@ -155,6 +156,7 @@ class BinanceClient(BaseClient):
                         else:
                             self.orderbook[self.symbol][side].pop(index)
 
+
                         break
 
                     elif order[1]:
@@ -166,8 +168,8 @@ class BinanceClient(BaseClient):
 
         self.orderbook.update({
             self.symbol: {
-                'asks': sorted(self.orderbook['asks']),
-                'bids': sorted(self.orderbook['bids'])[::-1],
+                'asks': sorted(self.orderbook.get('asks', [])),
+                'bids': sorted(self.orderbook.get('bids', []))[::-1],
                 'timestamp': ob['E']
             }})
 
@@ -176,7 +178,7 @@ class BinanceClient(BaseClient):
             await ws.send_str(orjson.dumps({
                 'id': 1,
                 'method': 'SUBSCRIBE',
-                'params': [f"{self.symbol.lower()}@depth5@100ms"]
+                'params': [f"{self.symbol.lower()}@depth@100ms"]
             }).decode('utf-8'))
 
             async for msg in ws:
@@ -353,7 +355,7 @@ class BinanceClient(BaseClient):
         self.expect_amount_coin = float(
             round(float(round(amount / self.step_size) * self.step_size), self.quantity_precision))
 
-    async def __create_order(self, amount: float, price: float, side: str, session: aiohttp.ClientSession,
+    async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_ID=None) -> dict:
         self.expect_price = float(round(float(round(price / self.tick_size) * self.tick_size), self.price_precision))
         url_path = '/fapi/v1/order?'
@@ -412,7 +414,63 @@ class BinanceClient(BaseClient):
                         'bids': [[float(x[0]), float(x[1])] for x in res['bids']]
                     }
 
-    async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession):
+    async def get_all_orders(self, symbol: str, session: aiohttp.ClientSession) -> list:
+        url_path = "/fapi/v1/allOrders"
+        payload = {
+            "timestamp": int(time.time() * 1000),
+            "symbol": symbol,
+            "startTime": int((time.time() - 86400) * 1000),
+            "recvWindow": int((time.time() + 2) * 1000)
+        }
+        query_string = self._prepare_query(payload)
+        payload["signature"] = self._create_signature(query_string)
+        query_string = self._prepare_query(payload)
+        orders = []
+        async with session.get(url=self.BASE_URL + url_path + "?" + query_string, headers=self.headers) as resp:
+            res = await resp.json()
+            try:
+                for order in res:
+                    if res.get('status') == ClientsOrderStatuses.FILLED and float(res['origQty']) > float(
+                            res['executedQty']):
+                        status = OrderStatus.PARTIALLY_EXECUTED
+                    elif res.get('status') == ClientsOrderStatuses.FILLED:
+                        status = OrderStatus.FULLY_EXECUTED
+                    else:
+                        status = OrderStatus.NOT_EXECUTED
+
+                    orders.append(
+                        {
+                            'id': uuid.uuid4(),
+                            'datetime': datetime.datetime.fromtimestamp(order['time']),
+                            'ts': int(order['time']),
+                            'context': 'web-interface' if not 'api_' in order['clientOrderId'] else order['clientOrderId'].split('_')[1],
+                            'parent_id': '-',
+                            'exchange_order_id': order['orderId'],
+                            'type': order['timeInForce'],
+                            'status': status,
+                            'exchange': self.EXCHANGE_NAME,
+                            'side': order['side'].lower(),
+                            'symbol': self.symbol,
+                            'expect_price': float(order['price']),
+                            'expect_amount_coin': float(order['origQty']),
+                            'expect_amount_usd': float(order['price']) * float(order['origQty']),
+                            'except_fee': self.taker_fee,
+                            'factual_price': float(order['avgPrice']),
+                            'factual_amount_coin': float(order['executedQty']),
+                            'order_place_time': 0,
+                            'env': '-',
+                            'datetime_update': datetime.datetime.utcnow(),
+                            'ts_update': time.time()
+                        }
+                    )
+            except:
+                traceback.print_exc()
+
+        return orders
+
+
+
+    async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession) -> dict:
         url_path = "/fapi/v1/order"
         payload = {
             "timestamp": int(time.time() * 1000),
@@ -512,13 +570,7 @@ class BinanceClient(BaseClient):
 if __name__ == '__main__':
     client = BinanceClient(Config.BINANCE, Config.LEVERAGE)
     client.run_updater()
-    time.sleep(5)
 
-
-    async def funding():
-        async with aiohttp.ClientSession() as session:
-            await client.create_order(0.017, 28962.0, 'buy', session)
-
-
-    # asyncio.set_event_loop_policy(policy)
-    asyncio.run(funding())
+    while True:
+        client.get_orderbook()
+        time.sleep(1)

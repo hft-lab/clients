@@ -1,4 +1,6 @@
 import asyncio
+import traceback
+import uuid
 from datetime import datetime
 import json
 import threading
@@ -200,7 +202,71 @@ class DydxClient(BaseClient):
             else:
                 print(res)
 
-    async def create_order(self, amount: float, price: float, side: str, session: aiohttp.ClientSession,
+
+    async def get_all_orders(self, symbol, session) -> list:
+        data = {}
+        now_iso_string = generate_now_iso()
+        request_path = f'/v3/orders?market={symbol}'
+        signature = self.client.private.sign(
+            request_path=request_path,
+            method='GET',
+            iso_timestamp=now_iso_string,
+            data=remove_nones(data),
+        )
+
+        headers = {
+            'DYDX-SIGNATURE': signature,
+            'DYDX-API-KEY': self.API_KEYS['key'],
+            'DYDX-TIMESTAMP': now_iso_string,
+            'DYDX-PASSPHRASE': self.API_KEYS['passphrase']
+        }
+        orders = []
+        async with session.get(url=self.BASE_URL + request_path, headers=headers,
+                               data=json.dumps(remove_nones(data))) as resp:
+            res = await resp.json()
+            try:
+                for order in res:
+                    if res.get('status') == ClientsOrderStatuses.FILLED and float(res['origQty']) > float(
+                            res['executedQty']):
+                        status = OrderStatus.PARTIALLY_EXECUTED
+                    elif res.get('status') == ClientsOrderStatuses.FILLED:
+                        status = OrderStatus.FULLY_EXECUTED
+                    else:
+                        status = OrderStatus.NOT_EXECUTED
+
+                    orders.append(
+                        {
+                            'id': uuid.uuid4(),
+                            'datetime': datetime.strptime(order['createdAt'], '%Y-%m-%dT%H:%M:%SZ'),
+                            'ts': int(time.time()),
+                            'context': 'web-interface' if not 'api_' in order['clientId'] else
+                            order['clientId'].split('_')[1],
+                            'parent_id': '-',
+                            'exchange_order_id': order['id'],
+                            'type': order['timeInForce'],
+                            'status': status,
+                            'exchange': self.EXCHANGE_NAME,
+                            'side': order['side'].lower(),
+                            'symbol': self.symbol,
+                            'expect_price': float(order['price']),
+                            'expect_amount_coin': float(order['size']),
+                            'expect_amount_usd': float(order['price']) * float(order['size']),
+                            'except_fee': self.taker_fee,
+                            'factual_price': float(order['price']),
+                            'factual_amount_coin': float(order['size']),
+                            'order_place_time': 0,
+                            'env': '-',
+                            'datetime_update': datetime.utcnow(),
+                            'ts_update': time.time()
+                        }
+                    )
+            except:
+                traceback.print_exc()
+
+            return orders
+
+
+    async def create_order(self, price: float, side: str, session: aiohttp.ClientSession,
                            type: str = 'LIMIT', expire: int = 10000, client_id: str = None, expiration=None) -> dict:
 
         self.time_sent = time.time()
