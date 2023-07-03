@@ -106,19 +106,9 @@ class DydxClient(BaseClient):
                 pass
         return balance
 
-    def fit_amount(self, amount):
-        # if not self.quantity_precision:
-        #     if '.' in str(self.step_size):
-        #         round_amount_len = len(str(self.step_size).split('.')[1])
-        #     else:
-        #         round_amount_len = 0
-        #     amount = str(round(amount - (amount % self.step_size), round_amount_len))
-        # else:
-        #     print(amount, self.step_size, self.quantity_precision)
-        #     # amount = str(float(round(float(amount % self.step_size), self.quantity_precision)))
-        #     amount =
-        return str(float(round(float(round(amount / self.step_size, self.quantity_precision) * self.step_size),
-                               self.quantity_precision)))
+    def fit_amount(self, amount) -> None:
+        self.expect_amount_coin = float(round(float(round(amount / self.step_size, self.quantity_precision) * self.step_size),
+                               self.quantity_precision))
 
     def fit_price(self, price):
         if '.' in str(self.tick_size):
@@ -214,9 +204,7 @@ class DydxClient(BaseClient):
 
         self.time_sent = time.time()
         expire_date = int(round(time.time()) + expire)
-
-        expect_amount_coin = self.fit_amount(amount)
-        self.expect_amount_coin = float(expect_amount_coin)
+        expect_amount_coin = str(self.expect_amount_coin)
         expect_price = self.fit_price(price)
         self.expect_price = float(expect_price)
         now_iso_string = generate_now_iso()
@@ -755,12 +743,12 @@ class DydxClient(BaseClient):
 
 if __name__ == '__main__':
     client = DydxClient(Config.DYDX, Config.LEVERAGE)
-    # client.run_updater()
-    # time.sleep(15)
+    client.run_updater()
 
 
-    async def create_order(client):
+    async def funding():
         async with aiohttp.ClientSession() as session:
-           print(await client.get_order_by_id('7e32fa734fa848a31771c3a5a3d1584c151d442047f2c1fc45213128a773118', session))
+            client.fit_amount(0.017)
+            await client.create_order(0.002, 28962.0, 'buy', session)
 
-    asyncio.run(create_order(client))
+    asyncio.run(funding())

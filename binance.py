@@ -144,6 +144,32 @@ class BinanceClient(BaseClient):
                 self.symbol_is_active = False
             time.sleep(5)
 
+    def __check_ob(self, ob: dict, side: str) -> None:
+        for order in [[float(x[0]), float(x[1])] for x in ob.get(side, [])]:
+            if order[0] in [x[0] for x in self.orderbook[self.symbol][side]]:
+                for index in range(len(self.orderbook[self.symbol][side])):
+                    if self.orderbook[self.symbol][side][index][0] == order[0]:
+                        if order[1]:
+                            self.orderbook[self.symbol][side][index] = order
+                        else:
+                            self.orderbook[self.symbol][side].pop(index)
+
+                        break
+
+                    elif order[1]:
+                        self.orderbook[self.symbol][side].append(order)
+
+    def __orderbook_update(self, ob: dict) -> None:
+        self.__check_ob(ob, 'asks')
+        self.__check_ob(ob, 'bids')
+
+        self.orderbook.update({
+            self.symbol: {
+                'asks': sorted(self.orderbook['asks']),
+                'bids': sorted(self.orderbook['bids'])[::-1],
+                'timestamp': ob['E']
+            }})
+
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
         async with session.ws_connect(self.BASE_WS + self.symbol.lower()) as ws:
             await ws.send_str(orjson.dumps({
@@ -155,16 +181,12 @@ class BinanceClient(BaseClient):
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     payload = orjson.loads(msg.data)
-                    if payload.get('a'):
-                        self.orderbook.update(
-                            {
-                                self.symbol: {
-                                    'asks': [[float(x) for x in j] for j in payload['a']],
-                                    'bids': [[float(x) for x in j] for j in reversed(payload['b'])],
-                                    'timestamp': payload['E']
-                                }
-                            }
-                        )
+                    if payload.get('e') == 'depthUpdate':
+                        payload['asks'] = [x for x in payload.pop('a')]
+                        payload['bids'] = [x for x in payload.pop('b')]
+
+                        self.__orderbook_update(payload)
+
 
     # PRIVATE ----------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -326,9 +348,12 @@ class BinanceClient(BaseClient):
 
         return funding_payments
 
+    def fit_amount(self, amount) -> None:
+        self.expect_amount_coin = float(
+            round(float(round(amount / self.step_size) * self.step_size), self.quantity_precision))
+
     async def __create_order(self, amount: float, price: float, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_ID=None) -> dict:
-        self.expect_amount_coin = float(round(float(round(amount / self.step_size) * self.step_size), self.quantity_precision))
         self.expect_price = float(round(float(round(price / self.tick_size) * self.tick_size), self.price_precision))
         url_path = '/fapi/v1/order?'
         query_string = f"timestamp={int(time.time() * 1000)}&symbol={self.symbol}&side={side}&type=LIMIT&" \
@@ -472,7 +497,8 @@ class BinanceClient(BaseClient):
                                 'status': status,
                                 'factual_price': 0 if status == OrderStatus.PROCESSING else float(data['o']['ap']),
                                 'factual_amount_coin': 0 if status == OrderStatus.PROCESSING else float(data['o']['z']),
-                                'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else float(data['o']['z']) * float(data['o']['ap']),
+                                'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else float(
+                                    data['o']['z']) * float(data['o']['ap']),
                                 'datetime_update': datetime.datetime.utcnow(),
                                 'ts_update': time.time() * 1000
                             }
@@ -483,16 +509,14 @@ class BinanceClient(BaseClient):
 
 if __name__ == '__main__':
     client = BinanceClient(Config.BINANCE, Config.LEVERAGE)
+    client.run_updater()
+    time.sleep(5)
+
 
     async def funding():
         async with aiohttp.ClientSession() as session:
-            print(await client.get_orderbook_by_symbol('BTCUSDT'))
-            # print(await client.get_historical_price(session, 'BTCUSDT', 1686297600000))
-            # print(await client.get_funding_history(session, 'BTCUSDT'))
-            # print(await client.get_funding_history(session, 'ETHUSDT'))
+            await client.create_order(0.017, 28962.0, 'buy', session)
 
 
-    # policy = asyncio.WindowsSelectorEventLoopPolicy()
     # asyncio.set_event_loop_policy(policy)
     asyncio.run(funding())
-
