@@ -159,8 +159,8 @@ class BinanceClient(BaseClient):
 
                         break
 
-                    elif order[1]:
-                        self.orderbook[self.symbol][side].append(order)
+            elif order[1]:
+                self.orderbook[self.symbol][side].append(order)
 
     def __orderbook_update(self, ob: dict) -> None:
         self.__check_ob(ob, 'asks')
@@ -168,8 +168,8 @@ class BinanceClient(BaseClient):
 
         self.orderbook.update({
             self.symbol: {
-                'asks': sorted(self.orderbook.get('asks', [])),
-                'bids': sorted(self.orderbook.get('bids', []))[::-1],
+                'asks': sorted(self.orderbook[self.symbol].get('asks', [])),
+                'bids': sorted(self.orderbook[self.symbol].get('bids', []))[::-1],
                 'timestamp': ob['E']
             }})
 
