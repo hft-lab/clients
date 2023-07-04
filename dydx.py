@@ -330,6 +330,7 @@ class DydxClient(BaseClient):
                                 data=json.dumps(remove_nones(data))) as resp:
             res = await resp.json()
             print(f'DYDX RESPONSE: {res}')
+            self.LAST_ORDER_ID = res.get('order', {'id': 'default'})['id']
             timestamp = 0000000000000
             if res.get('errors'):
                 status = ResponseStatus.ERROR
@@ -338,7 +339,6 @@ class DydxClient(BaseClient):
                 timestamp = int(
                     datetime.timestamp(datetime.strptime(res['order']['createdAt'], '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
                 status = ResponseStatus.SUCCESS
-                self.LAST_ORDER_ID = res['order']['id']
             else:
                 status = ResponseStatus.NO_CONNECTION
 

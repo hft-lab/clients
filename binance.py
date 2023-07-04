@@ -365,13 +365,13 @@ class BinanceClient(BaseClient):
         async with session.post(url=self.BASE_URL + url_path + query_string, headers=self.headers) as resp:
             res = await resp.json()
             print(f'BINANCE RESPONSE: {res}')
+            self.LAST_ORDER_ID = res.get('orderId', 'default')
             timestamp = 0000000000000
             if res.get('code') and -5023 < res['code'] < -1099:
                 status = ResponseStatus.ERROR
                 self.error_info = res
             elif res.get('status'):
                 status = ResponseStatus.SUCCESS
-                self.LAST_ORDER_ID = res['orderId']
                 timestamp = res['updateTime']
             else:
                 status = ResponseStatus.NO_CONNECTION
