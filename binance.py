@@ -83,8 +83,8 @@ class BinanceClient(BaseClient):
         self._get_position()
 
     async def create_order(self, price, side, session: aiohttp.ClientSession,
-                           expire: int = 100, client_ID: str = None) -> dict:
-        return await self.__create_order(price, side.upper(), session, expire, client_ID)
+                           expire: int = 100, client_id: str = None) -> dict:
+        return await self.__create_order(price, side.upper(), session, expire, client_id)
 
     def cancel_all_orders(self, orderID=None) -> dict:
         return self.__cancel_open_orders()
@@ -156,7 +156,6 @@ class BinanceClient(BaseClient):
                         else:
                             self.orderbook[self.symbol][side].pop(index)
 
-
                         break
 
             elif order[1]:
@@ -189,7 +188,6 @@ class BinanceClient(BaseClient):
                         payload['bids'] = [x for x in payload.pop('b')]
 
                         self.__orderbook_update(payload)
-
 
     # PRIVATE ----------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -356,11 +354,12 @@ class BinanceClient(BaseClient):
             round(float(round(amount / self.step_size) * self.step_size), self.quantity_precision))
 
     async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession,
-                             expire=5000, client_ID=None) -> dict:
+                             expire=5000, client_id=None) -> dict:
         self.expect_price = float(round(float(round(price / self.tick_size) * self.tick_size), self.price_precision))
         url_path = '/fapi/v1/order?'
         query_string = f"timestamp={int(time.time() * 1000)}&symbol={self.symbol}&side={side}&type=LIMIT&" \
-                       f"price={self.expect_price}&quantity={self.expect_amount_coin}&timeInForce=GTC&recvWindow=5000"
+                       f"price={self.expect_price}&quantity={self.expect_amount_coin}&timeInForce=GTC&" \
+                       f"recvWindow={time.time() * 1000 + expire}&newClientOrderId={client_id}"
         query_string += f'&signature={self._create_signature(query_string)}'
 
         async with session.post(url=self.BASE_URL + url_path + query_string, headers=self.headers) as resp:
@@ -443,7 +442,8 @@ class BinanceClient(BaseClient):
                             'id': uuid.uuid4(),
                             'datetime': datetime.datetime.fromtimestamp(order['time']),
                             'ts': int(order['time']),
-                            'context': 'web-interface' if not 'api_' in order['clientOrderId'] else order['clientOrderId'].split('_')[1],
+                            'context': 'web-interface' if not 'api_' in order['clientOrderId'] else
+                            order['clientOrderId'].split('_')[1],
                             'parent_id': '-',
                             'exchange_order_id': order['orderId'],
                             'type': order['timeInForce'],
@@ -468,8 +468,6 @@ class BinanceClient(BaseClient):
                 traceback.print_exc()
 
         return orders
-
-
 
     async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession) -> dict:
         url_path = "/fapi/v1/order"
