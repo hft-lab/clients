@@ -26,7 +26,7 @@ class BotState:
 class RabbitMqQueues:
     TELEGRAM = 'logger.event.send_to_telegram'
     DEALS_REPORT = 'logger.event.insert_deals_reports'
-    BALANCE_CHECK = 'logger.event.insert_balance_check'
+
     BALANCING_REPORTS = 'logger.event.insert_balancing_reports'
     PING = 'logger.event.insert_ping_logger'
     BALANCE_JUMP = 'logger.event.insert_balance_jumps'
@@ -41,6 +41,8 @@ class RabbitMqQueues:
     FUNDINGS = 'logger.event.insert_funding'
     UPDATE_ORDERS = 'logger.event.update_orders'
     SAVE_MISSED_ORDERS = 'logger.event.save_missed_orders'
+    CHECK_BALANCE = 'logger.event.check_balance'
+    BOT_CONFIG = 'logger.event.insert_bot_config'
 
     @staticmethod
     def get_exchange_name(routing_key: str):
