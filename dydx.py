@@ -52,6 +52,7 @@ class DydxClient(BaseClient):
         self.orders = {}
         self.fills = {}
         self.positions = {self.symbol: {}}
+        self.count_flag = False
 
         self.balance = {'free': 0, 'total': 0}
         self.orderbook = {}
@@ -266,7 +267,6 @@ class DydxClient(BaseClient):
 
             return orders
 
-
     async def create_order(self, price: float, side: str, session: aiohttp.ClientSession,
                            type: str = 'LIMIT', expire: int = 10000, client_id: str = None, expiration=None) -> dict:
 
@@ -427,6 +427,7 @@ class DydxClient(BaseClient):
         self.orderbook[symbol]['asks'] = sorted(self.orderbook[symbol]['asks'])
         self.orderbook[symbol]['bids'] = sorted(self.orderbook[symbol]['bids'])[::-1]
         self.orderbook[symbol].update({'timestamp': time.time()})
+        self.count_flag = True
 
     def _append_new_order(self, ob, side):
         symbol = ob['id']
@@ -462,10 +463,15 @@ class DydxClient(BaseClient):
         self.orderbook[symbol]['timestamp'] = time.time()
 
     def _channel_orderbook_update(self, ob: dict):
+        symbol = ob['id']
+        last_ob = self.orderbook[symbol]
         if len(ob['contents']['bids']):
             self._append_new_order(ob, 'bids')
         if len(ob['contents']['asks']):
             self._append_new_order(ob, 'asks')
+        if last_ob['asks'][0][0] != self.orderbook[symbol]['asks'][0][0] \
+                or last_ob['bids'][0][0] != self.orderbook[symbol]['bids'][0][0]:
+            self.count_flag = True
 
     def _check_for_error(self):
         orderbook = self.orderbook[self.symbol]
@@ -690,6 +696,7 @@ class DydxClient(BaseClient):
                     self._updates += 1
                     if obj['type'] == 'subscribed':
                         self._first_orderbook_update(obj)
+                        self.count_flag = True
                     elif obj['type'] == 'channel_data':
                         self._channel_orderbook_update(obj)
                 elif obj['channel'] == 'v3_accounts':

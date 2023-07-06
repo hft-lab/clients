@@ -30,6 +30,7 @@ class BinanceClient(BaseClient):
         self.__secret_key = keys['secret_key']
         self.headers = {'X-MBX-APIKEY': self.__api_key}
         self.symbol_is_active = False
+        self.count_flag = False
         self.error_info = None
         self.quantity_precision = 0
         self.tick_size = None
@@ -162,6 +163,7 @@ class BinanceClient(BaseClient):
                 self.orderbook[self.symbol][side].append(order)
 
     def __orderbook_update(self, ob: dict) -> None:
+        last_ob = self.orderbook[self.symbol]
         self.__check_ob(ob, 'asks')
         self.__check_ob(ob, 'bids')
 
@@ -171,6 +173,9 @@ class BinanceClient(BaseClient):
                 'bids': sorted(self.orderbook[self.symbol].get('bids', []))[::-1],
                 'timestamp': ob['E']
             }})
+        if last_ob['asks'][0][0] != self.orderbook[self.symbol]['asks'][0][0] \
+                or last_ob['bids'][0][0] != self.orderbook[self.symbol]['bids'][0][0]:
+            self.count_flag = True
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
         async with session.ws_connect(self.BASE_WS + self.symbol.lower()) as ws:
