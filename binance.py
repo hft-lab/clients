@@ -192,6 +192,7 @@ class BinanceClient(BaseClient):
             self.__check_ob(ob, 'bids')
         if last_ob['asks'][0][0] != self.orderbook[self.symbol]['asks'][0][0] \
                 or last_ob['bids'][0][0] != self.orderbook[self.symbol]['bids'][0][0]:
+            self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
             self.count_flag = True
         # print(f"\nBINANCE NEW OB APPEND TIME: {time.time() - time_start} sec\n{self.orderbook[self.symbol]}\n")
 
@@ -435,7 +436,8 @@ class BinanceClient(BaseClient):
                 if 'asks' in res and 'bids' in res:
                     self.orderbook[symbol] = {
                         'asks': [[float(x[0]), float(x[1])] for x in res['asks']][:10],
-                        'bids': [[float(x[0]), float(x[1])] for x in res['bids']][:10]
+                        'bids': [[float(x[0]), float(x[1])] for x in res['bids']][:10],
+                        'timestamp': time.time()
                     }
 
     async def get_all_orders(self, symbol: str, session: aiohttp.ClientSession) -> list:
