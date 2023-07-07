@@ -209,8 +209,10 @@ class BinanceClient(BaseClient):
                     if payload.get('e') == 'depthUpdate':
                         payload['asks'] = [x for x in payload.get('a', [])][:7]
                         payload['bids'] = [x for x in payload.get('b', [])][::-1][:7]
-
-                        self.__orderbook_update(payload)
+                        try:
+                            self.__orderbook_update(payload)
+                        except:
+                            pass
 
     # PRIVATE ----------------------------------------------------------------------------------------------------------
     @staticmethod
