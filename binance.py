@@ -77,6 +77,7 @@ class BinanceClient(BaseClient):
         self.bal_check = threading.Thread(target=self._balance)
         self.req_check = threading.Thread(target=self._check_symbol_value)
         self.lk_check = threading.Thread(target=self._ping_listen_key)
+        threading.Thread(target=self.get_orderbook_by_symbol)
 
         self.balance['total'], self.balance['avl_balance'] = self._get_balance()
 
@@ -148,34 +149,51 @@ class BinanceClient(BaseClient):
             time.sleep(5)
 
     def __check_ob(self, ob: dict, side: str) -> None:
-        for order in [[float(x[0]), float(x[1])] for x in ob.get(side, [])]:
-            if order[0] in [x[0] for x in self.orderbook[self.symbol][side]]:
-                for index in range(len(self.orderbook[self.symbol][side])):
-                    if self.orderbook[self.symbol][side][index][0] == order[0]:
-                        if order[1]:
-                            self.orderbook[self.symbol][side][index] = order
+        if not len(self.orderbook[self.symbol][side]):
+            for new_order in [[float(x[0]), float(x[1])] for x in ob.get(side, [])]:
+                if new_order[1] > 0:
+                    self.orderbook[self.symbol][side].append(new_order)
+                    break
+        for new_order in [[float(x[0]), float(x[1])] for x in ob.get(side, [])]:
+            index = 0
+            if side == 'bids':
+                for ob_order in self.orderbook[self.symbol][side]:
+                    if new_order[0] < ob_order[0]:
+                        index += 1
+                    elif new_order[0] == ob_order[0]:
+                        if new_order[1] > 0:
+                            self.orderbook[self.symbol][side][index] = new_order
                         else:
                             self.orderbook[self.symbol][side].pop(index)
-
+                        break
+                    elif new_order[0] > ob_order[0] and new_order[1] > 0:
+                        self.orderbook[self.symbol][side].insert(index, new_order)
+                        break
+            elif side == 'asks':
+                for ob_order in self.orderbook[self.symbol][side]:
+                    if new_order[0] > ob_order[0]:
+                        index += 1
+                    elif new_order[0] == ob_order[0]:
+                        if new_order[1] > 0:
+                            self.orderbook[self.symbol][side][index] = new_order
+                        else:
+                            self.orderbook[self.symbol][side].pop(index)
+                        break
+                    elif new_order[0] < ob_order[0] and new_order[1] > 0:
+                        self.orderbook[self.symbol][side].insert(index, new_order)
                         break
 
-            elif order[1]:
-                self.orderbook[self.symbol][side].append(order)
-
     def __orderbook_update(self, ob: dict) -> None:
+        # time_start = time.time()
         last_ob = self.orderbook[self.symbol]
-        self.__check_ob(ob, 'asks')
-        self.__check_ob(ob, 'bids')
-
-        self.orderbook.update({
-            self.symbol: {
-                'asks': sorted(self.orderbook[self.symbol].get('asks', [])),
-                'bids': sorted(self.orderbook[self.symbol].get('bids', []))[::-1],
-                'timestamp': ob['E']
-            }})
+        if ob.get('asks'):
+            self.__check_ob(ob, 'asks')
+        if ob.get('bids'):
+            self.__check_ob(ob, 'bids')
         if last_ob['asks'][0][0] != self.orderbook[self.symbol]['asks'][0][0] \
                 or last_ob['bids'][0][0] != self.orderbook[self.symbol]['bids'][0][0]:
             self.count_flag = True
+        # print(f"\nBINANCE NEW OB APPEND TIME: {time.time() - time_start} sec\n{self.orderbook[self.symbol]}\n")
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
         async with session.ws_connect(self.BASE_WS + self.symbol.lower()) as ws:
@@ -189,8 +207,8 @@ class BinanceClient(BaseClient):
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     payload = orjson.loads(msg.data)
                     if payload.get('e') == 'depthUpdate':
-                        payload['asks'] = [x for x in payload.pop('a')]
-                        payload['bids'] = [x for x in payload.pop('b')]
+                        payload['asks'] = [x for x in payload.get('a', [])][:7]
+                        payload['bids'] = [x for x in payload.get('b', [])][::-1][:7]
 
                         self.__orderbook_update(payload)
 
@@ -400,11 +418,11 @@ class BinanceClient(BaseClient):
         res = requests.delete(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers).json()
         return res
 
-    async def get_orderbook_by_symbol(self, symbol) -> None:
+    async def get_orderbook_by_symbol(self) -> None:
         async with aiohttp.ClientSession() as session:
             url_path = "/fapi/v1/depth"
             payload = {
-                "symbol": symbol,
+                "symbol": self.symbol,
             }
 
             query_string = self._prepare_query(payload)
@@ -413,7 +431,7 @@ class BinanceClient(BaseClient):
                 res = await resp.json()
 
                 if 'asks' in res and 'bids' in res:
-                    self.orderbook[symbol] = {
+                    self.orderbook[self.symbol] = {
                         'asks': [[float(x[0]), float(x[1])] for x in res['asks']],
                         'bids': [[float(x[0]), float(x[1])] for x in res['bids']]
                     }
@@ -576,5 +594,5 @@ if __name__ == '__main__':
     client.run_updater()
 
     while True:
-        client.get_orderbook()
+        # client.get_orderbook()
         time.sleep(1)

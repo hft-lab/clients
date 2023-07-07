@@ -463,6 +463,7 @@ class DydxClient(BaseClient):
         self.orderbook[symbol]['timestamp'] = time.time()
 
     def _channel_orderbook_update(self, ob: dict):
+        # time_start = time.time()
         symbol = ob['id']
         last_ob = self.orderbook[symbol]
         if len(ob['contents']['bids']):
@@ -472,6 +473,7 @@ class DydxClient(BaseClient):
         if last_ob['asks'][0][0] != self.orderbook[symbol]['asks'][0][0] \
                 or last_ob['bids'][0][0] != self.orderbook[symbol]['bids'][0][0]:
             self.count_flag = True
+        # print(f"\n\nDYDX NEW OB APPEND TIME: {time.time() - time_start} sec\n\n")
 
     def _check_for_error(self):
         orderbook = self.orderbook[self.symbol]
