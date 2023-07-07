@@ -77,7 +77,7 @@ class BinanceClient(BaseClient):
         self.bal_check = threading.Thread(target=self._balance)
         self.req_check = threading.Thread(target=self._check_symbol_value)
         self.lk_check = threading.Thread(target=self._ping_listen_key)
-        threading.Thread(target=self.get_orderbook_by_symbol)
+        asyncio.run(self.get_orderbook_by_symbol(self.symbol))
 
         self.balance['total'], self.balance['avl_balance'] = self._get_balance()
 
@@ -184,7 +184,7 @@ class BinanceClient(BaseClient):
                         break
 
     def __orderbook_update(self, ob: dict) -> None:
-        # time_start = time.time()
+        time_start = time.time()
         last_ob = self.orderbook[self.symbol]
         if ob.get('asks'):
             self.__check_ob(ob, 'asks')
@@ -193,7 +193,7 @@ class BinanceClient(BaseClient):
         if last_ob['asks'][0][0] != self.orderbook[self.symbol]['asks'][0][0] \
                 or last_ob['bids'][0][0] != self.orderbook[self.symbol]['bids'][0][0]:
             self.count_flag = True
-        # print(f"\nBINANCE NEW OB APPEND TIME: {time.time() - time_start} sec\n{self.orderbook[self.symbol]}\n")
+        print(f"\nBINANCE NEW OB APPEND TIME: {time.time() - time_start} sec\n{self.orderbook[self.symbol]}\n")
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
         async with session.ws_connect(self.BASE_WS + self.symbol.lower()) as ws:
@@ -207,8 +207,8 @@ class BinanceClient(BaseClient):
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     payload = orjson.loads(msg.data)
                     if payload.get('e') == 'depthUpdate':
-                        payload['asks'] = [x for x in payload.get('a', [])][:7]
-                        payload['bids'] = [x for x in payload.get('b', [])][::-1][:7]
+                        payload['asks'] = [x for x in payload.get('a', [])][:10]
+                        payload['bids'] = [x for x in payload.get('b', [])][::-1][:10]
                         try:
                             self.__orderbook_update(payload)
                         except:
@@ -420,11 +420,11 @@ class BinanceClient(BaseClient):
         res = requests.delete(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers).json()
         return res
 
-    async def get_orderbook_by_symbol(self) -> None:
+    async def get_orderbook_by_symbol(self, symbol) -> None:
         async with aiohttp.ClientSession() as session:
             url_path = "/fapi/v1/depth"
             payload = {
-                "symbol": self.symbol,
+                "symbol": symbol,
             }
 
             query_string = self._prepare_query(payload)
@@ -433,9 +433,9 @@ class BinanceClient(BaseClient):
                 res = await resp.json()
 
                 if 'asks' in res and 'bids' in res:
-                    self.orderbook[self.symbol] = {
-                        'asks': [[float(x[0]), float(x[1])] for x in res['asks']],
-                        'bids': [[float(x[0]), float(x[1])] for x in res['bids']]
+                    self.orderbook[symbol] = {
+                        'asks': [[float(x[0]), float(x[1])] for x in res['asks']][:10],
+                        'bids': [[float(x[0]), float(x[1])] for x in res['bids']][:10]
                     }
 
     async def get_all_orders(self, symbol: str, session: aiohttp.ClientSession) -> list:
@@ -595,6 +595,11 @@ if __name__ == '__main__':
     client = BinanceClient(Config.BINANCE, Config.LEVERAGE)
     client.run_updater()
 
+    # async def funding():
+    #     async with aiohttp.ClientSession() as session:
+    #         await client.get_orderbook_by_symbol(client.symbol)
+    #
+    # asyncio.run(funding())
+
     while True:
-        # client.get_orderbook()
         time.sleep(1)
