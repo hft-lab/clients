@@ -203,16 +203,15 @@ class BinanceClient(BaseClient):
                 'method': 'SUBSCRIBE',
                 'params': [f"{self.symbol.lower()}@depth@100ms"]
             }).decode('utf-8'))
-
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     payload = orjson.loads(msg.data)
                     if payload.get('e') == 'depthUpdate':
-                        payload['asks'] = [x for x in payload.get('a', [])][:10]
-                        payload['bids'] = [x for x in payload.get('b', [])][::-1][:10]
+                        payload['asks'] = [x for x in payload.get('a', [])]
+                        payload['bids'] = [x for x in payload.get('b', [])][::-1]
                         try:
                             self.__orderbook_update(payload)
-                        except:
+                        except Exception:
                             pass
 
     # PRIVATE ----------------------------------------------------------------------------------------------------------
@@ -435,8 +434,8 @@ class BinanceClient(BaseClient):
 
                 if 'asks' in res and 'bids' in res:
                     self.orderbook[symbol] = {
-                        'asks': [[float(x[0]), float(x[1])] for x in res['asks']][:10],
-                        'bids': [[float(x[0]), float(x[1])] for x in res['bids']][:10],
+                        'asks': [[float(x[0]), float(x[1])] for x in res['asks']],
+                        'bids': [[float(x[0]), float(x[1])] for x in res['bids']],
                         'timestamp': time.time()
                     }
 
@@ -605,3 +604,4 @@ if __name__ == '__main__':
 
     while True:
         time.sleep(1)
+        print(client.get_orderbook())
