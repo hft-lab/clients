@@ -184,7 +184,6 @@ class BinanceClient(BaseClient):
                         break
 
     def __orderbook_update(self, ob: dict) -> None:
-        time_start = time.time()
         last_ob = self.orderbook[self.symbol]
         if ob.get('asks'):
             self.__check_ob(ob, 'asks')
@@ -194,7 +193,6 @@ class BinanceClient(BaseClient):
                 or last_ob['bids'][0][0] != self.orderbook[self.symbol]['bids'][0][0]:
             self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
             self.count_flag = True
-        print(f"\nBINANCE NEW OB APPEND TIME: {time.time() - time_start} sec\n")
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
         async with session.ws_connect(self.BASE_WS + self.symbol.lower()) as ws:
