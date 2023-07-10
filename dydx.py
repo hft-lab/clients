@@ -111,8 +111,9 @@ class DydxClient(BaseClient):
         return balance
 
     def fit_amount(self, amount) -> None:
-        self.expect_amount_coin = float(round(float(round(amount / self.step_size, self.quantity_precision) * self.step_size),
-                               self.quantity_precision))
+        self.expect_amount_coin = float(
+            round(float(round(amount / self.step_size, self.quantity_precision) * self.step_size),
+                  self.quantity_precision))
 
     def fit_price(self, price):
         if '.' in str(self.tick_size):
@@ -202,7 +203,6 @@ class DydxClient(BaseClient):
                 }
             else:
                 print(res)
-
 
     async def get_all_orders(self, symbol, session) -> list:
         data = {}
@@ -546,9 +546,13 @@ class DydxClient(BaseClient):
                     'exchange_order_id': order['id'],
                     'exchange': self.EXCHANGE_NAME,
                     'status': status,
-                    'factual_price': 0 if status == OrderStatus.PROCESSING else float(order['price']),
-                    'factual_amount_coin': 0 if status == OrderStatus.PROCESSING else executed_size,
-                    'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else executed_size * float(order['price']),
+                    'factual_price': 0 if status in [OrderStatus.PROCESSING, OrderStatus.NOT_EXECUTED] else float(
+                        order['price']),
+                    'factual_amount_coin': 0 if status in [OrderStatus.PROCESSING,
+                                                           OrderStatus.NOT_EXECUTED] else executed_size,
+                    'factual_amount_usd': 0 if status in [OrderStatus.PROCESSING,
+                                                          OrderStatus.NOT_EXECUTED] else executed_size * float(
+                        order['price']),
                     'datetime_update': datetime.utcnow(),
                     'ts_update': time.time() * 1000
                 }
@@ -829,5 +833,6 @@ if __name__ == '__main__':
         async with aiohttp.ClientSession() as session:
             client.fit_amount(0.017)
             await client.create_order(0.002, 28962.0, 'buy', session)
+
 
     asyncio.run(funding())

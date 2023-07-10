@@ -77,10 +77,10 @@ class BinanceClient(BaseClient):
         self.bal_check = threading.Thread(target=self._balance)
         self.req_check = threading.Thread(target=self._check_symbol_value)
         self.lk_check = threading.Thread(target=self._ping_listen_key)
-        asyncio.run(self.get_orderbook_by_symbol(self.symbol))
 
         self.balance['total'], self.balance['avl_balance'] = self._get_balance()
 
+        self._get_orderbook_by_symbol()
         self._get_listen_key()
         self._get_position()
 
@@ -111,7 +111,6 @@ class BinanceClient(BaseClient):
         self.bal_check.start()
         self.wsd_public.start()
         self.wsu_private.start()
-        # self.wsd_public.join()
 
     def _run_forever(self, type, loop) -> None:
         while True:
@@ -184,16 +183,21 @@ class BinanceClient(BaseClient):
                         break
 
     def __orderbook_update(self, ob: dict) -> None:
-        last_ob_ask = self.orderbook[self.symbol]['asks'][0][0]
-        last_ob_bid = self.orderbook[self.symbol]['bids'][0][0]
-        if ob.get('asks'):
-            self.__check_ob(ob, 'asks')
-        if ob.get('bids'):
-            self.__check_ob(ob, 'bids')
-        if last_ob_ask != self.orderbook[self.symbol]['asks'][0][0] \
-                or last_ob_bid != self.orderbook[self.symbol]['bids'][0][0]:
-            self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
-            self.count_flag = True
+        try:
+            last_ob_ask = self.orderbook[self.symbol]['asks'][0][0]
+            last_ob_bid = self.orderbook[self.symbol]['bids'][0][0]
+            if ob.get('asks'):
+                self.__check_ob(ob, 'asks')
+            if ob.get('bids'):
+                self.__check_ob(ob, 'bids')
+            if last_ob_ask != self.orderbook[self.symbol]['asks'][0][0] \
+                    or last_ob_bid != self.orderbook[self.symbol]['bids'][0][0]:
+                self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
+                self.count_flag = True
+        except:
+            self.count_flag = False
+            print(self.orderbook)
+            traceback.print_exc()
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
         async with session.ws_connect(self.BASE_WS + self.symbol.lower()) as ws:
@@ -202,16 +206,14 @@ class BinanceClient(BaseClient):
                 'method': 'SUBSCRIBE',
                 'params': [f"{self.symbol.lower()}@depth@100ms"]
             }).decode('utf-8'))
+
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     payload = orjson.loads(msg.data)
                     if payload.get('e') == 'depthUpdate':
                         payload['asks'] = [x for x in payload.get('a', [])]
                         payload['bids'] = [x for x in payload.get('b', [])][::-1]
-                        try:
-                            self.__orderbook_update(payload)
-                        except Exception:
-                            pass
+                        self.__orderbook_update(payload)
 
     # PRIVATE ----------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -419,24 +421,19 @@ class BinanceClient(BaseClient):
         res = requests.delete(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers).json()
         return res
 
-    async def get_orderbook_by_symbol(self, symbol) -> None:
-        async with aiohttp.ClientSession() as session:
-            url_path = "/fapi/v1/depth"
-            payload = {
-                "symbol": symbol,
+    def _get_orderbook_by_symbol(self) -> None:
+        url_path = "/fapi/v1/depth"
+        payload = {"symbol": self.symbol}
+
+        query_string = self._prepare_query(payload)
+        res = requests.get(url=self.BASE_URL + url_path + "?" + query_string, headers=self.headers).json()
+
+        if 'asks' in res and 'bids' in res:
+            self.orderbook[self.symbol] = {
+                'asks': [[float(x[0]), float(x[1])] for x in res['asks']],
+                'bids': [[float(x[0]), float(x[1])] for x in res['bids']],
+                'timestamp': time.time() * 1000
             }
-
-            query_string = self._prepare_query(payload)
-
-            async with session.get(url=self.BASE_URL + url_path + "?" + query_string, headers=self.headers) as resp:
-                res = await resp.json()
-
-                if 'asks' in res and 'bids' in res:
-                    self.orderbook[symbol] = {
-                        'asks': [[float(x[0]), float(x[1])] for x in res['asks']],
-                        'bids': [[float(x[0]), float(x[1])] for x in res['bids']],
-                        'timestamp': time.time()
-                    }
 
     async def get_all_orders(self, symbol: str, session: aiohttp.ClientSession) -> list:
         url_path = "/fapi/v1/allOrders"
@@ -579,9 +576,13 @@ class BinanceClient(BaseClient):
                                 'exchange_order_id': data['o']['i'],
                                 'exchange': self.EXCHANGE_NAME,
                                 'status': status,
-                                'factual_price': 0 if status == OrderStatus.PROCESSING else float(data['o']['ap']),
-                                'factual_amount_coin': 0 if status == OrderStatus.PROCESSING else float(data['o']['z']),
-                                'factual_amount_usd': 0 if status == OrderStatus.PROCESSING else float(
+                                'factual_price': 0 if status in [OrderStatus.PROCESSING,
+                                                                 OrderStatus.NOT_EXECUTED] else float(data['o']['ap']),
+                                'factual_amount_coin': 0 if status in [OrderStatus.PROCESSING,
+                                                                       OrderStatus.NOT_EXECUTED] else float(
+                                    data['o']['z']),
+                                'factual_amount_usd': 0 if status in [OrderStatus.PROCESSING,
+                                                                      OrderStatus.NOT_EXECUTED] else float(
                                     data['o']['z']) * float(data['o']['ap']),
                                 'datetime_update': datetime.datetime.utcnow(),
                                 'ts_update': time.time() * 1000

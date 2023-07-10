@@ -5,6 +5,7 @@ import hmac
 
 import threading
 import time
+from datetime import datetime
 
 from urllib.parse import urlencode
 
@@ -13,27 +14,36 @@ import orjson
 import requests
 
 from core.base_client import BaseClient
-from clients.enums import ConnectMethodEnum, ResponseStatus
+from clients.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, ClientsOrderStatuses
 
 
 class KrakenClient(BaseClient):
     BASE_WS = 'wss://futures.kraken.com/ws/v1'
     BASE_URL = 'https://futures.kraken.com'
     EXCHANGE_NAME = 'KRAKEN'
+    LAST_ORDER_ID = None
 
     def __init__(self, keys, leverage):
-        self.taker_fee = 0.00036
+        self.expect_amount_coin = None
+        self.taker_fee = 0.0005
         self.leverage = leverage
         self.symbol = keys['symbol']
         self.__api_key = keys['api_key']
         self.__secret_key = keys['secret_key']
         self.__last_challenge = None
-
+        self.orders = {}
         self.step_size = None
         self.tick_size = None
         self.price_precision = 0
         self.quantity_precision = 0
-
+        self.count_flag = False
+        self.error_info = None
+        self.old_orderbook = {
+            self.symbol: {
+                'asks': [[1, 2]],
+                'bids': [[1, 2]]
+            }
+        }
         self.balance = {
             'total': 0.0,
         }
@@ -52,11 +62,13 @@ class KrakenClient(BaseClient):
         }
         self.orderbook = {
             self.symbol: {
-                'sell': [],
-                'buy': [],
+                'asks': [],
+                'bids': [],
                 'timestamp': 0
             }
         }
+        self.__get_orderbook()
+
         self._loop_public = asyncio.new_event_loop()
         self._loop_private = asyncio.new_event_loop()
         self.wsd_public = threading.Thread(target=self._run_forever,
@@ -67,9 +79,9 @@ class KrakenClient(BaseClient):
     def get_available_balance(self, side: str) -> float:
         return self.__get_available_balance(side)
 
-    async def create_order(self, amount, price, side, session: aiohttp.ClientSession,
-                           expire: int = 5000, client_ID: str = None) -> dict:
-        return await self.__create_order(amount, price, side.upper(), session, expire, client_ID)
+    async def create_order(self, price, side, session: aiohttp.ClientSession,
+                           expire: int = 5000, client_id: str = None) -> dict:
+        return await self.__create_order(price, side.upper(), session, expire, client_id)
 
     def cancel_all_orders(self, orderID=None) -> dict:
         return self.__cancel_open_orders()
@@ -87,8 +99,13 @@ class KrakenClient(BaseClient):
 
         snap = self.orderbook[self.symbol]
         orderbook[self.symbol] = {'timestamp': self.orderbook[self.symbol]['timestamp']}
-        orderbook[self.symbol]['asks'] = [[x, snap['sell'][x]] for x in sorted(snap['sell'])[:5]]
-        orderbook[self.symbol]['bids'] = [[x, snap['buy'][x]] for x in sorted(snap['buy'], reverse=True)[:5]]
+        orderbook[self.symbol]['asks'] = [[x, snap['sell'][x]] for x in sorted(snap['sell'])[:8]]
+        orderbook[self.symbol]['bids'] = [[x, snap['buy'][x]] for x in sorted(snap['buy'], reverse=True)[:8]]
+
+        if self.old_orderbook[self.symbol]['asks'][0][0] != orderbook[self.symbol]['asks'][0][0] \
+                or self.old_orderbook[self.symbol]['bids'][0][0] != orderbook[self.symbol]['bids'][0][0]:
+            self.count_flag = True
+            self.old_orderbook = orderbook
 
         return orderbook
 
@@ -110,6 +127,13 @@ class KrakenClient(BaseClient):
                 await self._user_balance_getter(session)
 
     # PUBLIC -----------------------------------------------------------------------------------------------------------
+
+    def __get_orderbook(self):
+        url_path = "/derivatives/api/v3/orderbook"
+
+        res = requests.get(url=self.BASE_URL + url_path + f'?symbol={self.symbol}').json()
+        self.orderbook[self.symbol]['bids'] = res['orderBook']['bids']
+        self.orderbook[self.symbol]['asks'] = res['orderBook']['asks']
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
 
@@ -139,7 +163,8 @@ class KrakenClient(BaseClient):
                             del res[payload['price']]
                         else:
                             self.orderbook[self.symbol][payload['side']][payload['price']] = payload['qty']
-                            self.orderbook[self.symbol]['timestamp'] = payload['timestamp']
+
+                        self.orderbook[self.symbol]['timestamp'] = payload['timestamp']
 
     # PRIVATE ----------------------------------------------------------------------------------------------------------
     def _sign_message(self, api_path: str, data: dict) -> str:
@@ -205,7 +230,7 @@ class KrakenClient(BaseClient):
         }
         return requests.post(headers=headers, url=self.BASE_URL + url_path, data=post_string).json()
 
-    def fit_amount(self, amount):
+    def fit_amount(self, amount) -> None:
         if not self.quantity_precision:
             if '.' in str(self.step_size):
                 round_amount_len = len(str(self.step_size).split('.')[1])
@@ -215,17 +240,18 @@ class KrakenClient(BaseClient):
         else:
             amount = str(float(round(float(round(amount / self.step_size) * self.step_size), self.quantity_precision)))
 
-        return amount
+        self.expect_amount_coin = float(amount)
 
-    async def __create_order(self, amount: float, price: float, side: str, session: aiohttp.ClientSession,
-                             expire=5000, client_ID=None) -> dict:
+    async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession,
+                             expire=5000, client_id=None) -> dict:
         nonce = str(int(time.time() * 1000))
         url_path = "/derivatives/api/v3/sendorder"
+        self.expect_price = float(round(float(round(price / self.tick_size) * self.tick_size), self.price_precision))
         params = {
             "orderType": "lmt",
-            "limitPrice": float(round(float(round(price / self.tick_size) * self.tick_size), self.price_precision)),
+            "limitPrice": self.expect_price,
             "side": side.lower(),
-            "size": amount,
+            "size": self.expect_amount_coin,
             "symbol": self.symbol
         }
         post_string = "&".join([f"{key}={params[key]}" for key in sorted(params)])
@@ -242,21 +268,24 @@ class KrakenClient(BaseClient):
                 url=self.BASE_URL + url_path + '?' + post_string, headers=headers, data=post_string
         ) as resp:
             response = await resp.json()
+            print(f'KRAKEN RESPONSE: {response}')
+            self.LAST_ORDER_ID = response.get('sendStatus', {}).get('order_id', 'default')
             try:
                 timestamp = response['sendStatus']['orderEvents'][0]['orderPriorExecution']['timestamp']
-                if response.get('sendStatus').get('status'):
+                timestamp = int(datetime.timestamp(datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
+                if response.get('sendStatus', {}).get('status'):
                     status = ResponseStatus.SUCCESS
+
             except:
                 timestamp = 0000000000000
                 status = ResponseStatus.ERROR
-
+                self.error_info = response
 
             return {
                 'exchange_name': self.EXCHANGE_NAME,
                 'timestamp': timestamp,
                 'status': status
             }
-
 
     def _get_sign_challenge(self, challenge: str) -> str:
         sha256_hash = hashlib.sha256()
@@ -293,6 +322,14 @@ class KrakenClient(BaseClient):
                                 "signed_challenge": self._get_sign_challenge(self.__last_challenge)
                             }).decode('utf-8'))
 
+                            await ws.send_str(orjson.dumps({
+                                "event": "subscribe",
+                                "feed": "open_orders",
+                                "api_key": self.__api_key,
+                                'original_challenge': self.__last_challenge,
+                                "signed_challenge": self._get_sign_challenge(self.__last_challenge)
+                            }).decode('utf-8'))
+
                         elif msg_data.get('feed') in ['balances']:
                             if msg_data.get('flex_futures'):
                                 self.balance['total'] = msg_data['flex_futures']['balance_value']
@@ -308,6 +345,36 @@ class KrakenClient(BaseClient):
                                     'realized_pnl_usd': 0,
                                     'lever': self.leverage
                                 }})
+                        elif msg_data.get('feed') == 'open_orders' and msg_data.get('order'):
+                            order = msg_data['order']
+                            self.last_price['sell' if order['direction'] else 'buy'] = float(order['limit_price'])
+                            status = OrderStatus.PROCESSING
 
+                            if msg_data['reason'] == 'full_fill':
+                                status = OrderStatus.FULLY_EXECUTED
+                            elif msg_data['reason'] == 'partial_fill':
+                                status = OrderStatus.PARTIALLY_EXECUTED
+                            elif msg_data['reason'] in ['cancelled_by_user', 'cancelled_by_admin', 'not_enough_margin']:
+                                status = OrderStatus.NOT_EXECUTED
 
+                            if status:
+                                price = 0 if status in [OrderStatus.PROCESSING, OrderStatus.NOT_EXECUTED] \
+                                    else order['limit_price']
+                                amount = 0 if status in [OrderStatus.PROCESSING, OrderStatus.NOT_EXECUTED] \
+                                    else order['filled']
+                                result = {
+                                    'exchange_order_id': order['order_id'],
+                                    'exchange': self.EXCHANGE_NAME,
+                                    'status': status,
+                                    'factual_price': price,
+                                    'factual_amount_coin': amount,
+                                    'factual_amount_usd': 0 if status in [OrderStatus.PROCESSING,
+                                                                          OrderStatus.NOT_EXECUTED] \
+                                        else amount * price,
+                                    'datetime_update': datetime.utcnow(),
+                                    'ts_update': time.time() * 1000
+                                }
 
+                                if self.symbol.upper() == order['instrument'].upper() \
+                                        and result['status'] != OrderStatus.PROCESSING:
+                                    self.orders.update({order['order_id']: result})
