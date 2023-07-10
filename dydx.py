@@ -465,13 +465,14 @@ class DydxClient(BaseClient):
     def _channel_orderbook_update(self, ob: dict):
         # time_start = time.time()
         symbol = ob['id']
-        last_ob = self.orderbook[symbol]
+        last_ob_ask = self.orderbook[symbol]['asks'][0][0]
+        last_ob_bid = self.orderbook[symbol]['bids'][0][0]
         if len(ob['contents']['bids']):
             self._append_new_order(ob, 'bids')
         if len(ob['contents']['asks']):
             self._append_new_order(ob, 'asks')
-        if last_ob['asks'][0][0] != self.orderbook[symbol]['asks'][0][0] \
-                or last_ob['bids'][0][0] != self.orderbook[symbol]['bids'][0][0]:
+        if last_ob_ask != self.orderbook[symbol]['asks'][0][0] \
+                or last_ob_bid != self.orderbook[symbol]['bids'][0][0]:
             self.count_flag = True
         # print(f"\n\nDYDX NEW OB APPEND TIME: {time.time() - time_start} sec\n\n")
 

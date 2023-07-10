@@ -184,13 +184,14 @@ class BinanceClient(BaseClient):
                         break
 
     def __orderbook_update(self, ob: dict) -> None:
-        last_ob = self.orderbook[self.symbol]
+        last_ob_ask = self.orderbook[self.symbol]['asks'][0][0]
+        last_ob_bid = self.orderbook[self.symbol]['bids'][0][0]
         if ob.get('asks'):
             self.__check_ob(ob, 'asks')
         if ob.get('bids'):
             self.__check_ob(ob, 'bids')
-        if last_ob['asks'][0][0] != self.orderbook[self.symbol]['asks'][0][0] \
-                or last_ob['bids'][0][0] != self.orderbook[self.symbol]['bids'][0][0]:
+        if last_ob_ask != self.orderbook[self.symbol]['asks'][0][0] \
+                or last_ob_bid != self.orderbook[self.symbol]['bids'][0][0]:
             self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
             self.count_flag = True
 
