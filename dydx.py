@@ -81,11 +81,11 @@ class DydxClient(BaseClient):
         self.time_sent = time.time()
 
         self.quantity_precision = len(str(self.step_size).split('.')[1]) if '.' in str(self.step_size) else 1
-        self.start_positions()
+        self.get_position()
 
         self.wst = threading.Thread(target=self._run_ws_forever, daemon=True)
 
-    def start_positions(self):
+    def get_position(self):
         for pos in self.client.private.get_positions().data.get('positions', []):
             if pos['status'] != 'CLOSED':
                 self.positions.update({pos['market']: {
@@ -724,11 +724,11 @@ class DydxClient(BaseClient):
                             # print(obj['contents']['account'])
                             # print()
 
-    async def get_orderbook_by_symbol(self, symbol) -> None:
+    async def get_orderbook_by_symbol(self) -> None:
         async with aiohttp.ClientSession() as session:
             data = {}
             now_iso_string = generate_now_iso()
-            request_path = f'/v3/orderbook/{symbol}'
+            request_path = f'/v3/orderbook/{self.symbol}'
             signature = self.client.private.sign(
                 request_path=request_path,
                 method='GET',
@@ -748,7 +748,7 @@ class DydxClient(BaseClient):
                 res = await resp.json()
 
                 if 'asks' in res and 'bids' in res:
-                    self.orderbook[symbol] = {
+                    self.orderbook[self.symbol] = {
                         'asks': [[float(x['price']), float(x['size'])] for x in res['asks']],
                         'bids': [[float(x['price']), float(x['size'])] for x in res['bids']]
                     }

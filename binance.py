@@ -62,6 +62,7 @@ class BinanceClient(BaseClient):
                 'timestamp': 0
             }
         }
+        self._check_symbol_value()
         self.expect_amount_coin = 0
         self.expect_price = 0
 
@@ -75,14 +76,13 @@ class BinanceClient(BaseClient):
                                             args=[ConnectMethodEnum.PRIVATE, self._loop_private],
                                             daemon=True)
         self.bal_check = threading.Thread(target=self._balance)
-        self.req_check = threading.Thread(target=self._check_symbol_value)
         self.lk_check = threading.Thread(target=self._ping_listen_key)
 
         self.balance['total'], self.balance['avl_balance'] = self._get_balance()
 
-        self._get_orderbook_by_symbol()
+        asyncio.run(self.get_orderbook_by_symbol())
         self._get_listen_key()
-        self._get_position()
+        self.get_position()
 
     async def create_order(self, price, side, session: aiohttp.ClientSession,
                            expire: int = 100, client_id: str = None) -> dict:
@@ -106,7 +106,6 @@ class BinanceClient(BaseClient):
         return self.last_price[side.lower()]
 
     def run_updater(self) -> None:
-        self.req_check.start()
         self.lk_check.start()
         self.bal_check.start()
         self.wsd_public.start()
@@ -129,23 +128,22 @@ class BinanceClient(BaseClient):
     # PUBLIC -----------------------------------------------------------------------------------------------------------
     def _check_symbol_value(self) -> None:
         url_path = '/fapi/v1/exchangeInfo'
-        while True:
-            if response := requests.get(self.BASE_URL + url_path).json():
-                for data in response['symbols']:
-                    if data['symbol'] == self.symbol.upper() and data['status'] == 'TRADING' and \
-                            data['contractType'] == 'PERPETUAL':
-                        self.quantity_precision = data['quantityPrecision']
-                        self.price_precision = data['pricePrecision']
-                        self.symbol_is_active = True
-                        for f in data['filters']:
-                            if f['filterType'] == 'PRICE_FILTER':
-                                self.tick_size = float(f['tickSize'])
-                            elif f['filterType'] == 'LOT_SIZE':
-                                self.step_size = float(f['stepSize'])
-                        break
-            else:
-                self.symbol_is_active = False
-            time.sleep(5)
+        if response := requests.get(self.BASE_URL + url_path).json():
+            for data in response['symbols']:
+                if data['symbol'] == self.symbol.upper() and data['status'] == 'TRADING' and \
+                        data['contractType'] == 'PERPETUAL':
+                    self.quantity_precision = data['quantityPrecision']
+                    self.price_precision = data['pricePrecision']
+                    self.symbol_is_active = True
+                    for f in data['filters']:
+                        if f['filterType'] == 'PRICE_FILTER':
+                            self.tick_size = float(f['tickSize'])
+                        elif f['filterType'] == 'LOT_SIZE':
+                            self.step_size = float(f['stepSize'])
+
+                    break
+        else:
+            self.symbol_is_active = False
 
     def __check_ob(self, ob: dict, side: str) -> None:
         if not len(self.orderbook[self.symbol][side]):
@@ -256,7 +254,7 @@ class BinanceClient(BaseClient):
             self.balance['total'], self.balance['avl_balance'] = self._get_balance()
             time.sleep(5)
 
-    def _get_position(self):
+    def get_position(self):
         url_path = "/fapi/v2/account"
         payload = {"timestamp": int(time.time() * 1000)}
 
@@ -280,7 +278,7 @@ class BinanceClient(BaseClient):
                     }})
         else:
             time.sleep(5)
-            self._get_position()
+            self.get_position()
 
     def _get_balance(self) -> [float, float]:
         url_path = "/fapi/v2/balance"
@@ -387,7 +385,7 @@ class BinanceClient(BaseClient):
                        f"price={self.expect_price}&quantity={self.expect_amount_coin}&timeInForce=GTC&" \
                        f"recvWindow={time.time() * 1000 + expire}&newClientOrderId={client_id}"
         query_string += f'&signature={self._create_signature(query_string)}'
-
+        print(f"BINANCE BODY: {query_string}")
         async with session.post(url=self.BASE_URL + url_path + query_string, headers=self.headers) as resp:
             res = await resp.json()
             print(f'BINANCE RESPONSE: {res}')
@@ -421,19 +419,20 @@ class BinanceClient(BaseClient):
         res = requests.delete(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers).json()
         return res
 
-    def _get_orderbook_by_symbol(self) -> None:
-        url_path = "/fapi/v1/depth"
-        payload = {"symbol": self.symbol}
+    async def get_orderbook_by_symbol(self) -> None:
+        async with aiohttp.ClientSession() as session:
+            url_path = "/fapi/v1/depth"
+            payload = {"symbol": self.symbol}
 
-        query_string = self._prepare_query(payload)
-        res = requests.get(url=self.BASE_URL + url_path + "?" + query_string, headers=self.headers).json()
-
-        if 'asks' in res and 'bids' in res:
-            self.orderbook[self.symbol] = {
-                'asks': [[float(x[0]), float(x[1])] for x in res['asks']],
-                'bids': [[float(x[0]), float(x[1])] for x in res['bids']],
-                'timestamp': time.time() * 1000
-            }
+            query_string = self._prepare_query(payload)
+            async with session.get(url=self.BASE_URL + url_path + "?" + query_string, headers=self.headers) as resp:
+                res = await resp.json()
+                if 'asks' in res and 'bids' in res:
+                    self.orderbook[self.symbol] = {
+                        'asks': [[float(x[0]), float(x[1])] for x in res['asks']],
+                        'bids': [[float(x[0]), float(x[1])] for x in res['bids']],
+                        'timestamp': time.time() * 1000
+                    }
 
     async def get_all_orders(self, symbol: str, session: aiohttp.ClientSession) -> list:
         url_path = "/fapi/v1/allOrders"
@@ -594,7 +593,7 @@ class BinanceClient(BaseClient):
 
 if __name__ == '__main__':
     client = BinanceClient(Config.BINANCE, Config.LEVERAGE)
-    client.run_updater()
+    # client.run_updater()
 
     # async def funding():
     #     async with aiohttp.ClientSession() as session:
@@ -604,4 +603,6 @@ if __name__ == '__main__':
 
     while True:
         time.sleep(1)
-        print(client.get_orderbook())
+        # print(client.get_orderbook())
+
+
