@@ -165,51 +165,50 @@ class KrakenClient(BaseClient):
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     payload = orjson.loads(msg.data)
-                    if payload['event'] == 'subscribed':
-                        return
-                    if payload.get('feed') == 'book_snapshot':
-                        self.orderbook[self.symbol] = {
-                            'asks': [[x['price'], x['qty']] for x in payload['asks']],
-                            'bids': [[x['price'], x['qty']] for x in payload['bids']],
-                            'timestamp': payload['timestamp']
-                        }
-                        self.count_flag = True
-                    elif payload.get('feed') == 'book':
-                        last_ob_ask = self.orderbook[self.symbol]['asks'][0][0]
-                        last_ob_bid = self.orderbook[self.symbol]['bids'][0][0]
-                        index = 0
-                        side = 'bids' if payload['side'] == 'buy' else 'asks'
-                        new_order = [payload['price'], payload['qty']]
-                        if side == 'bids':
-                            for ob_order in self.orderbook[self.symbol][side]:
-                                if new_order[0] < ob_order[0]:
-                                    index += 1
-                                elif new_order[0] == ob_order[0]:
-                                    if new_order[1] > 0:
-                                        self.orderbook[self.symbol][side][index] = new_order
-                                    else:
-                                        self.orderbook[self.symbol][side].pop(index)
-                                    break
-                                elif new_order[0] > ob_order[0] and new_order[1] > 0:
-                                    self.orderbook[self.symbol][side].insert(index, new_order)
-                                    break
-                        elif side == 'asks':
-                            for ob_order in self.orderbook[self.symbol][side]:
-                                if new_order[0] > ob_order[0]:
-                                    index += 1
-                                elif new_order[0] == ob_order[0]:
-                                    if new_order[1] > 0:
-                                        self.orderbook[self.symbol][side][index] = new_order
-                                    else:
-                                        self.orderbook[self.symbol][side].pop(index)
-                                    break
-                                elif new_order[0] < ob_order[0] and new_order[1] > 0:
-                                    self.orderbook[self.symbol][side].insert(index, new_order)
-                                    break
-                        self.orderbook[self.symbol]['timestamp'] = payload['timestamp']
-                        if last_ob_ask != self.orderbook[self.symbol]['asks'][0][0] \
-                                or last_ob_bid != self.orderbook[self.symbol]['bids'][0][0]:
+                    if not payload.get('event'):
+                        if payload.get('feed') == 'book_snapshot':
+                            self.orderbook[self.symbol] = {
+                                'asks': [[x['price'], x['qty']] for x in payload['asks']],
+                                'bids': [[x['price'], x['qty']] for x in payload['bids']],
+                                'timestamp': payload['timestamp']
+                            }
                             self.count_flag = True
+                        elif payload.get('feed') == 'book':
+                            last_ob_ask = self.orderbook[self.symbol]['asks'][0][0]
+                            last_ob_bid = self.orderbook[self.symbol]['bids'][0][0]
+                            index = 0
+                            side = 'bids' if payload['side'] == 'buy' else 'asks'
+                            new_order = [payload['price'], payload['qty']]
+                            if side == 'bids':
+                                for ob_order in self.orderbook[self.symbol][side]:
+                                    if new_order[0] < ob_order[0]:
+                                        index += 1
+                                    elif new_order[0] == ob_order[0]:
+                                        if new_order[1] > 0:
+                                            self.orderbook[self.symbol][side][index] = new_order
+                                        else:
+                                            self.orderbook[self.symbol][side].pop(index)
+                                        break
+                                    elif new_order[0] > ob_order[0] and new_order[1] > 0:
+                                        self.orderbook[self.symbol][side].insert(index, new_order)
+                                        break
+                            elif side == 'asks':
+                                for ob_order in self.orderbook[self.symbol][side]:
+                                    if new_order[0] > ob_order[0]:
+                                        index += 1
+                                    elif new_order[0] == ob_order[0]:
+                                        if new_order[1] > 0:
+                                            self.orderbook[self.symbol][side][index] = new_order
+                                        else:
+                                            self.orderbook[self.symbol][side].pop(index)
+                                        break
+                                    elif new_order[0] < ob_order[0] and new_order[1] > 0:
+                                        self.orderbook[self.symbol][side].insert(index, new_order)
+                                        break
+                            self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
+                            if last_ob_ask != self.orderbook[self.symbol]['asks'][0][0] \
+                                    or last_ob_bid != self.orderbook[self.symbol]['bids'][0][0]:
+                                self.count_flag = True
 
     # PRIVATE ----------------------------------------------------------------------------------------------------------
 
@@ -507,3 +506,21 @@ class KrakenClient(BaseClient):
                                 if self.symbol.upper() == order['instrument'].upper() \
                                         and result['status'] != OrderStatus.PROCESSING:
                                     self.orders.update({order['order_id']: result})
+
+if __name__ == '__main__':
+    client = KrakenClient(Config.KRAKEN, Config.LEVERAGE)
+    client.run_updater()
+
+    # async def funding():
+    #     async with aiohttp.ClientSession() as session:
+    #         await client.get_orderbook_by_symbol(client.symbol)
+    #
+    # asyncio.run(funding())
+
+
+
+
+    while True:
+        time.sleep(1)
+        pprint(client.get_orderbook()[client.symbol]['asks'][:3])
+        pprint(client.get_orderbook()[client.symbol]['bids'][:3])
