@@ -470,6 +470,7 @@ class DydxClient(BaseClient):
             self._append_new_order(ob, 'bids')
         if len(ob['contents']['asks']):
             self._append_new_order(ob, 'asks')
+        self.orderbook[symbol]['timestamp'] = int(time.time() * 1000)
         if last_ob_ask != self.orderbook[symbol]['asks'][0][0] \
                 or last_ob_bid != self.orderbook[symbol]['bids'][0][0]:
             self.count_flag = True
@@ -745,11 +746,11 @@ class DydxClient(BaseClient):
             async with session.get(url=self.BASE_URL + request_path, headers=headers,
                                    data=json.dumps(remove_nones(data))) as resp:
                 res = await resp.json()
-
                 if 'asks' in res and 'bids' in res:
                     self.orderbook[self.symbol] = {
                         'asks': [[float(x['price']), float(x['size'])] for x in res['asks']],
-                        'bids': [[float(x['price']), float(x['size'])] for x in res['bids']]
+                        'bids': [[float(x['price']), float(x['size'])] for x in res['bids']],
+                        'timestamp': int(time.time() * 1000)
                     }
 
     def get_orderbook(self):

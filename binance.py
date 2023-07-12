@@ -429,7 +429,7 @@ class BinanceClient(BaseClient):
                     self.orderbook[self.symbol] = {
                         'asks': [[float(x[0]), float(x[1])] for x in res['asks']],
                         'bids': [[float(x[0]), float(x[1])] for x in res['bids']],
-                        'timestamp': time.time() * 1000
+                        'timestamp': int(time.time() * 1000)
                     }
 
     async def get_all_orders(self, symbol: str, session: aiohttp.ClientSession) -> list:

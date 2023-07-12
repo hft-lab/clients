@@ -142,15 +142,18 @@ class KrakenClient(BaseClient):
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     payload = orjson.loads(msg.data)
+                    if payload['event'] == 'subscribed':
+                        return
                     if payload.get('feed') == 'book_snapshot':
                         self.orderbook[self.symbol] = {
                             'asks': [[x['price'], x['qty']] for x in payload['asks']],
                             'bids': [[x['price'], x['qty']] for x in payload['bids']],
                             'timestamp': payload['timestamp']
                         }
+                        self.count_flag = True
                     elif payload.get('feed') == 'book':
-                        if payload['event'] == 'subscribed':
-                            return
+                        last_ob_ask = self.orderbook[self.symbol]['asks'][0][0]
+                        last_ob_bid = self.orderbook[self.symbol]['bids'][0][0]
                         index = 0
                         side = 'bids' if payload['side'] == 'buy' else 'asks'
                         new_order = [payload['price'], payload['qty']]
@@ -181,6 +184,9 @@ class KrakenClient(BaseClient):
                                     self.orderbook[self.symbol][side].insert(index, new_order)
                                     break
                         self.orderbook[self.symbol]['timestamp'] = payload['timestamp']
+                        if last_ob_ask != self.orderbook[self.symbol]['asks'][0][0] \
+                                or last_ob_bid != self.orderbook[self.symbol]['bids'][0][0]:
+                            self.count_flag = True
 
     # PRIVATE ----------------------------------------------------------------------------------------------------------
 
@@ -490,9 +496,11 @@ if __name__ == '__main__':
     time.sleep(3)
     client.get_position()
     print(client.get_positions())
-    async def test_func():
-        async with aiohttp.ClientSession() as session:
-            print(await client.get_orderbook_by_symbol())
-
-    asyncio.run(test_func())
-    print(client.get_orderbook())
+    # async def test_func():
+    #     async with aiohttp.ClientSession() as session:
+    #         print(await client.get_orderbook_by_symbol())
+    #
+    # asyncio.run(test_func())
+    while True:
+        time.sleep()
+        print(client.get_orderbook())
