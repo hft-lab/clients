@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 
+import os
 import threading
 import time
 from datetime import datetime
@@ -16,7 +17,8 @@ import requests
 
 from config import Config
 from core.base_client import BaseClient
-from clients.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, ClientsOrderStatuses
+from clients.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, ClientsOrderStatuses, PositionSideEnum, \
+    ClientsOrderStatuses
 
 
 class KrakenClient(BaseClient):
@@ -69,7 +71,7 @@ class KrakenClient(BaseClient):
                 'timestamp': 0
             }
         }
-        self.__get_orderbook()
+        asyncio.run(self.get_orderbook_by_symbol())
 
         self._loop_public = asyncio.new_event_loop()
         self._loop_private = asyncio.new_event_loop()
@@ -95,21 +97,7 @@ class KrakenClient(BaseClient):
         return self.balance['total']
 
     def get_orderbook(self) -> dict:
-        orderbook = {}
-        while not self.orderbook.get(self.symbol):
-            time.sleep(0.001)
-
-        snap = self.orderbook[self.symbol]
-        orderbook[self.symbol] = {'timestamp': self.orderbook[self.symbol]['timestamp']}
-        orderbook[self.symbol]['asks'] = [[x, snap['sell'][x]] for x in sorted(snap['sell'])[:8]]
-        orderbook[self.symbol]['bids'] = [[x, snap['buy'][x]] for x in sorted(snap['buy'], reverse=True)[:8]]
-
-        if self.old_orderbook[self.symbol]['asks'][0][0] != orderbook[self.symbol]['asks'][0][0] \
-                or self.old_orderbook[self.symbol]['bids'][0][0] != orderbook[self.symbol]['bids'][0][0]:
-            self.count_flag = True
-            self.old_orderbook = orderbook
-
-        return orderbook
+        return self.orderbook
 
     def get_last_price(self, side: str) -> float:
         return self.last_price[side.lower()]
@@ -130,12 +118,14 @@ class KrakenClient(BaseClient):
 
     # PUBLIC -----------------------------------------------------------------------------------------------------------
 
-    def __get_orderbook(self):
-        url_path = "/derivatives/api/v3/orderbook"
-
-        res = requests.get(url=self.BASE_URL + url_path + f'?symbol={self.symbol}').json()
-        self.orderbook[self.symbol]['bids'] = res['orderBook']['bids']
-        self.orderbook[self.symbol]['asks'] = res['orderBook']['asks']
+    async def get_orderbook_by_symbol(self):
+        async with aiohttp.ClientSession() as session:
+            url_path = "/derivatives/api/v3/orderbook"
+            async with session.get(url=self.BASE_URL + url_path + f'?symbol={self.symbol}') as resp:
+                res = await resp.json()
+                self.orderbook[self.symbol]['bids'] = res['orderBook']['bids']
+                self.orderbook[self.symbol]['asks'] = res['orderBook']['asks']
+                self.orderbook[self.symbol]['timestamp'] = time.time() * 1000
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
 
@@ -154,18 +144,42 @@ class KrakenClient(BaseClient):
                     payload = orjson.loads(msg.data)
                     if payload.get('feed') == 'book_snapshot':
                         self.orderbook[self.symbol] = {
-                            'sell': {x['price']: x['qty'] for x in payload['asks']},
-                            'buy': {x['price']: x['qty'] for x in payload['bids']},
+                            'asks': [[x['price'], x['qty']] for x in payload['asks']],
+                            'bids': [[x['price'], x['qty']] for x in payload['bids']],
                             'timestamp': payload['timestamp']
                         }
-
-                    elif payload.get('feed') == 'book' and payload.get('side'):
-                        res = self.orderbook[self.symbol][payload['side']]
-                        if res.get(payload['price']) and payload['qty'] == 0.0:
-                            del res[payload['price']]
-                        else:
-                            self.orderbook[self.symbol][payload['side']][payload['price']] = payload['qty']
-
+                    elif payload.get('feed') == 'book':
+                        if payload['event'] == 'subscribed':
+                            return
+                        index = 0
+                        side = 'bids' if payload['side'] == 'buy' else 'asks'
+                        new_order = [payload['price'], payload['qty']]
+                        if side == 'bids':
+                            for ob_order in self.orderbook[self.symbol][side]:
+                                if new_order[0] < ob_order[0]:
+                                    index += 1
+                                elif new_order[0] == ob_order[0]:
+                                    if new_order[1] > 0:
+                                        self.orderbook[self.symbol][side][index] = new_order
+                                    else:
+                                        self.orderbook[self.symbol][side].pop(index)
+                                    break
+                                elif new_order[0] > ob_order[0] and new_order[1] > 0:
+                                    self.orderbook[self.symbol][side].insert(index, new_order)
+                                    break
+                        elif side == 'asks':
+                            for ob_order in self.orderbook[self.symbol][side]:
+                                if new_order[0] > ob_order[0]:
+                                    index += 1
+                                elif new_order[0] == ob_order[0]:
+                                    if new_order[1] > 0:
+                                        self.orderbook[self.symbol][side][index] = new_order
+                                    else:
+                                        self.orderbook[self.symbol][side].pop(index)
+                                    break
+                                elif new_order[0] < ob_order[0] and new_order[1] > 0:
+                                    self.orderbook[self.symbol][side].insert(index, new_order)
+                                    break
                         self.orderbook[self.symbol]['timestamp'] = payload['timestamp']
 
     # PRIVATE ----------------------------------------------------------------------------------------------------------
@@ -205,7 +219,7 @@ class KrakenClient(BaseClient):
 
                 if last_update := order['event'].get('OrderUpdated'):
                     if last_update['newOrder']['uid'] == order_id:  # noqa
-                        pprint(order)
+                        pprint(f"{order=}")
                         if last_update['reason'] == 'full_fill':
                             status = OrderStatus.FULLY_EXECUTED
                         elif last_update['reason'] == 'partial_fill':
@@ -215,9 +229,9 @@ class KrakenClient(BaseClient):
 
                         if status:
                             price = float(0 if status in [OrderStatus.PROCESSING, OrderStatus.NOT_EXECUTED] \
-                                else last_update['newOrder']['limitPrice'])
+                                              else last_update['newOrder']['limitPrice'])
                             amount = float(0 if status in [OrderStatus.PROCESSING, OrderStatus.NOT_EXECUTED] \
-                                else last_update['newOrder']['filled'])
+                                               else last_update['newOrder']['filled'])
 
                             result = {
                                 'exchange_order_id': last_update['oldOrder']['uid'],
@@ -328,9 +342,7 @@ class KrakenClient(BaseClient):
             "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
             "Nonce": nonce,
             "APIKey": self.__api_key,
-            "Authent": self.get_kraken_futures_signature(
-                url_path, post_string, nonce
-            ).decode('utf-8'),
+            "Authent": self.get_kraken_futures_signature(url_path, post_string, nonce).decode('utf-8'),
         }
         async with session.post(
                 url=self.BASE_URL + url_path + '?' + post_string, headers=headers, data=post_string
@@ -354,6 +366,30 @@ class KrakenClient(BaseClient):
                 'timestamp': timestamp,
                 'status': status
             }
+
+    # NEW FUNCTIONS
+    def get_position(self):
+        nonce = str(int(time.time() * 1000))
+        url_path = '/derivatives/api/v3/openpositions'
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+            "Nonce": nonce,
+            "APIKey": self.__api_key,
+            "Authent": self.get_kraken_futures_signature(url_path, '', nonce).decode('utf-8'),
+        }
+        res = requests.get((self.BASE_URL + url_path), headers=headers).json()
+        if isinstance(res, dict):
+            for payload in res.get('openPositions', []):
+                if float(payload['size']):
+                    self.positions.update({payload['symbol'].lower(): {
+                        'side': PositionSideEnum.LONG if payload['side'] == 'long' else PositionSideEnum.SHORT,
+                        'amount_usd': payload['size'] * payload['price'],
+                        'amount': payload['size'],
+                        'entry_price': payload['price'],
+                        'unrealized_pnl_usd': 0,
+                        'realized_pnl_usd': 0,
+                        'lever': self.leverage
+                    }})
 
     def _get_sign_challenge(self, challenge: str) -> str:
         sha256_hash = hashlib.sha256()
@@ -404,7 +440,7 @@ class KrakenClient(BaseClient):
 
                         elif msg_data.get('feed') == 'open_positions':
                             for position in msg_data.get('positions', []):
-                                self.positions.update({position['instrument']: {
+                                self.positions.update({position['instrument'].lower(): {
                                     'side': 'LONG' if position['balance'] >= 0 else 'SHORT',
                                     'amount_usd': position['balance'] * position['mark_price'],
                                     'amount': position['balance'],
@@ -448,15 +484,15 @@ class KrakenClient(BaseClient):
                                     self.orders.update({order['order_id']: result})
 
 
-
-
 if __name__ == '__main__':
-    a = KrakenClient(Config.KRAKEN, Config.LEVERAGE)
-
-
-    async def f():
+    client = KrakenClient(Config.KRAKEN, Config.LEVERAGE)
+    client.run_updater()
+    time.sleep(3)
+    client.get_position()
+    print(client.get_positions())
+    async def test_func():
         async with aiohttp.ClientSession() as session:
-            print(await a.get_order_by_id('PF_ETHUSD', '24afa776-4679-419e-b1a0-88ae777087cc', session))
+            print(await client.get_orderbook_by_symbol())
 
-
-    asyncio.run(f())
+    asyncio.run(test_func())
+    print(client.get_orderbook())
