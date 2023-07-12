@@ -80,7 +80,6 @@ class BinanceClient(BaseClient):
 
         self.balance['total'], self.balance['avl_balance'] = self._get_balance()
 
-        asyncio.run(self.get_orderbook_by_symbol())
         self._get_listen_key()
         self.get_position()
 
@@ -146,12 +145,15 @@ class BinanceClient(BaseClient):
             self.symbol_is_active = False
 
     def __check_ob(self, ob: dict, side: str) -> None:
+        reformat_ob = [[float(x[0]), float(x[1])] for x in ob.get(side, [])]
+
         if not len(self.orderbook[self.symbol][side]):
-            for new_order in [[float(x[0]), float(x[1])] for x in ob.get(side, [])]:
+            for new_order in reformat_ob:
                 if new_order[1] > 0:
                     self.orderbook[self.symbol][side].append(new_order)
                     break
-        for new_order in [[float(x[0]), float(x[1])] for x in ob.get(side, [])]:
+
+        for new_order in reformat_ob:
             index = 0
             if side == 'bids':
                 for ob_order in self.orderbook[self.symbol][side]:
@@ -166,16 +168,19 @@ class BinanceClient(BaseClient):
                     elif new_order[0] > ob_order[0] and new_order[1] > 0:
                         self.orderbook[self.symbol][side].insert(index, new_order)
                         break
+
             elif side == 'asks':
                 for ob_order in self.orderbook[self.symbol][side]:
                     if new_order[0] > ob_order[0]:
                         index += 1
+
                     elif new_order[0] == ob_order[0]:
                         if new_order[1] > 0:
                             self.orderbook[self.symbol][side][index] = new_order
                         else:
                             self.orderbook[self.symbol][side].pop(index)
                         break
+
                     elif new_order[0] < ob_order[0] and new_order[1] > 0:
                         self.orderbook[self.symbol][side].insert(index, new_order)
                         break
@@ -197,6 +202,8 @@ class BinanceClient(BaseClient):
             traceback.print_exc()
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
+        await self.get_orderbook_by_symbol()
+
         async with session.ws_connect(self.BASE_WS + self.symbol.lower()) as ws:
             await ws.send_str(orjson.dumps({
                 'id': 1,
@@ -417,16 +424,16 @@ class BinanceClient(BaseClient):
         res = requests.delete(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers).json()
         return res
 
-    async def get_orderbook_by_symbol(self) -> None:
+    async def get_orderbook_by_symbol(self, symbol = None) -> None:
         async with aiohttp.ClientSession() as session:
             url_path = "/fapi/v1/depth"
-            payload = {"symbol": self.symbol}
+            payload = {"symbol": symbol if symbol else self.symbol}
 
             query_string = self._prepare_query(payload)
             async with session.get(url=self.BASE_URL + url_path + "?" + query_string, headers=self.headers) as resp:
                 res = await resp.json()
                 if 'asks' in res and 'bids' in res:
-                    self.orderbook[self.symbol] = {
+                    self.orderbook[symbol if symbol else self.symbol] = {
                         'asks': [[float(x[0]), float(x[1])] for x in res['asks']],
                         'bids': [[float(x[0]), float(x[1])] for x in res['bids']],
                         'timestamp': int(time.time() * 1000)

@@ -17,8 +17,7 @@ import requests
 
 from config import Config
 from core.base_client import BaseClient
-from clients.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, ClientsOrderStatuses, PositionSideEnum, \
-    ClientsOrderStatuses
+from clients.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, PositionSideEnum
 
 
 class KrakenClient(BaseClient):
@@ -71,8 +70,7 @@ class KrakenClient(BaseClient):
                 'timestamp': 0
             }
         }
-        asyncio.run(self.get_orderbook_by_symbol())
-
+        self.get_balance()
         self._loop_public = asyncio.new_event_loop()
         self._loop_private = asyncio.new_event_loop()
         self.wsd_public = threading.Thread(target=self._run_forever,
@@ -80,8 +78,32 @@ class KrakenClient(BaseClient):
         self.bal_check = threading.Thread(target=self._run_forever,
                                           args=[ConnectMethodEnum.PRIVATE, self._loop_private])
 
+
+
     def get_available_balance(self, side: str) -> float:
-        return self.__get_available_balance(side)
+        position_value = 0
+        position_value_abs = 0
+        for symbol, position in self.positions.items():
+            if position.get('amount_usd'):
+                position_value += position['amount_usd']
+                position_value_abs += abs(position['amount_usd'])
+
+        available_margin = self.balance['total'] * self.leverage
+        if position_value_abs > available_margin:
+            if position_value > 0:
+                if side == 'buy':
+                    return available_margin - position_value
+                elif side == 'sell':
+                    return available_margin + position_value
+            else:
+                if side == 'buy':
+                    return available_margin + abs(position_value)
+                elif side == 'sell':
+                    return available_margin - abs(position_value)
+        if side == 'buy':
+            return available_margin - position_value
+        elif side == 'sell':
+            return available_margin + position_value
 
     async def create_order(self, price, side, session: aiohttp.ClientSession,
                            expire: int = 5000, client_id: str = None) -> dict:
@@ -118,16 +140,17 @@ class KrakenClient(BaseClient):
 
     # PUBLIC -----------------------------------------------------------------------------------------------------------
 
-    async def get_orderbook_by_symbol(self):
+    async def get_orderbook_by_symbol(self, symbol=None):
         async with aiohttp.ClientSession() as session:
             url_path = "/derivatives/api/v3/orderbook"
-            async with session.get(url=self.BASE_URL + url_path + f'?symbol={self.symbol}') as resp:
+            async with session.get(url=self.BASE_URL + url_path + f'?symbol={symbol if symbol else self.symbol}') as resp:
                 res = await resp.json()
-                self.orderbook[self.symbol]['bids'] = res['orderBook']['bids']
-                self.orderbook[self.symbol]['asks'] = res['orderBook']['asks']
-                self.orderbook[self.symbol]['timestamp'] = time.time() * 1000
+                self.orderbook[symbol if symbol else self.symbol]['bids'] = res['orderBook']['bids']
+                self.orderbook[symbol if symbol else self.symbol]['asks'] = res['orderBook']['asks']
+                self.orderbook[symbol if symbol else self.symbol]['timestamp'] = int(time.time() * 1000)
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
+        await self.get_orderbook_by_symbol()
 
         async with session.ws_connect(self.BASE_WS) as ws:
             await ws.send_str(orjson.dumps({
@@ -271,25 +294,6 @@ class KrakenClient(BaseClient):
 
         return sig_digest.decode()
 
-    def __get_available_balance(self, side: str = 'sell') -> float:
-        position_value = 0
-        orderbook = self.get_orderbook()
-        if orderbook[self.symbol].get('asks') and orderbook[self.symbol].get('bids'):
-            change = (orderbook[self.symbol]['asks'][0][0] + orderbook[self.symbol]['bids'][0][0]) / 2
-            for market, position in self.positions.items():
-                if market == self.symbol:
-                    position_value = position['amount_usd'] * change
-                    break
-
-            available_margin = self.balance['total'] * self.leverage
-
-            if side == 'buy':
-                max_ask = orderbook[self.symbol]['asks'][0][1] * change
-                return min(available_margin - position_value, max_ask)
-
-            max_bid = orderbook[self.symbol]['bids'][0][1] * change
-            return min(available_margin + position_value, max_bid)
-
     def get_kraken_futures_signature(self, endpoint: str, data: str, nonce: str):
         if endpoint.startswith("/derivatives"):
             endpoint = endpoint[len("/derivatives"):]
@@ -317,6 +321,21 @@ class KrakenClient(BaseClient):
             ),
         }
         return requests.post(headers=headers, url=self.BASE_URL + url_path, data=post_string).json()
+
+    def get_balance(self):
+        url_path = "/derivatives/api/v3/accounts"
+        nonce = str(int(time.time() * 1000))
+
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+            "Nonce": nonce,
+            "APIKey": self.__api_key,
+            "Authent": self.get_kraken_futures_signature(
+                url_path, '', nonce
+            ),
+        }
+        res =  requests.get(headers=headers, url=self.BASE_URL + url_path).json()
+        self.balance['total'] = res['accounts']['flex']['balanceValue']
 
     def fit_amount(self, amount) -> None:
         if not self.quantity_precision:
@@ -488,19 +507,3 @@ class KrakenClient(BaseClient):
                                 if self.symbol.upper() == order['instrument'].upper() \
                                         and result['status'] != OrderStatus.PROCESSING:
                                     self.orders.update({order['order_id']: result})
-
-
-if __name__ == '__main__':
-    client = KrakenClient(Config.KRAKEN, Config.LEVERAGE)
-    client.run_updater()
-    time.sleep(3)
-    client.get_position()
-    print(client.get_positions())
-    # async def test_func():
-    #     async with aiohttp.ClientSession() as session:
-    #         print(await client.get_orderbook_by_symbol())
-    #
-    # asyncio.run(test_func())
-    while True:
-        time.sleep()
-        print(client.get_orderbook())

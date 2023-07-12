@@ -724,11 +724,11 @@ class DydxClient(BaseClient):
                             # print(obj['contents']['account'])
                             # print()
 
-    async def get_orderbook_by_symbol(self) -> None:
+    async def get_orderbook_by_symbol(self, symbol = None) -> None:
         async with aiohttp.ClientSession() as session:
             data = {}
             now_iso_string = generate_now_iso()
-            request_path = f'/v3/orderbook/{self.symbol}'
+            request_path = f'/v3/orderbook/{symbol if symbol else self.symbol}'
             signature = self.client.private.sign(
                 request_path=request_path,
                 method='GET',
@@ -747,7 +747,7 @@ class DydxClient(BaseClient):
                                    data=json.dumps(remove_nones(data))) as resp:
                 res = await resp.json()
                 if 'asks' in res and 'bids' in res:
-                    self.orderbook[self.symbol] = {
+                    self.orderbook[symbol if symbol else self.symbol] = {
                         'asks': [[float(x['price']), float(x['size'])] for x in res['asks']],
                         'bids': [[float(x['price']), float(x['size'])] for x in res['bids']],
                         'timestamp': int(time.time() * 1000)
