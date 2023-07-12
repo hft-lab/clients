@@ -41,12 +41,6 @@ class KrakenClient(BaseClient):
         self.quantity_precision = 0
         self.count_flag = False
         self.error_info = None
-        self.old_orderbook = {
-            self.symbol: {
-                'asks': [[1, 2]],
-                'bids': [[1, 2]]
-            }
-        }
         self.balance = {
             'total': 0.0,
         }
@@ -63,13 +57,7 @@ class KrakenClient(BaseClient):
                 'amount_usd': 0,
                 'realized_pnl_usd': 0}
         }
-        self.orderbook = {
-            self.symbol: {
-                'asks': [],
-                'bids': [],
-                'timestamp': 0
-            }
-        }
+        self.orderbook = {self.symbol: {'asks': [], 'bids': [], 'timestamp': int(time.time() * 1000)}}
         self.get_balance()
         self._loop_public = asyncio.new_event_loop()
         self._loop_private = asyncio.new_event_loop()

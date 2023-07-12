@@ -55,13 +55,7 @@ class BinanceClient(BaseClient):
                 'realized_pnl_usd': 0
             }
         }
-        self.orderbook = {
-            self.symbol: {
-                'asks': [],
-                'bids': [],
-                'timestamp': 0
-            }
-        }
+        self.orderbook = {self.symbol: {'asks': [], 'bids': [], 'timestamp': int(time.time() * 1000)}}
         self._check_symbol_value()
         self.expect_amount_coin = 0
         self.expect_price = 0

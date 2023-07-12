@@ -55,7 +55,7 @@ class DydxClient(BaseClient):
         self.count_flag = False
 
         self.balance = {'free': 0, 'total': 0}
-        self.orderbook = {}
+        self.orderbook = {self.symbol: {'asks': [], 'bids': [], 'timestamp': int(time.time() * 1000)}}
 
         self.expect_amount_coin = 0
         self.expect_price = 0
