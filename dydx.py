@@ -111,9 +111,8 @@ class DydxClient(BaseClient):
         return balance
 
     def fit_amount(self, amount) -> None:
-        self.expect_amount_coin = float(
-            round(float(round(amount / self.step_size, self.quantity_precision) * self.step_size),
-                  self.quantity_precision))
+        self.expect_amount_coin = round(float(round(amount / self.step_size, self.quantity_precision) * self.step_size),
+                  self.quantity_precision)
 
     def fit_price(self, price):
         if '.' in str(self.tick_size):

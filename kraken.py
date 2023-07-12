@@ -306,7 +306,7 @@ class KrakenClient(BaseClient):
                 round_amount_len = 0
             amount = str(round(amount - (amount % self.step_size), round_amount_len))
         else:
-            amount = str(float(round(float(round(amount / self.step_size) * self.step_size), self.quantity_precision)))
+            amount = str(round(float(round(amount / self.step_size) * self.step_size), self.quantity_precision))
 
         self.expect_amount_coin = float(amount)
 
@@ -446,6 +446,8 @@ class KrakenClient(BaseClient):
                                 if self.symbol.upper() == order['instrument'].upper() \
                                         and result['status'] != OrderStatus.PROCESSING:
                                     self.orders.update({order['order_id']: result})
+
+
 
 
 if __name__ == '__main__':
