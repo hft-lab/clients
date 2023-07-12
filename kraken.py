@@ -35,7 +35,7 @@ class KrakenClient(BaseClient):
         self.__secret_key = keys['secret_key']
         self.__last_challenge = None
         self.orders = {}
-        self.step_size = None
+        self.step_size = 0
         self.tick_size = None
         self.price_precision = 0
         self.quantity_precision = 0
