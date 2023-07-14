@@ -55,13 +55,7 @@ class BinanceClient(BaseClient):
                 'realized_pnl_usd': 0
             }
         }
-        self.orderbook = {
-            self.symbol: {
-                'asks': [],
-                'bids': [],
-                'timestamp': 0
-            }
-        }
+        self.orderbook = {self.symbol: {'asks': [], 'bids': [], 'timestamp': int(time.time() * 1000)}}
         self._check_symbol_value()
         self.expect_amount_coin = 0
         self.expect_price = 0
@@ -185,7 +179,7 @@ class BinanceClient(BaseClient):
                         self.orderbook[self.symbol][side].insert(index, new_order)
                         break
 
-    def __orderbook_update(self, ob: dict) -> None:
+    async def __orderbook_update(self, ob: dict) -> None:
         try:
             last_ob_ask = self.orderbook[self.symbol]['asks'][0][0]
             last_ob_bid = self.orderbook[self.symbol]['bids'][0][0]
@@ -202,6 +196,7 @@ class BinanceClient(BaseClient):
                 self.count_flag = True
         except:
             self.count_flag = False
+            await self.get_orderbook_by_symbol()
             traceback.print_exc()
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
@@ -220,7 +215,7 @@ class BinanceClient(BaseClient):
                     if payload.get('e') == 'depthUpdate':
                         payload['asks'] = [x for x in payload.get('a', [])]
                         payload['bids'] = [x for x in payload.get('b', [])][::-1]
-                        self.__orderbook_update(payload)
+                        await self.__orderbook_update(payload)
 
     # PRIVATE ----------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -458,10 +453,10 @@ class BinanceClient(BaseClient):
             res = await resp.json()
             try:
                 for order in res:
-                    if res.get('status') == ClientsOrderStatuses.FILLED and float(res['origQty']) > float(
-                            res['executedQty']):
+                    if order.get('status') == ClientsOrderStatuses.FILLED and float(order['origQty']) > float(
+                            order['executedQty']):
                         status = OrderStatus.PARTIALLY_EXECUTED
-                    elif res.get('status') == ClientsOrderStatuses.FILLED:
+                    elif order.get('status') == ClientsOrderStatuses.FILLED:
                         status = OrderStatus.FULLY_EXECUTED
                     else:
                         status = OrderStatus.NOT_EXECUTED
@@ -469,11 +464,11 @@ class BinanceClient(BaseClient):
                     orders.append(
                         {
                             'id': uuid.uuid4(),
-                            'datetime': datetime.datetime.fromtimestamp(order['time']),
+                            'datetime': datetime.datetime.fromtimestamp(int(order['time'] / 1000)),
                             'ts': int(order['time']),
                             'context': 'web-interface' if not 'api_' in order['clientOrderId'] else
                             order['clientOrderId'].split('_')[1],
-                            'parent_id': '-',
+                            'parent_id': uuid.uuid4(),
                             'exchange_order_id': order['orderId'],
                             'type': order['timeInForce'],
                             'status': status,
@@ -483,10 +478,12 @@ class BinanceClient(BaseClient):
                             'expect_price': float(order['price']),
                             'expect_amount_coin': float(order['origQty']),
                             'expect_amount_usd': float(order['price']) * float(order['origQty']),
-                            'except_fee': self.taker_fee,
+                            'expect_fee': self.taker_fee,
                             'factual_price': float(order['avgPrice']),
                             'factual_amount_coin': float(order['executedQty']),
+                            'factual_amount_usd':  float(order['price']) * float(order['origQty']),
                             'order_place_time': 0,
+                            'factual_fee': self.taker_fee,
                             'env': '-',
                             'datetime_update': datetime.datetime.utcnow(),
                             'ts_update': time.time(),
@@ -601,7 +598,7 @@ class BinanceClient(BaseClient):
 
 if __name__ == '__main__':
     client = BinanceClient(Config.BINANCE, Config.LEVERAGE)
-    # client.run_updater()
+    client.run_updater()
 
     # async def funding():
     #     async with aiohttp.ClientSession() as session:

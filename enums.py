@@ -21,6 +21,7 @@ class EventTypeEnum:
 class BotState:
     PARSER = 'PARSER'
     BOT = 'BOT'
+    SLIPPAGE = 'SLIPPAGE'
 
 
 class RabbitMqQueues:

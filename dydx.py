@@ -56,7 +56,7 @@ class DydxClient(BaseClient):
         self.count_flag = False
 
         self.balance = {'free': 0, 'total': 0}
-        self.orderbook = {}
+        self.orderbook = {self.symbol: {'asks': [], 'bids': [], 'timestamp': int(time.time() * 1000)}}
 
         self.expect_amount_coin = 0
         self.expect_price = 0
@@ -225,8 +225,9 @@ class DydxClient(BaseClient):
         async with session.get(url=self.BASE_URL + request_path, headers=headers,
                                data=json.dumps(remove_nones(data))) as resp:
             res = await resp.json()
+            print(res)
             try:
-                for order in res:
+                for order in res['orders']:
                     if res.get('status') == ClientsOrderStatuses.FILLED and float(res['origQty']) > float(
                             res['executedQty']):
                         status = OrderStatus.PARTIALLY_EXECUTED
@@ -242,7 +243,7 @@ class DydxClient(BaseClient):
                             'ts': int(time.time()),
                             'context': 'web-interface' if not 'api_' in order['clientId'] else
                             order['clientId'].split('_')[1],
-                            'parent_id': '-',
+                            'parent_id': uuid.uuid4(),
                             'exchange_order_id': order['id'],
                             'type': order['timeInForce'],
                             'status': status,
@@ -252,9 +253,11 @@ class DydxClient(BaseClient):
                             'expect_price': float(order['price']),
                             'expect_amount_coin': float(order['size']),
                             'expect_amount_usd': float(order['price']) * float(order['size']),
-                            'except_fee': self.taker_fee,
+                            'expect_fee': self.taker_fee,
                             'factual_price': float(order['price']),
                             'factual_amount_coin': float(order['size']),
+                            'factual_amount_usd': float(order['size']) * float(order['price']),
+                            'factual_fee': self.taker_fee,
                             'order_place_time': 0,
                             'env': '-',
                             'datetime_update': datetime.utcnow(),
