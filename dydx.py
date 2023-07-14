@@ -31,6 +31,7 @@ class DydxClient(BaseClient):
 
     def __init__(self, keys=None, leverage=2):
         self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
         self._connected = asyncio.Event()
         self.symbol = keys['symbol']
         self.API_KEYS = {"secret": keys['secret'],

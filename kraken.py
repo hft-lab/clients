@@ -501,7 +501,7 @@ class KrakenClient(BaseClient):
                                                                           OrderStatus.NOT_EXECUTED] \
                                         else amount * price,
                                     'datetime_update': datetime.utcnow(),
-                                    'ts_update': time.time() * 1000
+                                    'ts_update': int(time.time() * 1000)
                                 }
 
                                 if self.symbol.upper() == order['instrument'].upper() \
