@@ -66,6 +66,29 @@ class KrakenClient(BaseClient):
         self.bal_check = threading.Thread(target=self._run_forever,
                                           args=[ConnectMethodEnum.PRIVATE, self._loop_private])
 
+        time.sleep(5)
+
+        self.get_sizes()
+
+    def get_sizes(self):
+        asks_value = [str(x[1]) for x in self.orderbook[self.symbol]['asks']]
+        max_value = 0
+
+        for v in asks_value:
+            splt = v.split('.')
+
+            if len(splt) > 1:
+                max_value = max(len(splt[1]), max_value)
+
+        self.step_size = float('0.' + str(1).zfill(max_value - 1))
+
+        url_path = "/derivatives/api/v3/instruments"
+        res = requests.get(url=self.BASE_URL + url_path).json()
+
+        for instrument in res['instruments']:
+            if self.symbol == instrument['symbol'].upper():
+                self.tick_size = instrument['tickSize']
+                break
 
 
     def get_available_balance(self, side: str) -> float:
@@ -127,11 +150,11 @@ class KrakenClient(BaseClient):
                 await self._user_balance_getter(session)
 
     # PUBLIC -----------------------------------------------------------------------------------------------------------
-
     async def get_orderbook_by_symbol(self, symbol=None):
         async with aiohttp.ClientSession() as session:
             url_path = "/derivatives/api/v3/orderbook"
-            async with session.get(url=self.BASE_URL + url_path + f'?symbol={symbol if symbol else self.symbol}') as resp:
+            async with session.get(
+                    url=self.BASE_URL + url_path + f'?symbol={symbol if symbol else self.symbol}') as resp:
                 res = await resp.json()
                 self.orderbook[symbol if symbol else self.symbol]['bids'] = res['orderBook']['bids']
                 self.orderbook[symbol if symbol else self.symbol]['asks'] = res['orderBook']['asks']
@@ -232,7 +255,6 @@ class KrakenClient(BaseClient):
             }
 
             for order in resp['elements']:
-
                 if last_update := order['event'].get('OrderUpdated'):
                     if last_update['newOrder']['uid'] == order_id:  # noqa
                         pprint(f"{order=}")
@@ -309,6 +331,8 @@ class KrakenClient(BaseClient):
         }
         return requests.post(headers=headers, url=self.BASE_URL + url_path, data=post_string).json()
 
+
+
     def get_balance(self):
         url_path = "/derivatives/api/v3/accounts"
         nonce = str(int(time.time() * 1000))
@@ -321,7 +345,7 @@ class KrakenClient(BaseClient):
                 url_path, '', nonce
             ),
         }
-        res =  requests.get(headers=headers, url=self.BASE_URL + url_path).json()
+        res = requests.get(headers=headers, url=self.BASE_URL + url_path).json()
         self.balance['total'] = res['accounts']['flex']['balanceValue']
 
     def fit_amount(self, amount) -> None:
@@ -393,10 +417,12 @@ class KrakenClient(BaseClient):
         if isinstance(res, dict):
             for payload in res.get('openPositions', []):
                 if float(payload['size']):
-                    self.positions.update({payload['symbol'].lower(): {
-                        'side': PositionSideEnum.LONG if payload['side'] == 'long' else PositionSideEnum.SHORT,
-                        'amount_usd': payload['size'] * payload['price'],
-                        'amount': payload['size'],
+                    side = PositionSideEnum.LONG if payload['side'] == 'long' else PositionSideEnum.SHORT
+                    amount_usd = payload['size'] * payload['price']
+                    self.positions.update({payload['symbol'].upper(): {
+                        'side': side,
+                        'amount_usd': amount_usd if side == PositionSideEnum.LONG else -amount_usd,
+                        'amount': payload['size'] if side == PositionSideEnum.LONG else -payload['size'],
                         'entry_price': payload['price'],
                         'unrealized_pnl_usd': 0,
                         'realized_pnl_usd': 0,
@@ -452,13 +478,15 @@ class KrakenClient(BaseClient):
 
                         elif msg_data.get('feed') == 'open_positions':
                             for position in msg_data.get('positions', []):
-                                self.positions.update({position['instrument'].lower(): {
-                                    'side': 'LONG' if position['balance'] >= 0 else 'SHORT',
-                                    'amount_usd': position['balance'] * position['mark_price'],
-                                    'amount': position['balance'],
+                                side = PositionSideEnum.LONG if position['balance'] >= 0 else PositionSideEnum.SHORT
+                                amount_usd = position['balance'] * position['mark_price']
+                                self.positions.update({position['instrument'].upper(): {
+                                    'side': side,
+                                    'amount_usd': amount_usd if side == PositionSideEnum.LONG else -amount_usd,
+                                    'amount': position['balance'] if side == PositionSideEnum.LONG else -position['balance'],
                                     'entry_price': position['entry_price'],
                                     'unrealized_pnl_usd': 0,
-                                    'realized_pnl_usd': 0,
+                                    'realized_pnl_usd': position['pnl'],
                                     'lever': self.leverage
                                 }})
                         elif msg_data.get('feed') == 'open_orders' and msg_data.get('order'):
@@ -495,20 +523,18 @@ class KrakenClient(BaseClient):
                                         and result['status'] != OrderStatus.PROCESSING:
                                     self.orders.update({order['order_id']: result})
 
+
 if __name__ == '__main__':
     client = KrakenClient(Config.KRAKEN, Config.LEVERAGE)
-    client.run_updater()
+    # client.run_updater()
 
     # async def funding():
     #     async with aiohttp.ClientSession() as session:
     #         await client.get_orderbook_by_symbol(client.symbol)
     #
     # asyncio.run(funding())
-
-
-
-
-    while True:
-        time.sleep(1)
-        pprint(client.get_orderbook()[client.symbol]['asks'][:3])
-        pprint(client.get_orderbook()[client.symbol]['bids'][:3])
+    #
+    # while True:
+    #     time.sleep(1)
+    #     pprint(client.get_orderbook()[client.symbol]['asks'][:3])
+    #     pprint(client.get_orderbook()[client.symbol]['bids'][:3])
