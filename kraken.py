@@ -48,6 +48,8 @@ class KrakenClient(BaseClient):
             'sell': 0,
             'buy': 0
         }
+        self.max_bid = 0
+        self.min_ask = 10000000
         self.positions = {
             self.symbol: {
                 'amount': 0,
@@ -90,7 +92,6 @@ class KrakenClient(BaseClient):
                 self.tick_size = instrument['tickSize']
                 break
 
-
     def get_available_balance(self, side: str) -> float:
         position_value = 0
         position_value_abs = 0
@@ -131,17 +132,19 @@ class KrakenClient(BaseClient):
 
     def get_orderbook(self) -> dict:
         orderbook = {}
+        # time_start = time.time()
         while not self.orderbook.get(self.symbol):
             time.sleep(0.001)
-
-        snap = self.orderbook[self.symbol]
-        orderbook[self.symbol] = {'timestamp': self.orderbook[self.symbol]['timestamp']}
-        orderbook[self.symbol]['asks'] = [[x, snap['sell'][x]] for x in sorted(snap['sell'])]
-        orderbook[self.symbol]['bids'] = [[x, snap['buy'][x]] for x in sorted(snap['buy'])]
-
-        return orderbook
-
-
+        while True:
+            snap = self.orderbook[self.symbol]
+            orderbook[self.symbol] = {'timestamp': self.orderbook[self.symbol]['timestamp']}
+            try:
+                orderbook[self.symbol]['asks'] = [[x, snap['sell'][x]] for x in sorted(snap['sell'])]
+                orderbook[self.symbol]['bids'] = [[x, snap['buy'][x]] for x in sorted(snap['buy'])][::-1]
+            except:
+                continue
+            # print(f"Orderbook fetch time: {time.time() - time_start}")
+            return orderbook
 
     def get_last_price(self, side: str) -> float:
         return self.last_price[side.lower()]
@@ -167,9 +170,11 @@ class KrakenClient(BaseClient):
             async with session.get(
                     url=self.BASE_URL + url_path + f'?symbol={symbol if symbol else self.symbol}') as resp:
                 res = await resp.json()
-                self.orderbook[symbol if symbol else self.symbol]['bids'] = res['orderBook']['bids']
-                self.orderbook[symbol if symbol else self.symbol]['asks'] = res['orderBook']['asks']
-                self.orderbook[symbol if symbol else self.symbol]['timestamp'] = int(time.time() * 1000)
+                orderbook = {symbol if symbol else self.symbol: {'asks': [], 'bids': [], 'timestamp': 0}}
+                orderbook[symbol if symbol else self.symbol]['bids'] = res['orderBook']['bids']
+                orderbook[symbol if symbol else self.symbol]['asks'] = res['orderBook']['asks']
+                orderbook[symbol if symbol else self.symbol]['timestamp'] = int(time.time() * 1000)
+        return orderbook
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
         # await self.get_orderbook_by_symbol()
@@ -194,17 +199,24 @@ class KrakenClient(BaseClient):
                                 'buy': {x['price']: x['qty'] for x in payload['bids']},
                                 'timestamp': payload['timestamp']
                             }
+                            self.max_bid = max(self.orderbook[self.symbol]['buy'].keys())
+                            self.min_ask = min(self.orderbook[self.symbol]['sell'].keys())
                             self.count_flag = True
                         elif payload.get('feed') == 'book':
-                            start = time.time() * 1000000
                             res = self.orderbook[self.symbol][payload['side']]
-                            if res.get(payload['price']) and payload['qty'] == 0.0:
+                            if res.get(payload['price']) and not payload['qty']:
                                 del res[payload['price']]
                             else:
                                 self.orderbook[self.symbol][payload['side']][payload['price']] = payload['qty']
                                 self.orderbook[self.symbol]['timestamp'] = payload['timestamp']
-
-
+                            if payload['side'] == 'sell':
+                                if payload['price'] < self.min_ask:
+                                    self.min_ask = payload['price']
+                                    self.count_flag = True
+                            else:
+                                if payload['price'] > self.max_bid:
+                                    self.max_bid = payload['price']
+                                    self.count_flag = True
     # PRIVATE ----------------------------------------------------------------------------------------------------------
 
     async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession) -> dict:
@@ -514,6 +526,8 @@ if __name__ == '__main__':
     time.sleep(5)
     while True:
         client.get_orderbook()
+        # print(f"ASKS: {client.get_orderbook()[client.symbol]['asks'][:3]}")
+        # print(f"BIDS: {client.get_orderbook()[client.symbol]['bids'][:3]}\n")
         time.sleep(1)
     # async def funding():
     #     async with aiohttp.ClientSession() as session:

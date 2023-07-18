@@ -55,7 +55,7 @@ class BinanceClient(BaseClient):
                 'realized_pnl_usd': 0
             }
         }
-        self.orderbook = {self.symbol: {'asks': [], 'bids': [], 'timestamp': int(time.time() * 1000)}}
+        self.orderbook = {self.symbol: {'asks': {}, 'bids': {}, 'timestamp': int(time.time() * 1000)}}
         self._check_symbol_value()
         self.expect_amount_coin = 0
         self.expect_price = 0
@@ -91,9 +91,19 @@ class BinanceClient(BaseClient):
         return self.balance['total']
 
     def get_orderbook(self) -> dict:
+        orderbook = {}
         while not self.orderbook.get(self.symbol):
             time.sleep(0.001)
-        return self.orderbook
+        while True:
+            snap = self.orderbook[self.symbol]
+            orderbook[self.symbol] = {'timestamp': self.orderbook[self.symbol]['timestamp']}
+            try:
+                orderbook[self.symbol]['asks'] = [[float(x), snap['asks'][x]] for x in sorted(snap['asks'])]
+                orderbook[self.symbol]['bids'] = [[float(x), snap['bids'][x]] for x in sorted(snap['bids'])][::-1]
+            except:
+                continue
+            # print(f"Get orderbook time: {time.time() - time_start} sec")
+            return orderbook
 
     def get_last_price(self, side: str) -> float:
         return self.last_price[side.lower()]
@@ -139,68 +149,93 @@ class BinanceClient(BaseClient):
             self.symbol_is_active = False
 
     def __check_ob(self, ob: dict, side: str) -> None:
-        reformat_ob = [[float(x[0]), float(x[1])] for x in ob.get(side, [])]
-
-        if not len(self.orderbook[self.symbol][side]):
-            for new_order in reformat_ob:
-                if new_order[1] > 0:
-                    self.orderbook[self.symbol][side].append(new_order)
-                    break
-
-        for new_order in reformat_ob:
-            index = 0
-            if side == 'bids':
-                for ob_order in self.orderbook[self.symbol][side]:
-                    if new_order[0] < ob_order[0]:
-                        index += 1
-                    elif new_order[0] == ob_order[0]:
-                        if new_order[1] > 0:
-                            self.orderbook[self.symbol][side][index] = new_order
-                        else:
-                            self.orderbook[self.symbol][side].pop(index)
-                        break
-                    elif new_order[0] > ob_order[0] and new_order[1] > 0:
-                        self.orderbook[self.symbol][side].insert(index, new_order)
-                        break
-
-            elif side == 'asks':
-                for ob_order in self.orderbook[self.symbol][side]:
-                    if new_order[0] > ob_order[0]:
-                        index += 1
-
-                    elif new_order[0] == ob_order[0]:
-                        if new_order[1] > 0:
-                            self.orderbook[self.symbol][side][index] = new_order
-                        else:
-                            self.orderbook[self.symbol][side].pop(index)
-                        break
-
-                    elif new_order[0] < ob_order[0] and new_order[1] > 0:
-                        self.orderbook[self.symbol][side].insert(index, new_order)
-                        break
+        # print(ob)
+        # return
+        # reformat_ob = [[float(x[0]), float(x[1])] for x in ob.get(side, [])]
+        counter_non_zero = 0
+        res = self.orderbook[self.symbol][side]
+        for order in ob.get(side, []):
+            if counter_non_zero >= 10:
+                return
+        # if not len(self.orderbook[self.symbol][side]):
+        #     for new_order in reformat_ob:
+        #         if new_order[1] > 0:
+        #             self.orderbook[self.symbol][side].append(new_order)
+        #             break
+            if float(order[1]) <= self.step_size:
+                if res.get(float(order[0])):
+                    del res[float(order[0])]
+            else:
+                self.orderbook[self.symbol][side][float(order[0])] = float(order[1])
+                self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
+                counter_non_zero += 1
+        # for new_order in reformat_ob:
+        #     index = 0
+        #     if side == 'bids':
+        #         for ob_order in self.orderbook[self.symbol][side]:
+        #             if new_order[0] < ob_order[0]:
+        #                 index += 1
+        #             elif new_order[0] == ob_order[0]:
+        #                 if new_order[1] > 0:
+        #                     self.orderbook[self.symbol][side][index] = new_order
+        #                 else:
+        #                     self.orderbook[self.symbol][side].pop(index)
+        #                 break
+        #             elif new_order[0] > ob_order[0] and new_order[1] > 0:
+        #                 self.orderbook[self.symbol][side].insert(index, new_order)
+        #                 break
+        #
+        #     elif side == 'asks':
+        #         for ob_order in self.orderbook[self.symbol][side]:
+        #             if new_order[0] > ob_order[0]:
+        #                 index += 1
+        #
+        #             elif new_order[0] == ob_order[0]:
+        #                 if new_order[1] > 0:
+        #                     self.orderbook[self.symbol][side][index] = new_order
+        #                 else:
+        #                     self.orderbook[self.symbol][side].pop(index)
+        #                 break
+        #
+        #             elif new_order[0] < ob_order[0] and new_order[1] > 0:
+        #                 self.orderbook[self.symbol][side].insert(index, new_order)
+        #                 break
 
     async def __orderbook_update(self, ob: dict) -> None:
-        try:
-            last_ob_ask = self.orderbook[self.symbol]['asks'][0][0]
-            last_ob_bid = self.orderbook[self.symbol]['bids'][0][0]
+        # try:
+        if ob.get('asks'):
+            if len(self.orderbook[self.symbol]['asks'].keys()):
+                last_ob_ask = min(self.orderbook[self.symbol]['asks'].keys())
+            else:
+                last_ob_ask = 100000
+            self.__check_ob(ob, 'asks')
+            if len(self.orderbook[self.symbol]['asks'].keys()):
+                new_ob_ask = min(self.orderbook[self.symbol]['asks'].keys())
+                if new_ob_ask < last_ob_ask:
+                    self.count_flag = True
 
-            if ob.get('asks'):
-                self.__check_ob(ob, 'asks')
-
-            if ob.get('bids'):
-                self.__check_ob(ob, 'bids')
-
-            if last_ob_ask != self.orderbook[self.symbol]['asks'][0][0] \
-                    or last_ob_bid != self.orderbook[self.symbol]['bids'][0][0]:
-                self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
-                self.count_flag = True
-        except:
-            self.count_flag = False
-            await self.get_orderbook_by_symbol()
-            traceback.print_exc()
+        if ob.get('bids'):
+            if len(self.orderbook[self.symbol]['bids'].keys()):
+                last_ob_bid = max(self.orderbook[self.symbol]['bids'].keys())
+            else:
+                last_ob_bid = 0
+            self.__check_ob(ob, 'bids')
+            if len(self.orderbook[self.symbol]['bids'].keys()):
+                new_ob_bid = max(self.orderbook[self.symbol]['bids'].keys())
+                if new_ob_bid > last_ob_bid:
+                    self.count_flag = True
+        #
+        #     if last_ob_ask != self.orderbook[self.symbol]['asks'][0][0] \
+        #             or last_ob_bid != self.orderbook[self.symbol]['bids'][0][0]:
+        #         self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
+        #         self.count_flag = True
+        # except:
+        #     self.count_flag = False
+        #     self.orderbook = await self.get_orderbook_by_symbol()
+        #     traceback.print_exc()
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
-        await self.get_orderbook_by_symbol()
+        # self.orderbook = await self.get_orderbook_by_symbol()
 
         async with session.ws_connect(self.BASE_WS + self.symbol.lower()) as ws:
             await ws.send_str(orjson.dumps({
@@ -422,7 +457,8 @@ class BinanceClient(BaseClient):
         res = requests.delete(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers).json()
         return res
 
-    async def get_orderbook_by_symbol(self, symbol = None) -> None:
+    async def get_orderbook_by_symbol(self, symbol=None) -> dict:
+        orderbook = {symbol if symbol else self.symbol: {'asks': [], 'bids': [], 'timestamp': 0}}
         async with aiohttp.ClientSession() as session:
             url_path = "/fapi/v1/depth"
             payload = {"symbol": symbol if symbol else self.symbol}
@@ -431,11 +467,12 @@ class BinanceClient(BaseClient):
             async with session.get(url=self.BASE_URL + url_path + "?" + query_string, headers=self.headers) as resp:
                 res = await resp.json()
                 if 'asks' in res and 'bids' in res:
-                    self.orderbook[symbol if symbol else self.symbol] = {
+                    orderbook[symbol if symbol else self.symbol] = {
                         'asks': [[float(x[0]), float(x[1])] for x in res['asks']],
                         'bids': [[float(x[0]), float(x[1])] for x in res['bids']],
                         'timestamp': int(time.time() * 1000)
                     }
+        return orderbook
 
     async def get_all_orders(self, symbol: str, session: aiohttp.ClientSession) -> list:
         url_path = "/fapi/v1/allOrders"
@@ -608,6 +645,8 @@ if __name__ == '__main__':
 
     while True:
         time.sleep(1)
-        # print(client.get_orderbook())
+        print(f"ASKS: {client.get_orderbook()[client.symbol]['asks'][:3]}")
+        print(f"BIDS: {client.get_orderbook()[client.symbol]['bids'][:3]}\n")
+        # client.get_orderbook()
 
 
