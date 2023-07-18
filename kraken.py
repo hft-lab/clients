@@ -366,7 +366,8 @@ class KrakenClient(BaseClient):
             "limitPrice": self.expect_price,
             "side": side.lower(),
             "size": self.expect_amount_coin,
-            "symbol": self.symbol
+            "symbol": self.symbol,
+            "cliOrdId": client_id
         }
         post_string = "&".join([f"{key}={params[key]}" for key in sorted(params)])
 
