@@ -170,10 +170,10 @@ class KrakenClient(BaseClient):
             async with session.get(
                     url=self.BASE_URL + url_path + f'?symbol={symbol if symbol else self.symbol}') as resp:
                 res = await resp.json()
-                orderbook = {symbol if symbol else self.symbol: {'asks': [], 'bids': [], 'timestamp': 0}}
-                orderbook[symbol if symbol else self.symbol]['bids'] = res['orderBook']['bids']
-                orderbook[symbol if symbol else self.symbol]['asks'] = res['orderBook']['asks']
-                orderbook[symbol if symbol else self.symbol]['timestamp'] = int(time.time() * 1000)
+                orderbook = {}
+                orderbook.update({'bids': res['orderBook']['bids']})
+                orderbook.update({'asks': res['orderBook']['asks']})
+                orderbook.update({'timestamp': int(time.time() * 1000)})
         return orderbook
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
