@@ -375,11 +375,11 @@ class BinanceClient(BaseClient):
         return funding_payments
 
     def fit_amount(self, amount) -> None:
-        self.expect_amount_coin = round(float(round(amount / self.step_size) * self.step_size), self.quantity_precision)
+        self.expect_amount_coin = round(round(amount / self.step_size) * self.step_size, self.quantity_precision)
 
     async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_id=None) -> dict:
-        self.expect_price = round(float(round(price / self.tick_size) * self.tick_size), self.price_precision)
+        self.expect_price = round(round(price / self.tick_size) * self.tick_size, self.price_precision)
         url_path = '/fapi/v1/order?'
         query_string = f"timestamp={int(time.time() * 1000)}&symbol={self.symbol}&side={side}&type=LIMIT&" \
                        f"price={self.expect_price}&quantity={self.expect_amount_coin}&timeInForce=GTC&" \

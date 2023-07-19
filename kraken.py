@@ -347,20 +347,16 @@ class KrakenClient(BaseClient):
     def fit_amount(self, amount) -> None:
         if not self.quantity_precision:
             if '.' in str(self.step_size):
-                round_amount_len = len(str(self.step_size).split('.')[1])
+                self.quantity_precision = len(str(self.step_size).split('.')[1])
             else:
-                round_amount_len = 0
-            amount = str(round(amount - (amount % self.step_size), round_amount_len))
-        else:
-            amount = str(round(float(round(amount / self.step_size) * self.step_size), self.quantity_precision))
-
-        self.expect_amount_coin = float(amount)
+                self.quantity_precision = 0
+        self.expect_amount_coin = round(round(amount / self.step_size) * self.step_size, self.quantity_precision)
 
     async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_id=None) -> dict:
         nonce = str(int(time.time() * 1000))
         url_path = "/derivatives/api/v3/sendorder"
-        self.expect_price = float(round(float(round(price / self.tick_size) * self.tick_size), self.price_precision))
+        self.expect_price = round(round(price / self.tick_size) * self.tick_size, self.price_precision)
         params = {
             "orderType": "lmt",
             "limitPrice": self.expect_price,
