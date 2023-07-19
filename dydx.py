@@ -557,7 +557,7 @@ class DydxClient(BaseClient):
                                                           OrderStatus.NOT_EXECUTED] else executed_size * float(
                         order['price']),
                     'datetime_update': datetime.utcnow(),
-                    'ts_update': time.time() * 1000
+                    'ts_update': int(time.time() * 1000)
                 }
 
                 if self.symbol == order.get('market'):

@@ -525,7 +525,7 @@ class BinanceClient(BaseClient):
                 'factual_amount_coin': float(res['executedQty']),
                 'factual_amount_usd': float(res['executedQty']) * float(res['avgPrice']),
                 'datetime_update': datetime.datetime.utcnow(),
-                'ts_update': time.time() * 1000
+                'ts_update': int(time.time() * 1000) - 3600
             }
 
     def _get_listen_key(self) -> None:
@@ -587,7 +587,7 @@ class BinanceClient(BaseClient):
                                                                       OrderStatus.NOT_EXECUTED] else float(
                                     data['o']['z']) * float(data['o']['ap']),
                                 'datetime_update': datetime.datetime.utcnow(),
-                                'ts_update': time.time() * 1000
+                                'ts_update': int(time.time() * 1000) - 3600
                             }
 
                             if self.symbol == data['o']['s'] and result['status'] != OrderStatus.PROCESSING:
