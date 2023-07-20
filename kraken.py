@@ -243,37 +243,35 @@ class KrakenClient(BaseClient):
                 # print(elements)
                 if order := elements['event'].get(event, {}).get('order'):
                     if order['clientId'] == "":
-                        amount = float(order['quantity']) if order['filled'] == '0' else float(order['filled']) - float(order['quantity'])
-                        status = OrderStatus.NOT_EXECUTED if not float(order['quantity']) else OrderStatus.FULLY_EXECUTED
-                        res_orders.update({order['uid'] : {
-                            'id': uuid.uuid4(),
-                            'datetime': datetime.fromtimestamp(int(order['lastUpdateTimestamp'] / 1000)),
-                            'ts': int(order['lastUpdateTimestamp']),
-                            'context': 'web-interface',
-                            'parent_id': uuid.uuid4(),
-                            'exchange_order_id': order['uid'],
-                            'type': 'GTC', # TODO check it
-                            'status': status,
-                            'exchange': self.EXCHANGE_NAME,
-                            'side': order['direction'].lower(),
-                            'symbol': order['tradeable'],
-                            'expect_price': float(order['limitPrice']),
-                            'expect_amount_coin': amount,
-                            'expect_amount_usd': float(order['limitPrice']) * amount,
-                            'expect_fee': self.taker_fee,
-                            'factual_price': float(order['limitPrice']),
-                            'factual_amount_coin': 0 if order['filled'] == '0' else float(order['filled']) - float(order['quantity']),
-                            'factual_amount_usd': float(order['limitPrice']) * amount,
-                            'order_place_time': 0,
-                            'factual_fee': self.taker_fee,
-                            'env': '-',
-                            'datetime_update': datetime.utcnow(),
-                            'ts_update': time.time(),
-                            'client_id': order['clientId']
-                        }})
-
-
-
+                        if int(order['lastUpdateTimestamp']) > int(time.time() * 1000) - 86400000:
+                            amount = float(order['quantity']) if order['filled'] == '0' else float(order['filled']) - float(order['quantity'])
+                            status = OrderStatus.NOT_EXECUTED if not float(order['quantity']) else OrderStatus.FULLY_EXECUTED
+                            res_orders.update({order['uid'] : {
+                                'id': uuid.uuid4(),
+                                'datetime': datetime.fromtimestamp(int(order['lastUpdateTimestamp'] / 1000)),
+                                'ts': int(order['lastUpdateTimestamp']),
+                                'context': 'web-interface',
+                                'parent_id': uuid.uuid4(),
+                                'exchange_order_id': order['uid'],
+                                'type': 'GTC', # TODO check it
+                                'status': status,
+                                'exchange': self.EXCHANGE_NAME,
+                                'side': order['direction'].lower(),
+                                'symbol': order['tradeable'],
+                                'expect_price': float(order['limitPrice']),
+                                'expect_amount_coin': amount,
+                                'expect_amount_usd': float(order['limitPrice']) * amount,
+                                'expect_fee': self.taker_fee,
+                                'factual_price': float(order['limitPrice']),
+                                'factual_amount_coin': 0 if order['filled'] == '0' else float(order['filled']) - float(order['quantity']),
+                                'factual_amount_usd': float(order['limitPrice']) * amount,
+                                'order_place_time': 0,
+                                'factual_fee': self.taker_fee,
+                                'env': '-',
+                                'datetime_update': datetime.utcnow(),
+                                'ts_update': int(time.time() * 1000),
+                                'client_id': order['clientId']
+                            }})
 
         return [x for x in res_orders.values()]
 
