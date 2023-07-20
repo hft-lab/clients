@@ -59,7 +59,6 @@ class KrakenClient(BaseClient):
                 'amount_usd': 0,
                 'realized_pnl_usd': 0}
         }
-        self.orderbook = {self.symbol: {'asks': [], 'bids': [], 'timestamp': int(time.time() * 1000)}}
         self.get_balance()
         self._loop_public = asyncio.new_event_loop()
         self._loop_private = asyncio.new_event_loop()
@@ -67,22 +66,18 @@ class KrakenClient(BaseClient):
                                            args=[ConnectMethodEnum.PUBLIC, self._loop_public])
         self.bal_check = threading.Thread(target=self._run_forever,
                                           args=[ConnectMethodEnum.PRIVATE, self._loop_private])
-
-        time.sleep(5)
-
-        self.get_sizes()
+        self.orderbook = {self.symbol: {'sell': {}, 'buy': {}, 'timestamp': 0}}
 
     def get_sizes(self):
-        asks_value = [str(x[1]) for x in self.orderbook[self.symbol]['asks']]
+        asks_value = [str(x[1]) for x in self.get_orderbook()[self.symbol]['asks']]
         max_value = 0
-
         for v in asks_value:
-            splt = v.split('.')
+            splt = v.split('.')[1]
 
-            if len(splt) > 1:
-                max_value = max(len(splt[1]), max_value)
+            if len(splt) >= max_value:
+                max_value = max(len(splt), max_value)
 
-        self.step_size = float('0.' + str(1).zfill(max_value - 1))
+        self.step_size = float('0.' + '0' * (max_value - 1) + str(1))
 
         url_path = "/derivatives/api/v3/instruments"
         res = requests.get(url=self.BASE_URL + url_path).json()
@@ -133,8 +128,6 @@ class KrakenClient(BaseClient):
     def get_orderbook(self) -> dict:
         orderbook = {}
         # time_start = time.time()
-        while not self.orderbook.get(self.symbol):
-            time.sleep(0.001)
         while True:
             snap = self.orderbook[self.symbol]
             orderbook[self.symbol] = {'timestamp': self.orderbook[self.symbol]['timestamp']}
@@ -152,6 +145,8 @@ class KrakenClient(BaseClient):
     def run_updater(self) -> None:
         self.wsd_public.start()
         self.bal_check.start()
+        time.sleep(5)
+        self.get_sizes()
 
     def _run_forever(self, type, loop) -> None:
         loop.run_until_complete(self._run_loop(type))
@@ -217,6 +212,7 @@ class KrakenClient(BaseClient):
                                 if payload['price'] > self.max_bid:
                                     self.max_bid = payload['price']
                                     self.count_flag = True
+
     # PRIVATE ----------------------------------------------------------------------------------------------------------
 
     async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession) -> dict:
@@ -327,8 +323,6 @@ class KrakenClient(BaseClient):
         }
         return requests.post(headers=headers, url=self.BASE_URL + url_path, data=post_string).json()
 
-
-
     def get_balance(self):
         url_path = "/derivatives/api/v3/accounts"
         nonce = str(int(time.time() * 1000))
@@ -350,7 +344,10 @@ class KrakenClient(BaseClient):
                 self.quantity_precision = len(str(self.step_size).split('.')[1])
             else:
                 self.quantity_precision = 0
-        self.expect_amount_coin = round(round(amount / self.step_size) * self.step_size, self.quantity_precision)
+        print('KRAKEN')
+        print(f"{self.quantity_precision=}")
+        print(f"{self.step_size=}")
+        self.expect_amount_coin = round(amount - (amount % self.step_size), self.quantity_precision)
 
     async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_id=None) -> dict:
@@ -476,7 +473,8 @@ class KrakenClient(BaseClient):
                                 self.positions.update({position['instrument'].upper(): {
                                     'side': side,
                                     'amount_usd': amount_usd if side == PositionSideEnum.LONG else -amount_usd,
-                                    'amount': position['balance'] if side == PositionSideEnum.LONG else -position['balance'],
+                                    'amount': position['balance'] if side == PositionSideEnum.LONG else -position[
+                                        'balance'],
                                     'entry_price': position['entry_price'],
                                     'unrealized_pnl_usd': 0,
                                     'realized_pnl_usd': position['pnl'],
@@ -537,7 +535,5 @@ if __name__ == '__main__':
     #     time.sleep(1)
     #     pprint(client.get_orderbook()[client.symbol]['asks'][:3])
     #     pprint(client.get_orderbook()[client.symbol]['bids'][:3])
-
-
 
 
