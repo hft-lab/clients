@@ -6,6 +6,7 @@ import hmac
 import os
 import threading
 import time
+import uuid
 from datetime import datetime
 from pprint import pprint
 
@@ -215,41 +216,128 @@ class KrakenClient(BaseClient):
 
     # PRIVATE ----------------------------------------------------------------------------------------------------------
 
-    async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession) -> dict:
-        url_path = f'/api/history/v3/orders'
-
+    async def get_fills(self, session) -> dict:
+        url_path = '/derivatives/api/v3/fills'
         nonce = str(int(time.time() * 1000))
         params = {
-
+            "lastFillTime": str(round((time.time() - 600) * 1000)),
         }
-        post_string = "&".join([f"{key}={params[key]}" for key in sorted(params)])
+
         headers = {
             "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
             "Nonce": nonce,
             "APIKey": self.__api_key,
             "Authent": self.get_kraken_futures_signature(
-                url_path, post_string, nonce
-            ).decode('utf-8'),
+                url_path, '', nonce
+            ).decode('utf-8')
+        }
+        async with session.get(headers=headers, url=self.BASE_URL + url_path, data=params) as resp:
+            return await resp.json()
+
+    async def get_all_orders(self, symbol, session) -> list:
+        all_orders = await self.__get_all_orders(session)
+        res_orders = {}
+
+        for elements in all_orders['elements']:
+            for event in ['OrderPlaced', 'OrderCancelled']:
+                # print(elements)
+                if order := elements['event'].get(event, {}).get('order'):
+                    if order['clientId'] == "":
+                        amount = float(order['quantity']) if order['filled'] == '0' else float(order['filled']) - float(order['quantity'])
+                        status = OrderStatus.NOT_EXECUTED if not float(order['quantity']) else OrderStatus.FULLY_EXECUTED
+                        res_orders.update({order['uid'] : {
+                            'id': uuid.uuid4(),
+                            'datetime': datetime.fromtimestamp(int(order['lastUpdateTimestamp'] / 1000)),
+                            'ts': int(order['lastUpdateTimestamp']),
+                            'context': 'web-interface',
+                            'parent_id': uuid.uuid4(),
+                            'exchange_order_id': order['uid'],
+                            'type': 'GTC', # TODO check it
+                            'status': status,
+                            'exchange': self.EXCHANGE_NAME,
+                            'side': order['direction'].lower(),
+                            'symbol': order['tradeable'],
+                            'expect_price': float(order['limitPrice']),
+                            'expect_amount_coin': amount,
+                            'expect_amount_usd': float(order['limitPrice']) * amount,
+                            'expect_fee': self.taker_fee,
+                            'factual_price': float(order['limitPrice']),
+                            'factual_amount_coin': 0 if order['filled'] == '0' else float(order['filled']) - float(order['quantity']),
+                            'factual_amount_usd': float(order['limitPrice']) * amount,
+                            'order_place_time': 0,
+                            'factual_fee': self.taker_fee,
+                            'env': '-',
+                            'datetime_update': datetime.utcnow(),
+                            'ts_update': time.time(),
+                            'client_id': order['clientId']
+                        }})
+
+
+
+
+        return [x for x in res_orders.values()]
+
+    async def __get_all_orders(self, session) -> dict:
+        url_path = '/api/history/v3/orders'
+        nonce = str(int(time.time() * 1000))
+
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+            "Nonce": nonce,
+            "APIKey": self.__api_key,
+            "Authent": self.get_kraken_futures_signature(
+                url_path, '', nonce
+            ).decode('utf-8')
         }
         async with session.get(headers=headers, url=self.BASE_URL + url_path) as resp:
-            resp = await resp.json()
-            status = OrderStatus.NOT_EXECUTED
+           return await resp.json()
 
-            result = {
-                'exchange_order_id': order_id,
-                'exchange': self.EXCHANGE_NAME,
-                'status': status,
-                'factual_price': 0,
-                'factual_amount_coin': 0,
-                'factual_amount_usd': 0,
-                'datetime_update': datetime.utcnow(),
-                'ts_update': time.time() * 1000
-            }
+    async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession) -> dict:
+        fills_orders = await self.get_fills(session)
 
-            for order in resp['elements']:
+        if fills_orders.get('result') == 'success':
+            prices = []
+            sizes = []
+            for fill in fills_orders:
+                if fill['order_id'] == order_id:
+                    if fill['fillType'] == 'taker':
+                        return {
+                            'exchange_order_id': order_id,
+                            'exchange': self.EXCHANGE_NAME,
+                            'status': OrderStatus.FULLY_EXECUTED,
+                            'factual_price': fill['price'],
+                            'factual_amount_coin': fill['size'],
+                            'factual_amount_usd': fill['size'] * fill['price'],
+                            'datetime_update': datetime.utcnow(),
+                            'ts_update': int(time.time() * 1000)
+                        }
+                    elif fill['fillType'] == 'maker':
+                        prices.append(fill['price'])
+                        sizes.append(fill['size'])
+
+            if sizes and prices:
+                sizes = sum(sizes)
+                price = sum(prices) / len(prices)
+                return {
+                    'exchange_order_id': order_id,
+                    'exchange': self.EXCHANGE_NAME,
+                    'status': OrderStatus.FULLY_EXECUTED,
+                    'factual_price': price,
+                    'factual_amount_coin': sizes,
+                    'factual_amount_usd': sizes * price,
+                    'datetime_update': datetime.utcnow(),
+                    'ts_update': int(time.time() * 1000)
+                }
+
+
+        all_orders = await self.__get_all_orders(session)
+        if orders := all_orders.get('elements'):
+            for order in orders:
+                status = None
                 if last_update := order['event'].get('OrderUpdated'):
                     if last_update['newOrder']['uid'] == order_id:  # noqa
                         pprint(f"{order=}")
+
                         if last_update['reason'] == 'full_fill':
                             status = OrderStatus.FULLY_EXECUTED
                         elif last_update['reason'] == 'partial_fill':
@@ -263,7 +351,7 @@ class KrakenClient(BaseClient):
                             amount = float(0 if status in [OrderStatus.PROCESSING, OrderStatus.NOT_EXECUTED] \
                                                else last_update['newOrder']['filled'])
 
-                            result = {
+                            return {
                                 'exchange_order_id': last_update['oldOrder']['uid'],
                                 'exchange': self.EXCHANGE_NAME,
                                 'status': status,
@@ -273,11 +361,18 @@ class KrakenClient(BaseClient):
                                                                       OrderStatus.NOT_EXECUTED] \
                                     else amount * price,
                                 'datetime_update': datetime.utcnow(),
-                                'ts_update': time.time() * 1000
+                                'ts_update': int(time.time())
                             }
-                            break
-
-            return result
+            return {
+                'exchange_order_id': order_id,
+                'exchange': self.EXCHANGE_NAME,
+                'status': OrderStatus.NOT_EXECUTED,
+                'factual_price': 0,
+                'factual_amount_coin': 0,
+                'factual_amount_usd': 0,
+                'datetime_update': datetime.utcnow(),
+                'ts_update': int(time.time())
+            }
 
     def _sign_message(self, api_path: str, data: dict) -> str:
         plain_data = []
@@ -517,23 +612,24 @@ class KrakenClient(BaseClient):
 
 if __name__ == '__main__':
     client = KrakenClient(Config.KRAKEN, Config.LEVERAGE)
-    client.run_updater()
-    time.sleep(5)
-    while True:
-        client.get_orderbook()
-        # print(f"ASKS: {client.get_orderbook()[client.symbol]['asks'][:3]}")
-        # print(f"BIDS: {client.get_orderbook()[client.symbol]['bids'][:3]}\n")
-        time.sleep(1)
-    # async def funding():
-    #     async with aiohttp.ClientSession() as session:
-    #         await client.get_orderbook_by_symbol(client.symbol)
-    #
-    # asyncio.run(funding())
+
+
+    # client.run_updater()
+    # time.sleep(5)
+    # while True:
+    #     client.get_orderbook()
+    #     # print(f"ASKS: {client.get_orderbook()[client.symbol]['asks'][:3]}")
+    #     # print(f"BIDS: {client.get_orderbook()[client.symbol]['bids'][:3]}\n")
+    #     time.sleep(1)
+    async def funding():
+        async with aiohttp.ClientSession() as session:
+            pprint(await client.get_all_orders('', session))
+
+
+    asyncio.run(funding())
     #
 
     # while True:
     #     time.sleep(1)
     #     pprint(client.get_orderbook()[client.symbol]['asks'][:3])
     #     pprint(client.get_orderbook()[client.symbol]['bids'][:3])
-
-

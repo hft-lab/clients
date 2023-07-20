@@ -397,7 +397,7 @@ class BinanceClient(BaseClient):
                 self.error_info = res
             elif res.get('status'):
                 status = ResponseStatus.SUCCESS
-                timestamp = res['updateTime']
+                timestamp = res['updateTime'] - 3600000
             else:
                 status = ResponseStatus.NO_CONNECTION
 
@@ -526,7 +526,7 @@ class BinanceClient(BaseClient):
                 'factual_amount_coin': float(res['executedQty']),
                 'factual_amount_usd': float(res['executedQty']) * float(res['avgPrice']),
                 'datetime_update': datetime.datetime.utcnow(),
-                'ts_update': int(time.time() * 1000) - 3600
+                'ts_update': int((time.time() - 3600) * 1000)
             }
 
     def _get_listen_key(self) -> None:
@@ -588,7 +588,7 @@ class BinanceClient(BaseClient):
                                                                       OrderStatus.NOT_EXECUTED] else float(
                                     data['o']['z']) * float(data['o']['ap']),
                                 'datetime_update': datetime.datetime.utcnow(),
-                                'ts_update': int(time.time() * 1000) - 3600
+                                'ts_update': int((time.time() - 3600) * 1000)
                             }
 
                             if self.symbol == data['o']['s'] and result['status'] != OrderStatus.PROCESSING:
@@ -609,17 +609,17 @@ if __name__ == '__main__':
         time.sleep(1)
         # print(client.get_orderbook())
 
-{'symbol': 'ETHUSDT', 'pair': 'ETHUSDT', 'contractType': 'PERPETUAL', 'deliveryDate': 4133404800000,
- 'onboardDate': 1630911600000, 'status': 'TRADING', 'maintMarginPercent': '2.5000', 'requiredMarginPercent': '5.0000',
- 'baseAsset': 'ETH', 'quoteAsset': 'USDT', 'marginAsset': 'USDT', 'pricePrecision': 2, 'quantityPrecision': 3,
- 'baseAssetPrecision': 8, 'quotePrecision': 8, 'underlyingType': 'COIN', 'underlyingSubType': [], 'settlePlan': 0,
- 'triggerProtect': '0.0500', 'liquidationFee': '0.015000', 'marketTakeBound': '0.05',
- 'filters': [{'minPrice': '39.90', 'maxPrice': '1000000', 'filterType': 'PRICE_FILTER', 'tickSize': '0.10'},
-             {'stepSize': '0.001', 'filterType': 'LOT_SIZE', 'maxQty': '10000', 'minQty': '0.001'},
-             {'stepSize': '0.001', 'filterType': 'MARKET_LOT_SIZE', 'maxQty': '50', 'minQty': '0.001'},
-             {'limit': 200, 'filterType': 'MAX_NUM_ORDERS'}, {'limit': 10, 'filterType': 'MAX_NUM_ALGO_ORDERS'},
-             {'notional': '5', 'filterType': 'MIN_NOTIONAL'},
-             {'multiplierDown': '0.9500', 'multiplierUp': '1.0500', 'multiplierDecimal': '4',
-              'filterType': 'PERCENT_PRICE'}],
- 'orderTypes': ['LIMIT', 'MARKET', 'STOP', 'STOP_MARKET', 'TAKE_PROFIT', 'TAKE_PROFIT_MARKET', 'TRAILING_STOP_MARKET'],
- 'timeInForce': ['GTC', 'IOC', 'FOK', 'GTX']}
+# {'symbol': 'ETHUSDT', 'pair': 'ETHUSDT', 'contractType': 'PERPETUAL', 'deliveryDate': 4133404800000,
+#  'onboardDate': 1630911600000, 'status': 'TRADING', 'maintMarginPercent': '2.5000', 'requiredMarginPercent': '5.0000',
+#  'baseAsset': 'ETH', 'quoteAsset': 'USDT', 'marginAsset': 'USDT', 'pricePrecision': 2, 'quantityPrecision': 3,
+#  'baseAssetPrecision': 8, 'quotePrecision': 8, 'underlyingType': 'COIN', 'underlyingSubType': [], 'settlePlan': 0,
+#  'triggerProtect': '0.0500', 'liquidationFee': '0.015000', 'marketTakeBound': '0.05',
+#  'filters': [{'minPrice': '39.90', 'maxPrice': '1000000', 'filterType': 'PRICE_FILTER', 'tickSize': '0.10'},
+#              {'stepSize': '0.001', 'filterType': 'LOT_SIZE', 'maxQty': '10000', 'minQty': '0.001'},
+#              {'stepSize': '0.001', 'filterType': 'MARKET_LOT_SIZE', 'maxQty': '50', 'minQty': '0.001'},
+#              {'limit': 200, 'filterType': 'MAX_NUM_ORDERS'}, {'limit': 10, 'filterType': 'MAX_NUM_ALGO_ORDERS'},
+#              {'notional': '5', 'filterType': 'MIN_NOTIONAL'},
+#              {'multiplierDown': '0.9500', 'multiplierUp': '1.0500', 'multiplierDecimal': '4',
+#               'filterType': 'PERCENT_PRICE'}],
+#  'orderTypes': ['LIMIT', 'MARKET', 'STOP', 'STOP_MARKET', 'TAKE_PROFIT', 'TAKE_PROFIT_MARKET', 'TRAILING_STOP_MARKET'],
+#  'timeInForce': ['GTC', 'IOC', 'FOK', 'GTX']}
