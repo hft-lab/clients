@@ -170,6 +170,9 @@ class KrakenClient(BaseClient):
                 orderbook.update({'bids': res['orderBook']['bids']})
                 orderbook.update({'asks': res['orderBook']['asks']})
                 orderbook.update({'timestamp': int(time.time() * 1000)})
+
+        self.get_sizes()
+
         return orderbook
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
@@ -621,7 +624,7 @@ if __name__ == '__main__':
     #     time.sleep(1)
     async def funding():
         async with aiohttp.ClientSession() as session:
-            pprint(await client.get_order_by_id('', 'fc55575e-4ae6-45ae-956f-e8ff4596dda4', session))
+            pprint(await client.get_order_by_id('', 'd6515732-8c83-45c3-9fe4-e3de5fe4c776', session))
 
 
     asyncio.run(funding())
