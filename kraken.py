@@ -296,7 +296,7 @@ class KrakenClient(BaseClient):
         if fills_orders.get('result') == 'success':
             prices = []
             sizes = []
-            for fill in fills_orders:
+            for fill in fills_orders.get('fills', []):
                 if fill['order_id'] == order_id:
                     if fill['fillType'] == 'taker':
                         return {
@@ -621,7 +621,7 @@ if __name__ == '__main__':
     #     time.sleep(1)
     async def funding():
         async with aiohttp.ClientSession() as session:
-            pprint(await client.get_all_orders('', session))
+            pprint(await client.get_order_by_id('', 'fc55575e-4ae6-45ae-956f-e8ff4596dda4', session))
 
 
     asyncio.run(funding())
