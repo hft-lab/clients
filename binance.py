@@ -125,29 +125,25 @@ class BinanceClient(BaseClient):
             for data in response['symbols']:
                 if data['symbol'] == self.symbol.upper() and data['status'] == 'TRADING' and \
                         data['contractType'] == 'PERPETUAL':
-                    print(data)
                     self.quantity_precision = data['quantityPrecision']
                     self.price_precision = data['pricePrecision']
                     self.symbol_is_active = True
-                    for f in data['filters']:
-                        if f['filterType'] == 'PRICE_FILTER':
-                            self.tick_size = float(f['tickSize'])
-                        elif f['filterType'] == 'LOT_SIZE':
-                            self.step_size = float(f['stepSize'])
-
+                    for fltr in data['filters']:
+                        if fltr['filterType'] == 'PRICE_FILTER':
+                            self.tick_size = float(fltr['tickSize'])
+                        elif fltr['filterType'] == 'LOT_SIZE':
+                            self.step_size = float(fltr['stepSize'])
                     break
         else:
             self.symbol_is_active = False
 
     def __check_ob(self, ob: dict, side: str) -> None:
         reformat_ob = [[float(x[0]), float(x[1])] for x in ob[side]]
-
         if not len(self.orderbook[self.symbol][side]):
             for new_order in reformat_ob:
                 if new_order[1] > self.step_size:
                     self.orderbook[self.symbol][side].append(new_order)
-                    break
-
+            return
         for new_order in reformat_ob:
             index = 0
             if side == 'bids':
@@ -167,7 +163,6 @@ class BinanceClient(BaseClient):
                 for ob_order in self.orderbook[self.symbol][side]:
                     if new_order[0] > ob_order[0]:
                         index += 1
-
                     elif new_order[0] == ob_order[0]:
                         if new_order[1] > self.step_size:
                             self.orderbook[self.symbol][side][index] = new_order
