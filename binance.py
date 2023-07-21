@@ -140,11 +140,11 @@ class BinanceClient(BaseClient):
             self.symbol_is_active = False
 
     def __check_ob(self, ob: dict, side: str) -> None:
-        reformat_ob = [[float(x[0]), float(x[1])] for x in ob.get(side, [])]
+        reformat_ob = [[float(x[0]), float(x[1])] for x in ob[side]]
 
         if not len(self.orderbook[self.symbol][side]):
             for new_order in reformat_ob:
-                if new_order[1] > 0:
+                if new_order[1] > self.step_size:
                     self.orderbook[self.symbol][side].append(new_order)
                     break
 
@@ -155,28 +155,27 @@ class BinanceClient(BaseClient):
                     if new_order[0] < ob_order[0]:
                         index += 1
                     elif new_order[0] == ob_order[0]:
-                        if new_order[1] > 0:
+                        if new_order[1] > self.step_size:
                             self.orderbook[self.symbol][side][index] = new_order
                         else:
                             self.orderbook[self.symbol][side].pop(index)
                         break
-                    elif new_order[0] > ob_order[0] and new_order[1] > 0:
+                    elif new_order[0] > ob_order[0] and new_order[1] > self.step_size:
                         self.orderbook[self.symbol][side].insert(index, new_order)
                         break
-
             elif side == 'asks':
                 for ob_order in self.orderbook[self.symbol][side]:
                     if new_order[0] > ob_order[0]:
                         index += 1
 
                     elif new_order[0] == ob_order[0]:
-                        if new_order[1] > 0:
+                        if new_order[1] > self.step_size:
                             self.orderbook[self.symbol][side][index] = new_order
                         else:
                             self.orderbook[self.symbol][side].pop(index)
                         break
 
-                    elif new_order[0] < ob_order[0] and new_order[1] > 0:
+                    elif new_order[0] < ob_order[0] and new_order[1] > self.step_size:
                         self.orderbook[self.symbol][side].insert(index, new_order)
                         break
 
@@ -322,7 +321,7 @@ class BinanceClient(BaseClient):
                 price = (float(price[0][1]) + float(price[0][4])) / 2
                 return price
             else:
-                time_ = int(time_ / 10000) * 10000
+                time_ = int(time_)
                 return await self.get_historical_price(session, symbol, time_)
 
     async def get_funding_history(self, session, symbol):
