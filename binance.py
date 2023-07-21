@@ -193,6 +193,7 @@ class BinanceClient(BaseClient):
                 self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
                 self.count_flag = True
         except:
+            print(f"\n\n\nERROR UPDATING OB {self.EXCHANGE_NAME}\nPAYLOAD: {ob}\nORDERBOOK: {self.orderbook}\n\n\n")
             self.count_flag = False
             self.orderbook[self.symbol] = await self.get_orderbook_by_symbol()
             traceback.print_exc()
