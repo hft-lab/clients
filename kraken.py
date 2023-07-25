@@ -247,16 +247,18 @@ class KrakenClient(BaseClient):
                 if order := elements['event'].get(event, {}).get('order'):
                     if order['clientId'] == "":
                         if int(order['lastUpdateTimestamp']) > int(time.time() * 1000) - 86400000:
-                            amount = float(order['quantity']) if order['filled'] == '0' else float(order['filled']) - float(order['quantity'])
-                            status = OrderStatus.NOT_EXECUTED if not float(order['quantity']) else OrderStatus.FULLY_EXECUTED
-                            res_orders.update({order['uid'] : {
+                            amount = float(order['quantity']) if order['filled'] == '0' else float(
+                                order['filled']) - float(order['quantity'])
+                            status = OrderStatus.NOT_EXECUTED if not float(
+                                order['quantity']) else OrderStatus.FULLY_EXECUTED
+                            res_orders.update({order['uid']: {
                                 'id': uuid.uuid4(),
                                 'datetime': datetime.fromtimestamp(int(order['lastUpdateTimestamp'] / 1000)),
                                 'ts': int(order['lastUpdateTimestamp']),
                                 'context': 'web-interface',
                                 'parent_id': uuid.uuid4(),
                                 'exchange_order_id': order['uid'],
-                                'type': 'GTC', # TODO check it
+                                'type': 'GTC',  # TODO check it
                                 'status': status,
                                 'exchange': self.EXCHANGE_NAME,
                                 'side': order['direction'].lower(),
@@ -266,7 +268,8 @@ class KrakenClient(BaseClient):
                                 'expect_amount_usd': float(order['limitPrice']) * amount,
                                 'expect_fee': self.taker_fee,
                                 'factual_price': float(order['limitPrice']),
-                                'factual_amount_coin': 0 if order['filled'] == '0' else float(order['filled']) - float(order['quantity']),
+                                'factual_amount_coin': 0 if order['filled'] == '0' else float(order['filled']) - float(
+                                    order['quantity']),
                                 'factual_amount_usd': float(order['limitPrice']) * amount,
                                 'order_place_time': 0,
                                 'factual_fee': self.taker_fee,
@@ -291,7 +294,7 @@ class KrakenClient(BaseClient):
             ).decode('utf-8')
         }
         async with session.get(headers=headers, url=self.BASE_URL + url_path) as resp:
-           return await resp.json()
+            return await resp.json()
 
     async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession) -> dict:
         fills_orders = await self.get_fills(session)
@@ -329,7 +332,6 @@ class KrakenClient(BaseClient):
                     'datetime_update': datetime.utcnow(),
                     'ts_update': int(time.time() * 1000)
                 }
-
 
         all_orders = await self.__get_all_orders(session)
         if orders := all_orders.get('elements'):
@@ -440,9 +442,6 @@ class KrakenClient(BaseClient):
                 self.quantity_precision = len(str(self.step_size).split('.')[1])
             else:
                 self.quantity_precision = 0
-        print('KRAKEN')
-        print(f"{self.quantity_precision=}")
-        print(f"{self.step_size=}")
         self.expect_amount_coin = round(amount - (amount % self.step_size), self.quantity_precision)
 
     async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession,
@@ -451,7 +450,7 @@ class KrakenClient(BaseClient):
         url_path = "/derivatives/api/v3/sendorder"
         self.expect_price = round(round(price / self.tick_size) * self.tick_size, self.price_precision)
         params = {
-            "orderType": "lmt",
+            "orderType": "lmt",  # post
             "limitPrice": self.expect_price,
             "side": side.lower(),
             "size": self.expect_amount_coin,
@@ -461,7 +460,7 @@ class KrakenClient(BaseClient):
         post_string = "&".join([f"{key}={params[key]}" for key in sorted(params)])
 
         headers = {
-            "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+            "Content-Type": "application/json",
             "Nonce": nonce,
             "APIKey": self.__api_key,
             "Authent": self.get_kraken_futures_signature(url_path, post_string, nonce).decode('utf-8'),
@@ -544,7 +543,7 @@ class KrakenClient(BaseClient):
 
                             await ws.send_str(orjson.dumps({
                                 "event": "subscribe",
-                                "feed": "open_positions",
+                                "feed": "fills",
                                 "api_key": self.__api_key,
                                 'original_challenge': self.__last_challenge,
                                 "signed_challenge": self._get_sign_challenge(self.__last_challenge)
@@ -576,61 +575,104 @@ class KrakenClient(BaseClient):
                                     'realized_pnl_usd': position['pnl'],
                                     'lever': self.leverage
                                 }})
-                        elif msg_data.get('feed') == 'open_orders' and msg_data.get('order'):
-                            order = msg_data['order']
-                            self.last_price['sell' if order['direction'] else 'buy'] = float(order['limit_price'])
-                            status = OrderStatus.PROCESSING
+                        elif 'fills' in msg_data.get('feed'):
+                            for fill in msg_data['fills']:
+                                if self.symbol.upper() == fill['instrument'].upper():
+                                    qty_coin = fill['qty'] - fill['remaining_order_qty']
+                                    qty_usd = round(qty_coin * fill['price'], 1)
+                                    if fill['remaining_order_qty'] < self.step_size:
+                                        status = OrderStatus.FULLY_EXECUTED
+                                    elif fill['remaining_order_qty'] > self.step_size:
+                                        status = OrderStatus.PARTIALLY_EXECUTED
+                                    if order := self.orders.get(fill['order_id']):
+                                        qty_usd = order['factual_amount_usd'] + qty_usd
+                                        factual_price = round(qty_usd / qty_coin, self.price_precision)
+                                        self.last_price['buy' if fill['buy'] else 'sell'] = factual_price
+                                        self.orders.update({fill['order_id']: {
+                                            'factual_price': factual_price,
+                                            'exchange_order_id': fill['order_id'],
+                                            'exchange': self.EXCHANGE_NAME,
+                                            'status': status,
+                                            'factual_amount_coin': qty_coin,
+                                            'factual_amount_usd': qty_usd,
+                                            'datetime_update': datetime.utcnow(),
+                                            'ts_update': time.time() * 1000
+                                            }})
+                                    else:
+                                        self.last_price['buy' if fill['buy'] else 'sell'] = fill['price']
+                                        self.orders.update({fill['order_id']: {
+                                             'factual_price': fill['price'],
+                                             'exchange_order_id': fill['order_id'],
+                                             'exchange': self.EXCHANGE_NAME,
+                                             'status': status,
+                                             'factual_amount_coin': qty_coin,
+                                             'factual_amount_usd': qty_usd,
+                                             'datetime_update': datetime.utcnow(),
+                                             'ts_update': time.time() * 1000
+                                             }})
 
-                            if msg_data['reason'] == 'full_fill':
-                                status = OrderStatus.FULLY_EXECUTED
-                            elif msg_data['reason'] == 'partial_fill':
-                                status = OrderStatus.PARTIALLY_EXECUTED
-                            elif msg_data['reason'] in ['cancelled_by_user', 'cancelled_by_admin', 'not_enough_margin']:
-                                status = OrderStatus.NOT_EXECUTED
-
-                            if status:
-                                price = 0 if status in [OrderStatus.PROCESSING, OrderStatus.NOT_EXECUTED] \
-                                    else order['limit_price']
-                                amount = 0 if status in [OrderStatus.PROCESSING, OrderStatus.NOT_EXECUTED] \
-                                    else order['filled']
-                                result = {
-                                    'exchange_order_id': order['order_id'],
-                                    'exchange': self.EXCHANGE_NAME,
-                                    'status': status,
-                                    'factual_price': price,
-                                    'factual_amount_coin': amount,
-                                    'factual_amount_usd': 0 if status in [OrderStatus.PROCESSING,
-                                                                          OrderStatus.NOT_EXECUTED] \
-                                        else amount * price,
-                                    'datetime_update': datetime.utcnow(),
-                                    'ts_update': time.time() * 1000
-                                }
-
-                                if self.symbol.upper() == order['instrument'].upper() \
-                                        and result['status'] != OrderStatus.PROCESSING:
-                                    self.orders.update({order['order_id']: result})
+                                # self.last_price['sell' if order['direction'] else 'buy'] = float(order['limit_price'])
+                                # status = OrderStatus.PROCESSING
+                                #
+                                # if msg_data['reason'] == 'full_fill':
+                                #     status = OrderStatus.FULLY_EXECUTED
+                                # elif msg_data['reason'] == 'partial_fill':
+                                #     status = OrderStatus.PARTIALLY_EXECUTED
+                                # elif msg_data['reason'] in ['cancelled_by_user', 'cancelled_by_admin', 'not_enough_margin']:
+                                #     status = OrderStatus.NOT_EXECUTED
+                                #
+                                # if status:
+                                #     price = 0 if status in [OrderStatus.PROCESSING, OrderStatus.NOT_EXECUTED] \
+                                #         else order['limit_price']
+                                #     amount = 0 if status in [OrderStatus.PROCESSING, OrderStatus.NOT_EXECUTED] \
+                                #         else order['filled']
+                                #     result = {
+                                #         'exchange_order_id': order['order_id'],
+                                #         'exchange': self.EXCHANGE_NAME,
+                                #         'status': status,
+                                #         'factual_price': price,
+                                #         'factual_amount_coin': amount,
+                                #         'factual_amount_usd': 0 if status in [OrderStatus.PROCESSING,
+                                #                                               OrderStatus.NOT_EXECUTED] \
+                                #             else amount * price,
+                                #         'datetime_update': datetime.utcnow(),
+                                #         'ts_update': time.time() * 1000
+                                #     }
+                                #
+                                #     if self.symbol.upper() == order['instrument'].upper() \
+                                #             and result['status'] != OrderStatus.PROCESSING:
+                                #         self.orders.update({order['order_id']: result})
 
 
 if __name__ == '__main__':
     client = KrakenClient(Config.KRAKEN, Config.LEVERAGE)
 
+    client.run_updater()
+    time.sleep(5)
 
-    # client.run_updater()
-    # time.sleep(5)
+
     # while True:
     #     client.get_orderbook()
     #     # print(f"ASKS: {client.get_orderbook()[client.symbol]['asks'][:3]}")
     #     # print(f"BIDS: {client.get_orderbook()[client.symbol]['bids'][:3]}\n")
     #     time.sleep(1)
-    async def funding():
+    async def test_order():
         async with aiohttp.ClientSession() as session:
-            pprint(await client.get_order_by_id('', 'd6515732-8c83-45c3-9fe4-e3de5fe4c776', session))
+            # pprint(await client.get_order_by_id('', 'd6515732-8c83-45c3-9fe4-e3de5fe4c776', session))
+            client.expect_amount_coin = 0.027
+            order = await client.create_order(client.get_orderbook()[client.symbol]['bids'][3][0], 'sell', session)
+            print(order)
 
 
-    asyncio.run(funding())
+    asyncio.run(test_order())
     #
 
-    # while True:
-    #     time.sleep(1)
-    #     pprint(client.get_orderbook()[client.symbol]['asks'][:3])
-    #     pprint(client.get_orderbook()[client.symbol]['bids'][:3])
+    while True:
+        time.sleep(1)
+#     #     pprint(client.get_orderbook()[client.symbol]['asks'][:3])
+#     #     pprint(client.get_orderbook()[client.symbol]['bids'][:3])
+# fill_buy = {"feed": "fills", "username": "4e8b59e8-a716-498c-8dcc-c4835d04f50f", "fills": [
+#     {"instrument": "PF_ETHUSD", "time": 1690295256776, "price": 1864.7, "seq": 100, "buy": True, "qty": 0.027,
+#      "remaining_order_qty": 0.0, "order_id": "1cb6667b-bd01-46f4-aaf4-34b0ca24b011", "cli_ord_id": "None",
+#      "fill_id": "e986e21b-98d1-410d-a8ef-d7a1975df2aa", "fill_type": "taker", "fee_paid": 0.02517345,
+#      "fee_currency": "USD", "taker_order_type": "lmt", "order_type": "lmt"}]}

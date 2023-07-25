@@ -141,7 +141,7 @@ class BinanceClient(BaseClient):
         reformat_ob = [[float(x[0]), float(x[1])] for x in ob[side]]
         if not len(self.orderbook[self.symbol][side]):
             for new_order in reformat_ob:
-                if new_order[1] > self.step_size:
+                if new_order[1] >= self.step_size:
                     self.orderbook[self.symbol][side].append(new_order)
             return
         for new_order in reformat_ob:
@@ -169,13 +169,14 @@ class BinanceClient(BaseClient):
                         else:
                             self.orderbook[self.symbol][side].pop(index)
                         break
-
                     elif new_order[0] < ob_order[0] and new_order[1] > self.step_size:
                         self.orderbook[self.symbol][side].insert(index, new_order)
                         break
 
     async def __orderbook_update(self, ob: dict) -> None:
         try:
+            last_ob_asks = self.orderbook[self.symbol]['asks']
+            last_ob_bids = self.orderbook[self.symbol]['bids']
             last_ob_ask = self.orderbook[self.symbol]['asks'][0][0]
             last_ob_bid = self.orderbook[self.symbol]['bids'][0][0]
             if ob.get('asks'):
@@ -187,7 +188,8 @@ class BinanceClient(BaseClient):
                 self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
                 self.count_flag = True
         except:
-            print(f"\n\n\nERROR UPDATING OB {self.EXCHANGE_NAME}\nPAYLOAD: {ob}\nORDERBOOK: {self.orderbook}\n\n\n")
+            print(f"\n\n\nERROR UPDATING OB {self.EXCHANGE_NAME}\nPAYLOAD: {ob}\n\nORDERBOOK: {self.orderbook}\n")
+            print(f"{last_ob_bids=}\n\n{last_ob_asks=}\n\n\n")
             self.count_flag = False
             self.orderbook[self.symbol] = await self.get_orderbook_by_symbol()
             traceback.print_exc()
