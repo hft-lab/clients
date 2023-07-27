@@ -575,9 +575,8 @@ class KrakenClient(BaseClient):
                                     'realized_pnl_usd': position['pnl'],
                                     'lever': self.leverage
                                 }})
-                        elif msg_data.get('fills'):
+                        elif msg_data.get('fills') and msg_data['feed'] != 'fills_snapshot':
                             for fill in msg_data['fills']:
-                                print(fill)
                                 if self.symbol.upper() == fill['instrument'].upper():
                                     qty_coin = fill['qty'] - fill['remaining_order_qty']
                                     qty_usd = round(qty_coin * fill['price'], 1)
