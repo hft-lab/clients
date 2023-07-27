@@ -377,6 +377,8 @@ class BinanceClient(BaseClient):
 
     async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_id=None) -> dict:
+        # time_sent = datetime.datetime.utcnow().timestamp()
+        time_sent = time.time()
         self.expect_price = round(round(price / self.tick_size) * self.tick_size, self.price_precision)
         url_path = '/fapi/v1/order?'
         query_string = f"timestamp={int(time.time() * 1000)}&symbol={self.symbol}&side={side}&type=LIMIT&" \
@@ -394,10 +396,10 @@ class BinanceClient(BaseClient):
                 self.error_info = res
             elif res.get('status'):
                 status = ResponseStatus.SUCCESS
-                timestamp = res['updateTime'] - 3600000
+                timestamp = res['updateTime']
             else:
                 status = ResponseStatus.NO_CONNECTION
-
+            print(f"BINANCE create order time: {timestamp - (time_sent * 1000)} ms")
             return {
                 'exchange_name': self.EXCHANGE_NAME,
                 'timestamp': timestamp,
@@ -595,15 +597,22 @@ class BinanceClient(BaseClient):
 if __name__ == '__main__':
     client = BinanceClient(Config.BINANCE, Config.LEVERAGE)
     client.run_updater()
+    time.sleep(5)
 
-    # async def funding():
-    #     async with aiohttp.ClientSession() as session:
-    #         await client.get_orderbook_by_symbol(client.symbol)
-    #
-    # asyncio.run(funding())
+    async def test_order():
+        async with aiohttp.ClientSession() as session:
+            client.fit_amount(0.017)
+            price = client.get_orderbook()[client.symbol]['bids'][3][0]
+            data = await client.create_order(price, 'buy', session)
+            print(data)
+            client.cancel_all_orders()
+
+
+    asyncio.run(test_order())
 
     while True:
-        time.sleep(1)
+        time.sleep(5)
+        asyncio.run(test_order())
         # print(client.get_orderbook())
 
 # {'symbol': 'ETHUSDT', 'pair': 'ETHUSDT', 'contractType': 'PERPETUAL', 'deliveryDate': 4133404800000,

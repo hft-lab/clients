@@ -79,7 +79,7 @@ class DydxClient(BaseClient):
 
         self._updates = 0
         self.offsets = {}
-        self.time_sent = time.time()
+        # self.time_sent = time.time()
 
         self.quantity_precision = len(str(self.step_size).split('.')[1]) if '.' in str(self.step_size) else 1
         self.get_position()
@@ -272,7 +272,7 @@ class DydxClient(BaseClient):
     async def create_order(self, price: float, side: str, session: aiohttp.ClientSession,
                            type: str = 'LIMIT', expire: int = 10000, client_id: str = None, expiration=None) -> dict:
 
-        self.time_sent = datetime.utcnow().timestamp()
+        time_sent = datetime.utcnow().timestamp()
         expire_date = int(round(time.time()) + expire)
         expect_amount_coin = str(self.expect_amount_coin)
         expect_price = self.fit_price(price)
@@ -343,7 +343,7 @@ class DydxClient(BaseClient):
                 status = ResponseStatus.SUCCESS
             else:
                 status = ResponseStatus.NO_CONNECTION
-            print(f"DYDX create order time: {timestamp - (self.time_sent * 1000)} ms")
+            print(f"DYDX create order time: {timestamp - (time_sent * 1000)} ms")
             return {
                 'exchange_name': self.EXCHANGE_NAME,
                 'timestamp': timestamp,
@@ -833,12 +833,14 @@ if __name__ == '__main__':
     client.run_updater()
 
 
-    async def funding():
+    async def test_order():
         async with aiohttp.ClientSession() as session:
             client.fit_amount(0.017)
-            data = await client.create_order(1800, 'buy', session)
+            price = client.get_orderbook()[client.symbol]['bids'][3][0]
+            data = await client.create_order(price, 'buy', session)
             print(data)
             client.cancel_all_orders()
 
-
-    asyncio.run(funding())
+    while True:
+        time.sleep(5)
+        asyncio.run(test_order())
