@@ -575,15 +575,15 @@ class KrakenClient(BaseClient):
                                     'realized_pnl_usd': position['pnl'],
                                     'lever': self.leverage
                                 }})
-                        elif 'fills' in msg_data.get('feed'):
+                        elif msg_data.get('fills'):
                             for fill in msg_data['fills']:
+                                print(fill)
                                 if self.symbol.upper() == fill['instrument'].upper():
                                     qty_coin = fill['qty'] - fill['remaining_order_qty']
                                     qty_usd = round(qty_coin * fill['price'], 1)
+                                    status = OrderStatus.PARTIALLY_EXECUTED
                                     if fill['remaining_order_qty'] < self.step_size:
                                         status = OrderStatus.FULLY_EXECUTED
-                                    elif fill['remaining_order_qty'] > self.step_size:
-                                        status = OrderStatus.PARTIALLY_EXECUTED
                                     if order := self.orders.get(fill['order_id']):
                                         qty_usd = order['factual_amount_usd'] + qty_usd
                                         factual_price = round(qty_usd / qty_coin, self.price_precision)
