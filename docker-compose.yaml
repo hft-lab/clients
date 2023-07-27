@@ -1,25 +1,29 @@
-test_ping_dydx:
-    logging:
-        driver: "json-file"
-        options:
-            max - size: "100m"
-    build:
-        context:.
-    dockerfile: "dockerfile.multibot"
-    env_file:
-        -../env.eth
-    restart: always
-    command: 'python3 dydx.py'
+version: '3.5'
 
-test_ping_binance:
-    logging:
-        driver: "json-file"
-        options:
-            max - size: "100m"
-    build:
-        context:.
-    dockerfile: "dockerfile.multibot"
-    env_file:
-        -../env.eth
-    restart: always
-    command: 'python3 binance.py'
+services:
+
+    test_ping_dydx:
+        logging:
+            driver: "json-file"
+            options:
+                max - size: "100m"
+        build:
+            context:.
+        dockerfile: "dockerfile.multibot"
+        env_file:
+            -../env.eth
+        restart: always
+        command: 'python3 dydx.py'
+
+    test_ping_binance:
+        logging:
+            driver: "json-file"
+            options:
+                max - size: "100m"
+        build:
+            context:.
+        dockerfile: "dockerfile.multibot"
+        env_file:
+            -../env.eth
+        restart: always
+        command: 'python3 binance.py'
