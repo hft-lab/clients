@@ -446,6 +446,7 @@ class KrakenClient(BaseClient):
 
     async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_id=None) -> dict:
+        time_sent = datetime.utcnow().timestamp()
         nonce = str(int(time.time() * 1000))
         url_path = "/derivatives/api/v3/sendorder"
         self.expect_price = round(round(price / self.tick_size) * self.tick_size, self.price_precision)
@@ -481,7 +482,7 @@ class KrakenClient(BaseClient):
                 timestamp = 0000000000000
                 status = ResponseStatus.ERROR
                 self.error_info = response
-
+            print(f"KRAKEN create order time: {timestamp - (time_sent * 1000)} ms")
             return {
                 'exchange_name': self.EXCHANGE_NAME,
                 'timestamp': timestamp,
@@ -649,25 +650,25 @@ if __name__ == '__main__':
     client.run_updater()
     time.sleep(5)
 
+    async def test_order():
+        async with aiohttp.ClientSession() as session:
+            client.fit_amount(0.017)
+            price = client.get_orderbook()[client.symbol]['bids'][3][0]
+            data = await client.create_order(price, 'buy', session)
+            print(data)
+            client.cancel_all_orders()
 
+
+    asyncio.run(test_order())
+
+    while True:
+        time.sleep(5)
+        asyncio.run(test_order())
     # while True:
     #     client.get_orderbook()
     #     # print(f"ASKS: {client.get_orderbook()[client.symbol]['asks'][:3]}")
     #     # print(f"BIDS: {client.get_orderbook()[client.symbol]['bids'][:3]}\n")
     #     time.sleep(1)
-    async def test_order():
-        async with aiohttp.ClientSession() as session:
-            # pprint(await client.get_order_by_id('', 'd6515732-8c83-45c3-9fe4-e3de5fe4c776', session))
-            client.expect_amount_coin = 0.027
-            order = await client.create_order(client.get_orderbook()[client.symbol]['bids'][3][0], 'sell', session)
-            print(order)
-
-
-    asyncio.run(test_order())
-    #
-
-    while True:
-        time.sleep(1)
 #     #     pprint(client.get_orderbook()[client.symbol]['asks'][:3])
 #     #     pprint(client.get_orderbook()[client.symbol]['bids'][:3])
 # fill_buy = {"feed": "fills", "username": "4e8b59e8-a716-498c-8dcc-c4835d04f50f", "fills": [

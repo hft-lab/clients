@@ -175,8 +175,8 @@ class BinanceClient(BaseClient):
 
     async def __orderbook_update(self, ob: dict) -> None:
         try:
-            last_ob_asks = self.orderbook[self.symbol]['asks']
-            last_ob_bids = self.orderbook[self.symbol]['bids']
+            last_ob_asks = self.orderbook[self.symbol]['asks'].copy()
+            last_ob_bids = self.orderbook[self.symbol]['bids'].copy()
             last_ob_ask = self.orderbook[self.symbol]['asks'][0][0]
             last_ob_bid = self.orderbook[self.symbol]['bids'][0][0]
             if ob.get('asks'):
@@ -397,6 +397,8 @@ class BinanceClient(BaseClient):
             elif res.get('status'):
                 status = ResponseStatus.SUCCESS
                 timestamp = res['updateTime']
+                utc_diff = round((datetime.datetime.utcnow().timestamp() - time.time()) * 1000)
+                timestamp += utc_diff
             else:
                 status = ResponseStatus.NO_CONNECTION
             print(f"BINANCE create order time: {timestamp - (time_sent * 1000)} ms")
