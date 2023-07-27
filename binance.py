@@ -378,7 +378,7 @@ class BinanceClient(BaseClient):
     async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_id=None) -> dict:
         # time_sent = datetime.datetime.utcnow().timestamp()
-        time_sent = time.time()
+        time_sent = datetime.datetime.utcnow().timestamp()
         self.expect_price = round(round(price / self.tick_size) * self.tick_size, self.price_precision)
         url_path = '/fapi/v1/order?'
         query_string = f"timestamp={int(time.time() * 1000)}&symbol={self.symbol}&side={side}&type=LIMIT&" \
@@ -604,7 +604,7 @@ if __name__ == '__main__':
     async def test_order():
         async with aiohttp.ClientSession() as session:
             client.fit_amount(0.017)
-            price = client.get_orderbook()[client.symbol]['bids'][3][0]
+            price = client.get_orderbook()[client.symbol]['bids'][10][0]
             data = await client.create_order(price, 'buy', session)
             print(data)
             client.cancel_all_orders()
