@@ -298,7 +298,6 @@ class KrakenClient(BaseClient):
 
     async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession) -> dict:
         fills_orders = await self.get_fills(session)
-
         if fills_orders.get('result') == 'success':
             prices = []
             sizes = []
@@ -332,40 +331,35 @@ class KrakenClient(BaseClient):
                     'datetime_update': datetime.utcnow(),
                     'ts_update': int(time.time() * 1000)
                 }
+        return await self.__get_order_by_all_orders(session, order_id)
 
+    async def __get_order_by_all_orders(self, session, order_id):
         all_orders = await self.__get_all_orders(session)
         if orders := all_orders.get('elements'):
             for order in orders:
-                status = None
+                stts = OrderStatus.PROCESSING
+                price = 0
+                amount = 0
                 if last_update := order['event'].get('OrderUpdated'):
-                    if last_update['newOrder']['uid'] == order_id:  # noqa
-                        pprint(f"{order=}")
-
-                        if last_update['reason'] == 'full_fill':
-                            status = OrderStatus.FULLY_EXECUTED
-                        elif last_update['reason'] == 'partial_fill':
-                            status = OrderStatus.PARTIALLY_EXECUTED
-                        elif last_update['reason'] in ['cancelled_by_user', 'cancelled_by_admin', 'not_enough_margin']:
-                            status = OrderStatus.NOT_EXECUTED
-
-                        if status:
-                            price = float(0 if status in [OrderStatus.PROCESSING, OrderStatus.NOT_EXECUTED] \
-                                              else last_update['newOrder']['limitPrice'])
-                            amount = float(0 if status in [OrderStatus.PROCESSING, OrderStatus.NOT_EXECUTED] \
-                                               else last_update['newOrder']['filled'])
-
-                            return {
-                                'exchange_order_id': last_update['oldOrder']['uid'],
-                                'exchange': self.EXCHANGE_NAME,
-                                'status': status,
-                                'factual_price': price,
-                                'factual_amount_coin': amount,
-                                'factual_amount_usd': 0 if status in [OrderStatus.PROCESSING,
-                                                                      OrderStatus.NOT_EXECUTED] \
-                                    else amount * price,
-                                'datetime_update': datetime.utcnow(),
-                                'ts_update': int(time.time())
-                            }
+                    if last_update['newOrder']['uid'] == order_id:
+                        print(f"KRAKEN {order=}")
+                        rsn = last_update['reason']
+                        if rsn in ['full_fill', 'partial_fill']:
+                            stts = OrderStatus.FULLY_EXECUTED if rsn == 'full_fill' else OrderStatus.PARTIALLY_EXECUTED
+                            price = last_update['newOrder']['limitPrice']
+                            amount = last_update['newOrder']['filled']
+                        elif rsn in ['cancelled_by_user', 'cancelled_by_admin', 'not_enough_margin']:
+                            stts = OrderStatus.NOT_EXECUTED
+                        return {
+                            'exchange_order_id': last_update['oldOrder']['uid'],
+                            'exchange': self.EXCHANGE_NAME,
+                            'status': stts,
+                            'factual_price': price,
+                            'factual_amount_coin': amount,
+                            'factual_amount_usd': amount * price,
+                            'datetime_update': datetime.utcnow(),
+                            'ts_update': int(time.time())
+                        }
             return {
                 'exchange_order_id': order_id,
                 'exchange': self.EXCHANGE_NAME,
@@ -444,8 +438,7 @@ class KrakenClient(BaseClient):
                 self.quantity_precision = 0
         self.expect_amount_coin = round(amount - (amount % self.step_size), self.quantity_precision)
 
-    async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession,
-                             expire=5000, client_id=None) -> dict:
+    async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession, expire=5000, client_id=None):
         time_sent = datetime.utcnow().timestamp()
         nonce = str(int(time.time() * 1000))
         url_path = "/derivatives/api/v3/sendorder"
@@ -466,19 +459,16 @@ class KrakenClient(BaseClient):
             "APIKey": self.__api_key,
             "Authent": self.get_kraken_futures_signature(url_path, post_string, nonce).decode('utf-8'),
         }
-        async with session.post(
-                url=self.BASE_URL + url_path + '?' + post_string, headers=headers, data=post_string
-        ) as resp:
+        url = self.BASE_URL + url_path + '?' + post_string
+        async with session.post(url=url, headers=headers, data=post_string) as resp:
             response = await resp.json()
             print(f'KRAKEN RESPONSE: {response}')
             self.LAST_ORDER_ID = response.get('sendStatus', {}).get('order_id', 'default')
-            try:
-                timestamp = response['sendStatus']['orderEvents'][0]['orderPriorExecution']['timestamp']
+            if response.get('result') == 'success':
+                timestamp = response['sendStatus']['receivedTime']
                 timestamp = int(datetime.timestamp(datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
-                if response.get('sendStatus', {}).get('status'):
-                    status = ResponseStatus.SUCCESS
-
-            except:
+                status = ResponseStatus.SUCCESS
+            else:
                 timestamp = 0000000000000
                 status = ResponseStatus.ERROR
                 self.error_info = response
@@ -645,25 +635,25 @@ class KrakenClient(BaseClient):
 
 
 if __name__ == '__main__':
-    client = KrakenClient(Config.KRAKEN, Config.LEVERAGE)
+        client = KrakenClient(Config.KRAKEN, Config.LEVERAGE)
 
-    client.run_updater()
-    time.sleep(5)
-
-    async def test_order():
-        async with aiohttp.ClientSession() as session:
-            client.fit_amount(0.017)
-            price = client.get_orderbook()[client.symbol]['bids'][3][0]
-            data = await client.create_order(price, 'buy', session)
-            print(data)
-            client.cancel_all_orders()
-
-
-    asyncio.run(test_order())
-
-    while True:
+        client.run_updater()
         time.sleep(5)
+
+        async def test_order():
+            async with aiohttp.ClientSession() as session:
+                client.fit_amount(0.017)
+                price = client.get_orderbook()[client.symbol]['bids'][3][0]
+                data = await client.create_order(price, 'buy', session)
+                print(data)
+                client.cancel_all_orders()
+
+
         asyncio.run(test_order())
+
+        while True:
+            time.sleep(5)
+            asyncio.run(test_order())
     # while True:
     #     client.get_orderbook()
     #     # print(f"ASKS: {client.get_orderbook()[client.symbol]['asks'][:3]}")
