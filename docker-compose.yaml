@@ -7,7 +7,7 @@ test_ping_dydx:
         context:.
         dockerfile: "dockerfile.multibot"
     env_file:
-        -.env.eth
+        -../env.eth
     restart: always
     command: 'python3 dydx.py'
 
@@ -20,6 +20,6 @@ test_ping_binance:
         context:.
         dockerfile: "dockerfile.multibot"
     env_file:
-        -.env.eth
+        -../env.eth
     restart: always
     command: 'python3 binance.py'
