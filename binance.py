@@ -122,18 +122,21 @@ class BinanceClient(BaseClient):
     def _check_symbol_value(self) -> None:
         url_path = '/fapi/v1/exchangeInfo'
         if response := requests.get(self.BASE_URL + url_path).json():
-            for data in response['symbols']:
-                if data['symbol'] == self.symbol.upper() and data['status'] == 'TRADING' and \
-                        data['contractType'] == 'PERPETUAL':
-                    self.quantity_precision = data['quantityPrecision']
-                    self.price_precision = data['pricePrecision']
-                    self.symbol_is_active = True
-                    for fltr in data['filters']:
-                        if fltr['filterType'] == 'PRICE_FILTER':
-                            self.tick_size = float(fltr['tickSize'])
-                        elif fltr['filterType'] == 'LOT_SIZE':
-                            self.step_size = float(fltr['stepSize'])
-                    break
+            for key, value in response.items():
+                print(key)
+                if 'symbol' in key:
+                    for data in value:
+                        if data['symbol'] == self.symbol.upper():
+                            if data['status'] == 'TRADING' and data['contractType'] == 'PERPETUAL':
+                                self.quantity_precision = data['quantityPrecision']
+                                self.price_precision = data['pricePrecision']
+                                self.symbol_is_active = True
+                                for fltr in data['filters']:
+                                    if fltr['filterType'] == 'PRICE_FILTER':
+                                        self.tick_size = float(fltr['tickSize'])
+                                    elif fltr['filterType'] == 'LOT_SIZE':
+                                        self.step_size = float(fltr['stepSize'])
+                                break
         else:
             self.symbol_is_active = False
 
@@ -425,16 +428,14 @@ class BinanceClient(BaseClient):
         async with aiohttp.ClientSession() as session:
             url_path = "/fapi/v1/depth"
             payload = {"symbol": symbol if symbol else self.symbol}
-
             query_string = self._prepare_query(payload)
             async with session.get(url=self.BASE_URL + url_path + "?" + query_string, headers=self.headers) as resp:
                 res = await resp.json()
-                if 'asks' in res and 'bids' in res:
-                    orderbook = {
-                        'asks': [[float(x[0]), float(x[1])] for x in res['asks']],
-                        'bids': [[float(x[0]), float(x[1])] for x in res['bids']],
-                        'timestamp': int(time.time() * 1000)
-                    }
+                orderbook = {
+                    'asks': [[float(x[0]), float(x[1])] for x in res['asks']],
+                    'bids': [[float(x[0]), float(x[1])] for x in res['bids']],
+                    'timestamp': int(time.time() * 1000)
+                }
                 return orderbook
 
     async def get_all_orders(self, symbol: str, session: aiohttp.ClientSession) -> list:
@@ -603,18 +604,19 @@ if __name__ == '__main__':
 
     async def test_order():
         async with aiohttp.ClientSession() as session:
-            client.fit_amount(0.017)
-            price = client.get_orderbook()[client.symbol]['bids'][10][0]
-            data = await client.create_order(price, 'buy', session)
+            # client.fit_amount(0.017)
+            # price = client.get_orderbook()[client.symbol]['bids'][10][0]
+            # data = await client.create_order(price, 'buy', session)
+            data = await client.get_orderbook_by_symbol()
             print(data)
-            client.cancel_all_orders()
+            # client.cancel_all_orders()
 
 
     asyncio.run(test_order())
 
     while True:
         time.sleep(5)
-        asyncio.run(test_order())
+        # asyncio.run(test_order())
         # print(client.get_orderbook())
 
 # {'symbol': 'ETHUSDT', 'pair': 'ETHUSDT', 'contractType': 'PERPETUAL', 'deliveryDate': 4133404800000,
@@ -631,3 +633,5 @@ if __name__ == '__main__':
 #               'filterType': 'PERCENT_PRICE'}],
 #  'orderTypes': ['LIMIT', 'MARKET', 'STOP', 'STOP_MARKET', 'TAKE_PROFIT', 'TAKE_PROFIT_MARKET', 'TRAILING_STOP_MARKET'],
 #  'timeInForce': ['GTC', 'IOC', 'FOK', 'GTX']}
+
+
