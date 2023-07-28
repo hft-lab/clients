@@ -44,6 +44,7 @@ class RabbitMqQueues:
     SAVE_MISSED_ORDERS = 'logger.event.save_missed_orders'
     CHECK_BALANCE = 'logger.event.check_balance'
     BOT_CONFIG = 'logger.event.insert_bot_config'
+    UPDATE_LAUNCH = 'logger.event.update_bot_launches'
 
     @staticmethod
     def get_exchange_name(routing_key: str):
