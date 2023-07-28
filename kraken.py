@@ -68,6 +68,7 @@ class KrakenClient(BaseClient):
         self.bal_check = threading.Thread(target=self._run_forever,
                                           args=[ConnectMethodEnum.PRIVATE, self._loop_private])
         self.orderbook = {self.symbol: {'sell': {}, 'buy': {}, 'timestamp': 0}}
+        self.pings = []
 
     def get_sizes(self):
         asks_value = [str(x[1]) for x in self.get_orderbook()[self.symbol]['asks']]
@@ -342,7 +343,7 @@ class KrakenClient(BaseClient):
                 amount = 0
                 if last_update := order['event'].get('OrderUpdated'):
                     if last_update['newOrder']['uid'] == order_id:
-                        print(f"KRAKEN {order=}")
+                        # print(f"KRAKEN {order=}")
                         rsn = last_update['reason']
                         if rsn in ['full_fill', 'partial_fill']:
                             stts = OrderStatus.FULLY_EXECUTED if rsn == 'full_fill' else OrderStatus.PARTIALLY_EXECUTED
@@ -462,7 +463,7 @@ class KrakenClient(BaseClient):
         url = self.BASE_URL + url_path + '?' + post_string
         async with session.post(url=url, headers=headers, data=post_string) as resp:
             response = await resp.json()
-            print(f'KRAKEN RESPONSE: {response}')
+            # print(f'KRAKEN RESPONSE: {response}')
             self.LAST_ORDER_ID = response.get('sendStatus', {}).get('order_id', 'default')
             if response.get('result') == 'success':
                 timestamp = response['sendStatus']['receivedTime']
@@ -472,7 +473,10 @@ class KrakenClient(BaseClient):
                 timestamp = 0000000000000
                 status = ResponseStatus.ERROR
                 self.error_info = response
-            print(f"KRAKEN create order time: {timestamp - (time_sent * 1000)} ms")
+            ping = int(round(timestamp - (time_sent * 1000), 0))
+            avr = int(round((sum(self.pings) / len(self.pings)), 0))
+            self.pings.append(ping)
+            print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
             return {
                 'exchange_name': self.EXCHANGE_NAME,
                 'timestamp': timestamp,
@@ -636,7 +640,6 @@ class KrakenClient(BaseClient):
 
 if __name__ == '__main__':
         client = KrakenClient(Config.KRAKEN, Config.LEVERAGE)
-
         client.run_updater()
         time.sleep(5)
 
@@ -644,8 +647,8 @@ if __name__ == '__main__':
             async with aiohttp.ClientSession() as session:
                 client.fit_amount(0.017)
                 price = client.get_orderbook()[client.symbol]['bids'][3][0]
-                data = await client.create_order(price, 'buy', session)
-                print(data)
+                data = await client.create_order(price, 'buy', session, client_id=uuid.uuid4())
+                # print(data)
                 client.cancel_all_orders()
 
 

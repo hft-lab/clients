@@ -76,6 +76,7 @@ class BinanceClient(BaseClient):
 
         self._get_listen_key()
         self.get_position()
+        self.pings = []
 
     async def create_order(self, price, side, session: aiohttp.ClientSession,
                            expire: int = 100, client_id: str = None) -> dict:
@@ -123,7 +124,7 @@ class BinanceClient(BaseClient):
         url_path = '/fapi/v1/exchangeInfo'
         if response := requests.get(self.BASE_URL + url_path).json():
             for key, value in response.items():
-                print(key)
+                # print(key)
                 if 'symbol' in key:
                     for data in value:
                         if data['symbol'] == self.symbol.upper():
@@ -299,7 +300,7 @@ class BinanceClient(BaseClient):
                 if s['asset'] == 'USDT':
                     return float(s['balance']) + float(s['crossUnPnl']), float(s['availableBalance'])
         else:
-            print(res)
+            # print(res)
             time.sleep(5)
             return self._get_balance()
 
@@ -380,7 +381,6 @@ class BinanceClient(BaseClient):
 
     async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_id=None) -> dict:
-        # time_sent = datetime.datetime.utcnow().timestamp()
         time_sent = datetime.datetime.utcnow().timestamp()
         self.expect_price = round(round(price / self.tick_size) * self.tick_size, self.price_precision)
         url_path = '/fapi/v1/order?'
@@ -388,10 +388,10 @@ class BinanceClient(BaseClient):
                        f"price={self.expect_price}&quantity={self.expect_amount_coin}&timeInForce=GTC&" \
                        f"recvWindow={time.time() * 1000 + expire}&newClientOrderId={client_id}"
         query_string += f'&signature={self._create_signature(query_string)}'
-        print(f"BINANCE BODY: {query_string}")
+        # print(f"BINANCE BODY: {query_string}")
         async with session.post(url=self.BASE_URL + url_path + query_string, headers=self.headers) as resp:
             res = await resp.json()
-            print(f'BINANCE RESPONSE: {res}')
+            # print(f'BINANCE RESPONSE: {res}')
             self.LAST_ORDER_ID = res.get('orderId', 'default')
             timestamp = 0000000000000
             if res.get('code') and -5023 < res['code'] < -1099:
@@ -404,7 +404,10 @@ class BinanceClient(BaseClient):
                 timestamp += utc_diff
             else:
                 status = ResponseStatus.NO_CONNECTION
-            print(f"BINANCE create order time: {timestamp - (time_sent * 1000)} ms")
+            ping = int(round(timestamp - (time_sent * 1000), 0))
+            avr = int(round((sum(self.pings) / len(self.pings)), 0))
+            self.pings.append(ping)
+            print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
             return {
                 'exchange_name': self.EXCHANGE_NAME,
                 'timestamp': timestamp,
@@ -562,7 +565,7 @@ class BinanceClient(BaseClient):
                                     'lever': self.leverage
                                 }})
                     elif data['e'] == EventTypeEnum.ORDER_TRADE_UPDATE:
-                        print(f'{data=}')
+                        # print(f'{data=}')
                         self.last_price[data['o']['S'].lower()] = float(data['o']['ap'])
                         status = None
                         if data['o']['X'] == ClientsOrderStatuses.NEW:
@@ -604,19 +607,19 @@ if __name__ == '__main__':
 
     async def test_order():
         async with aiohttp.ClientSession() as session:
-            # client.fit_amount(0.017)
-            # price = client.get_orderbook()[client.symbol]['bids'][10][0]
-            # data = await client.create_order(price, 'buy', session)
-            data = await client.get_orderbook_by_symbol()
+            client.fit_amount(0.017)
+            price = client.get_orderbook()[client.symbol]['bids'][10][0]
+            data = await client.create_order(price, 'buy', session, client_id=uuid.uuid4())
+            # data = await client.get_orderbook_by_symbol()
             print(data)
-            # client.cancel_all_orders()
+            client.cancel_all_orders()
 
 
     asyncio.run(test_order())
 
     while True:
         time.sleep(5)
-        # asyncio.run(test_order())
+        asyncio.run(test_order())
         # print(client.get_orderbook())
 
 # {'symbol': 'ETHUSDT', 'pair': 'ETHUSDT', 'contractType': 'PERPETUAL', 'deliveryDate': 4133404800000,

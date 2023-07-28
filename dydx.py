@@ -85,6 +85,7 @@ class DydxClient(BaseClient):
         self.get_position()
 
         self.wst = threading.Thread(target=self._run_ws_forever, daemon=True)
+        self.pings = []
 
     def get_position(self):
         for pos in self.client.private.get_positions().data.get('positions', []):
@@ -201,7 +202,7 @@ class DydxClient(BaseClient):
                     'ts_update': time.time() * 1000
                 }
             else:
-                print(res)
+                print(f"DYDX get_order_by_id {res=}")
 
     async def get_all_orders(self, symbol, session) -> list:
         data = {}
@@ -224,7 +225,7 @@ class DydxClient(BaseClient):
         async with session.get(url=self.BASE_URL + request_path, headers=headers,
                                data=json.dumps(remove_nones(data))) as resp:
             res = await resp.json()
-            print(res)
+            # print(f"{self.EXCHANGE_NAME} get_all_orders {res=}")
             try:
                 for order in res['orders']:
                     if res.get('status') == ClientsOrderStatuses.FILLED and float(res['origQty']) > float(
@@ -308,7 +309,7 @@ class DydxClient(BaseClient):
             'trailingPercent': None,
             'reduceOnly': None
         }
-        print(f'DYDX BODY: {data}')
+        # print(f'DYDX BODY: {data}')
         request_path = '/v3/orders'
         signature = self.client.private.sign(
             request_path=request_path,
@@ -331,7 +332,7 @@ class DydxClient(BaseClient):
         async with session.post(url=self.BASE_URL + request_path, headers=headers,
                                 data=json.dumps(remove_nones(data))) as resp:
             res = await resp.json()
-            print(f'DYDX RESPONSE: {res}')
+            # print(f'DYDX RESPONSE: {res}')
             self.LAST_ORDER_ID = res.get('order', {'id': 'default'})['id']
             timestamp = 0000000000000
             if res.get('errors'):
@@ -343,7 +344,10 @@ class DydxClient(BaseClient):
                 status = ResponseStatus.SUCCESS
             else:
                 status = ResponseStatus.NO_CONNECTION
-            print(f"DYDX create order time: {timestamp - (time_sent * 1000)} ms")
+            ping = int(round(timestamp - (time_sent * 1000), 0))
+            avr = int(round((sum(self.pings) / len(self.pings)), 0))
+            self.pings.append(ping)
+            print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
             return {
                 'exchange_name': self.EXCHANGE_NAME,
                 'timestamp': timestamp,
@@ -529,7 +533,7 @@ class DydxClient(BaseClient):
 
     def _update_orders(self, orders):
         for order in orders:
-            print(f'{order=}')
+            # print(f'DYDX websocket update {order=}')
             status = None
             if order['status'] == ClientsOrderStatuses.PENDING:
                 if self.orders.get(order['id']):
@@ -837,7 +841,7 @@ if __name__ == '__main__':
         async with aiohttp.ClientSession() as session:
             client.fit_amount(0.017)
             price = client.get_orderbook()[client.symbol]['bids'][3][0]
-            data = await client.create_order(price, 'buy', session)
+            data = await client.create_order(price, 'buy', session, client_id=uuid.uuid4())
             print(data)
             client.cancel_all_orders()
 

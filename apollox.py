@@ -8,3 +8,31 @@ class ApolloxClient(BinanceClient):
 
     def __init__(self, keys, leverage):
         super().__init__(keys, leverage)
+
+
+if __name__ == '__main__':
+    import time
+    from config import Config
+    import aiohttp
+    import uuid
+    import asyncio
+
+    client = ApolloxClient(Config.APOLLOX, Config.LEVERAGE)
+    client.run_updater()
+    time.sleep(5)
+
+    async def test_order():
+        async with aiohttp.ClientSession() as session:
+            client.fit_amount(0.017)
+            price = client.get_orderbook()[client.symbol]['bids'][10][0]
+            data = await client.create_order(price, 'buy', session, client_id=uuid.uuid4())
+            # data = await client.get_orderbook_by_symbol()
+            print(data)
+            client.cancel_all_orders()
+
+
+    asyncio.run(test_order())
+
+    while True:
+        time.sleep(5)
+        asyncio.run(test_order())
