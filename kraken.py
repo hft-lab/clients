@@ -474,8 +474,8 @@ class KrakenClient(BaseClient):
                 status = ResponseStatus.ERROR
                 self.error_info = response
             ping = int(round(timestamp - (time_sent * 1000), 0))
-            avr = int(round((sum(self.pings) / len(self.pings)), 0))
             self.pings.append(ping)
+            avr = int(round((sum(self.pings) / len(self.pings)), 0))
             print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
             return {
                 'exchange_name': self.EXCHANGE_NAME,
@@ -646,14 +646,16 @@ if __name__ == '__main__':
         async def test_order():
             async with aiohttp.ClientSession() as session:
                 client.fit_amount(0.017)
-                price = client.get_orderbook()[client.symbol]['bids'][3][0]
-                data = await client.create_order(price, 'buy', session, client_id=uuid.uuid4())
+                price = client.get_orderbook()[client.symbol]['bids'][10][0]
+                data = await client.create_order(price,
+                                                 'buy',
+                                                 session,
+                                                 client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
                 # print(data)
                 client.cancel_all_orders()
 
 
         asyncio.run(test_order())
-
         while True:
             time.sleep(5)
             asyncio.run(test_order())

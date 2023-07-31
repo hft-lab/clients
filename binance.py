@@ -405,8 +405,8 @@ class BinanceClient(BaseClient):
             else:
                 status = ResponseStatus.NO_CONNECTION
             ping = int(round(timestamp - (time_sent * 1000), 0))
-            avr = int(round((sum(self.pings) / len(self.pings)), 0))
             self.pings.append(ping)
+            avr = int(round((sum(self.pings) / len(self.pings)), 0))
             print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
             return {
                 'exchange_name': self.EXCHANGE_NAME,
@@ -609,7 +609,10 @@ if __name__ == '__main__':
         async with aiohttp.ClientSession() as session:
             client.fit_amount(0.017)
             price = client.get_orderbook()[client.symbol]['bids'][10][0]
-            data = await client.create_order(price, 'buy', session, client_id=uuid.uuid4())
+            data = await client.create_order(price,
+                                             'buy',
+                                             session,
+                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
             # data = await client.get_orderbook_by_symbol()
             print(data)
             client.cancel_all_orders()
