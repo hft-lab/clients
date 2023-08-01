@@ -359,7 +359,7 @@ class KrakenClient(BaseClient):
                             'factual_amount_coin': amount,
                             'factual_amount_usd': amount * price,
                             'datetime_update': datetime.utcnow(),
-                            'ts_update': int(time.time())
+                            'ts_update': int(time.time() * 1000)
                         }
             return {
                 'exchange_order_id': order_id,
@@ -369,7 +369,7 @@ class KrakenClient(BaseClient):
                 'factual_amount_coin': 0,
                 'factual_amount_usd': 0,
                 'datetime_update': datetime.utcnow(),
-                'ts_update': int(time.time())
+                'ts_update': int(time.time() * 1000)
             }
 
     def _sign_message(self, api_path: str, data: dict) -> str:
@@ -590,7 +590,7 @@ class KrakenClient(BaseClient):
                                             'factual_amount_coin': qty_coin,
                                             'factual_amount_usd': qty_usd,
                                             'datetime_update': datetime.utcnow(),
-                                            'ts_update': time.time() * 1000
+                                            'ts_update': int(time.time() * 1000)
                                             }})
                                     else:
                                         self.last_price['buy' if fill['buy'] else 'sell'] = fill['price']
@@ -602,7 +602,7 @@ class KrakenClient(BaseClient):
                                              'factual_amount_coin': qty_coin,
                                              'factual_amount_usd': qty_usd,
                                              'datetime_update': datetime.utcnow(),
-                                             'ts_update': time.time() * 1000
+                                             'ts_update': int(time.time() * 1000)
                                              }})
 
                                 # self.last_price['sell' if order['direction'] else 'buy'] = float(order['limit_price'])

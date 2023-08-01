@@ -490,7 +490,7 @@ class BinanceClient(BaseClient):
                             'factual_fee': self.taker_fee,
                             'env': '-',
                             'datetime_update': datetime.datetime.utcnow(),
-                            'ts_update': time.time(),
+                            'ts_update': int(time.time() * 1000),
                             'client_id': order['clientOrderId']
                         }
                     )

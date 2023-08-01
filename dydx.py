@@ -199,7 +199,7 @@ class DydxClient(BaseClient):
                     'factual_amount_coin': float(res['size']),
                     'factual_amount_usd': float(res['size']) * float(res['price']),
                     'datetime_update': datetime.utcnow(),
-                    'ts_update': time.time() * 1000
+                    'ts_update': int(time.time() * 1000)
                 }
             else:
                 print(f"DYDX get_order_by_id {res=}")
@@ -261,7 +261,7 @@ class DydxClient(BaseClient):
                             'order_place_time': 0,
                             'env': '-',
                             'datetime_update': datetime.utcnow(),
-                            'ts_update': time.time(),
+                            'ts_update': int(time.time()),
                             'client_id': order['clientId']
                         }
                     )
@@ -432,7 +432,7 @@ class DydxClient(BaseClient):
             self.offsets[bid['price']] = int(bid['offset'])
         self.orderbook[symbol]['asks'] = sorted(self.orderbook[symbol]['asks'])
         self.orderbook[symbol]['bids'] = sorted(self.orderbook[symbol]['bids'])[::-1]
-        self.orderbook[symbol].update({'timestamp': time.time()})
+        self.orderbook[symbol].update({'timestamp': int(time.time() * 1000)})
         self.count_flag = True
 
     def _append_new_order(self, ob, side):
@@ -466,7 +466,7 @@ class DydxClient(BaseClient):
                 index += 1
             if index == 0:
                 self._check_for_error()
-        self.orderbook[symbol]['timestamp'] = time.time()
+        self.orderbook[symbol]['timestamp'] = int(time.time())
 
     def _channel_orderbook_update(self, ob: dict):
         # time_start = time.time()
@@ -495,7 +495,7 @@ class DydxClient(BaseClient):
 
     @staticmethod
     def _append_format_pos(position):
-        position.update({'timestamp': time.time(),
+        position.update({'timestamp': int(time.time()),
                          'entry_price': float(position['entryPrice']),
                          'amount': float(position['size']),
                          'amount_usd': float(position['size']) * float(position['entryPrice'])})
