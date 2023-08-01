@@ -453,7 +453,7 @@ class KrakenClient(BaseClient):
             "cliOrdId": client_id
         }
         post_string = "&".join([f"{key}={params[key]}" for key in sorted(params)])
-
+        print(f"KRAKEN BODY: {params}")
         headers = {
             "Content-Type": "application/json",
             "Nonce": nonce,
@@ -463,7 +463,7 @@ class KrakenClient(BaseClient):
         url = self.BASE_URL + url_path + '?' + post_string
         async with session.post(url=url, headers=headers, data=post_string) as resp:
             response = await resp.json()
-            # print(f'KRAKEN RESPONSE: {response}')
+            print(f'KRAKEN RESPONSE: {response}')
             self.LAST_ORDER_ID = response.get('sendStatus', {}).get('order_id', 'default')
             if response.get('result') == 'success':
                 timestamp = response['sendStatus']['receivedTime']

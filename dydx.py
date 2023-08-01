@@ -309,7 +309,7 @@ class DydxClient(BaseClient):
             'trailingPercent': None,
             'reduceOnly': None
         }
-        # print(f'DYDX BODY: {data}')
+        print(f'DYDX BODY: {data}')
         request_path = '/v3/orders'
         signature = self.client.private.sign(
             request_path=request_path,
@@ -332,7 +332,7 @@ class DydxClient(BaseClient):
         async with session.post(url=self.BASE_URL + request_path, headers=headers,
                                 data=json.dumps(remove_nones(data))) as resp:
             res = await resp.json()
-            # print(f'DYDX RESPONSE: {res}')
+            print(f'DYDX RESPONSE: {res}')
             self.LAST_ORDER_ID = res.get('order', {'id': 'default'})['id']
             timestamp = 0000000000000
             if res.get('errors'):

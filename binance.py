@@ -78,8 +78,7 @@ class BinanceClient(BaseClient):
         self.get_position()
         self.pings = []
 
-    async def create_order(self, price, side, session: aiohttp.ClientSession,
-                           expire: int = 100, client_id: str = None) -> dict:
+    async def create_order(self, price, side, session: aiohttp.ClientSession, expire=100, client_id=None):
         return await self.__create_order(price, side.upper(), session, expire, client_id)
 
     def cancel_all_orders(self, orderID=None) -> dict:
@@ -388,10 +387,10 @@ class BinanceClient(BaseClient):
                        f"price={self.expect_price}&quantity={self.expect_amount_coin}&timeInForce=GTC&" \
                        f"recvWindow={time.time() * 1000 + expire}&newClientOrderId={client_id}"
         query_string += f'&signature={self._create_signature(query_string)}'
-        # print(f"BINANCE BODY: {query_string}")
+        print(f"{self.EXCHANGE_NAME} BODY: {query_string}")
         async with session.post(url=self.BASE_URL + url_path + query_string, headers=self.headers) as resp:
             res = await resp.json()
-            # print(f'BINANCE RESPONSE: {res}')
+            print(f'{self.EXCHANGE_NAME} RESPONSE: {res}')
             self.LAST_ORDER_ID = res.get('orderId', 'default')
             timestamp = 0000000000000
             if res.get('code') and -5023 < res['code'] < -1099:
@@ -639,5 +638,3 @@ if __name__ == '__main__':
 #               'filterType': 'PERCENT_PRICE'}],
 #  'orderTypes': ['LIMIT', 'MARKET', 'STOP', 'STOP_MARKET', 'TAKE_PROFIT', 'TAKE_PROFIT_MARKET', 'TRAILING_STOP_MARKET'],
 #  'timeInForce': ['GTC', 'IOC', 'FOK', 'GTX']}
-
-
