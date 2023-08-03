@@ -201,8 +201,9 @@ class DydxClient(BaseClient):
                     'datetime_update': datetime.utcnow(),
                     'ts_update': int(time.time() * 1000)
                 }
-            else:
-                print(f"DYDX get_order_by_id {res=}")
+            # else:
+
+                # print(f"DYDX get_order_by_id {res=}")
 
     async def get_all_orders(self, symbol, session) -> list:
         data = {}

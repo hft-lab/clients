@@ -44,6 +44,7 @@ class KrakenClient(BaseClient):
         self.error_info = None
         self.balance = {
             'total': 0.0,
+            'timestamp': time.time()
         }
         self.last_price = {
             'sell': 0,
@@ -125,6 +126,8 @@ class KrakenClient(BaseClient):
         return self.positions
 
     def get_real_balance(self) -> float:
+        if time.time() - self.balance['timestamp'] > 10:
+            self.get_balance()
         return self.balance['total']
 
     def get_orderbook(self) -> dict:
@@ -430,6 +433,7 @@ class KrakenClient(BaseClient):
         }
         res = requests.get(headers=headers, url=self.BASE_URL + url_path).json()
         self.balance['total'] = res['accounts']['flex']['balanceValue']
+        self.balance['timestamp'] = time.time()
 
     def fit_amount(self, amount) -> None:
         if not self.quantity_precision:
@@ -556,6 +560,7 @@ class KrakenClient(BaseClient):
 
                         elif msg_data.get('feed') in ['balances']:
                             if msg_data.get('flex_futures'):
+                                self.balance['timestamp'] = time.time()
                                 self.balance['total'] = msg_data['flex_futures']['balance_value']
 
                         elif msg_data.get('feed') == 'open_positions':

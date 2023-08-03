@@ -38,7 +38,8 @@ class BinanceClient(BaseClient):
         self.message_to_rabbit_list = []
         self.balance = {
             'total': 0.0,
-            'avl_balance': 0.0
+            'avl_balance': 0.0,
+            'timestamp': time.time()
         }
         self.last_price = {
             'sell': 0,
@@ -88,6 +89,8 @@ class BinanceClient(BaseClient):
         return self.positions
 
     def get_real_balance(self) -> float:
+        if time.time() - self.balance['timestamp'] > 10:
+            self.balance['total'], self.balance['avl_balance'] = self._get_balance()
         return self.balance['total']
 
     def get_orderbook(self) -> dict:
@@ -297,6 +300,7 @@ class BinanceClient(BaseClient):
         if isinstance(res, list):
             for s in res:
                 if s['asset'] == 'USDT':
+                    self.balance['timestamp'] = time.time()
                     return float(s['balance']) + float(s['crossUnPnl']), float(s['availableBalance'])
         else:
             # print(res)
@@ -421,7 +425,6 @@ class BinanceClient(BaseClient):
             "timestamp": int(time.time() * 1000),
             'symbol': self.symbol
         }
-
         query_string = self._prepare_query(payload)
         payload["signature"] = self._create_signature(query_string)
         query_string = self._prepare_query(payload)
@@ -640,3 +643,4 @@ if __name__ == '__main__':
 #               'filterType': 'PERCENT_PRICE'}],
 #  'orderTypes': ['LIMIT', 'MARKET', 'STOP', 'STOP_MARKET', 'TAKE_PROFIT', 'TAKE_PROFIT_MARKET', 'TRAILING_STOP_MARKET'],
 #  'timeInForce': ['GTC', 'IOC', 'FOK', 'GTX']}
+
