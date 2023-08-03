@@ -334,7 +334,7 @@ class BinanceClient(BaseClient):
         payload = {
             "timestamp": int(time.time() * 1000),
             'symbol': symbol,
-            'limit': 5
+            'limit': 10
         }
 
         query_string = self._prepare_query(payload)
@@ -350,7 +350,7 @@ class BinanceClient(BaseClient):
             'incomeType': 'FUNDING_FEE',
             "timestamp": int(time.time() * 1000),
             "recvWindow": int((time.time() + 2) * 1000),
-            'limit': 100
+            'limit': 10
         }
         query_string = self._prepare_query(payload)
         payload["signature"] = self._create_signature(query_string)
