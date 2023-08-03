@@ -72,7 +72,7 @@ class KrakenClient(BaseClient):
         self.pings = []
 
     def get_sizes(self):
-        asks_value = [str(x[1]) for x in self.get_orderbook()[self.symbol]['asks']]
+        asks_value = [str(x[1]) for x in self.get_orderbook_by_symbol()['asks']]
         max_value = 0
         for v in asks_value:
             splt = v.split('.')[1]
