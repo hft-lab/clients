@@ -334,7 +334,7 @@ class BinanceClient(BaseClient):
         payload = {
             "timestamp": int(time.time() * 1000),
             'symbol': symbol,
-            'limit': 10
+            'limit': 100
         }
 
         query_string = self._prepare_query(payload)
@@ -350,7 +350,7 @@ class BinanceClient(BaseClient):
             'incomeType': 'FUNDING_FEE',
             "timestamp": int(time.time() * 1000),
             "recvWindow": int((time.time() + 2) * 1000),
-            'limit': 10
+            'limit': 100
         }
         query_string = self._prepare_query(payload)
         payload["signature"] = self._create_signature(query_string)
@@ -361,6 +361,7 @@ class BinanceClient(BaseClient):
             funding_payments = await resp.json()
 
             for fund in funding_payments:
+                time.sleep(15)
                 symbol = fund['symbol']
 
                 if not symbols.get(symbol):
