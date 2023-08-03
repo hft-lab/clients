@@ -475,6 +475,8 @@ class KrakenClient(BaseClient):
                 self.error_info = response
             ping = int(round(timestamp - (time_sent * 1000), 0))
             self.pings.append(ping)
+            with open(f'{self.EXCHANGE_NAME}_pings.txt', 'a') as file:
+                file.write(str(datetime.utcnow()) + ' ' + str(ping) + '\n')
             avr = int(round((sum(self.pings) / len(self.pings)), 0))
             print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
             return {
