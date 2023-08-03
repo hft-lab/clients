@@ -321,6 +321,7 @@ class BinanceClient(BaseClient):
 
         async with session.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers) as resp:
             price = await resp.json()
+            print(price)
             if price:
                 price = (float(price[0][1]) + float(price[0][4])) / 2
                 return price
@@ -333,7 +334,7 @@ class BinanceClient(BaseClient):
         payload = {
             "timestamp": int(time.time() * 1000),
             'symbol': symbol,
-            'limit': 100
+            'limit': 5
         }
 
         query_string = self._prepare_query(payload)
