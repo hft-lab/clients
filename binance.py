@@ -321,13 +321,13 @@ class BinanceClient(BaseClient):
 
         async with session.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers) as resp:
             price = await resp.json()
-            print(price)
+
             if price:
                 price = (float(price[0][1]) + float(price[0][4])) / 2
                 return price
-            else:
-                time_ = int(time_)
-                return await self.get_historical_price(session, symbol, time_)
+            # else:
+            #     time_ = int(time_)
+            #     return await self.get_historical_price(session, symbol, time_)
 
     async def get_funding_history(self, session, symbol):
         url_path = "/fapi/v1/fundingRate"
@@ -371,13 +371,14 @@ class BinanceClient(BaseClient):
 
                 if rate:
                     price = await self.get_historical_price(session, symbol, fund['time'])
-                    fund.update({'rate': rate[0],
-                                 'price': price,
-                                 'positionSize': (float(fund['income']) / -float(rate[0])) / price,
-                                 'market': symbol,
-                                 'payment': fund['income'],
-                                 'datetime': datetime.datetime.fromtimestamp(fund['time'] / 1000),
-                                 'asset': 'USDT'})
+                    if price:
+                        fund.update({'rate': rate[0],
+                                     'price': price,
+                                     'positionSize': (float(fund['income']) / -float(rate[0])) / price,
+                                     'market': symbol,
+                                     'payment': fund['income'],
+                                     'datetime': datetime.datetime.fromtimestamp(fund['time'] / 1000),
+                                     'asset': 'USDT'})
 
         return funding_payments
 
