@@ -33,20 +33,20 @@ class DydxClient(BaseClient):
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         self._connected = asyncio.Event()
-        self.symbol = keys['symbol']
-        self.API_KEYS = {"secret": keys['secret'],
-                         "key": keys['key'],
-                         "passphrase": keys['passphrase']}
+        self.symbol = keys['SYMBOL']
+        self.API_KEYS = {"secret": keys['API_SECRET'],
+                         "key": keys['API_KEY'],
+                         "passphrase": keys['PASSPHRASE']}
         self.client = Client(
             network_id=NETWORK_ID_MAINNET,
             host=API_HOST_MAINNET,
-            default_ethereum_address=keys['eth_address'],
-            web3=Web3(Web3.WebsocketProvider(f'wss://mainnet.infura.io/ws/v3/{keys["infura_key"]}')),
-            eth_private_key=keys['eth_private_key'],
-            stark_private_key=keys['privateKey'],
-            stark_public_key=keys['publicKey'],
-            stark_public_key_y_coordinate=keys['publicKeyYCoordinate'],
-            web3_provider=f'https://mainnet.infura.io/v3/{keys["infura_key"]}',
+            default_ethereum_address=keys['ETH_ADDRESS'],
+            web3=Web3(Web3.WebsocketProvider(f'wss://mainnet.infura.io/ws/v3/{keys["INFURA_KEY"]}')),
+            eth_private_key=keys['ETH_PRIVATE_KEY'],
+            stark_private_key=keys['PRIVATE_KEY'],
+            stark_public_key=keys['PUBLIC_KEY'],
+            stark_public_key_y_coordinate=keys['PUBLIC_KEY_Y_COORDINATE'],
+            web3_provider=f'https://mainnet.infura.io/v3/{keys["INFURA_KEY"]}',
             api_key_credentials=self.API_KEYS
         )
         self.error_info = None
@@ -304,7 +304,7 @@ class DydxClient(BaseClient):
             'expiration': expiration,
             'postOnly': False,
             'clientId': client_id,
-            'signature': order_to_sign.sign(self.keys['privateKey']),
+            'signature': order_to_sign.sign(self.keys['PRIVATE_KEY']),
             'cancelId': None,
             'triggerPrice': None,
             'trailingPercent': None,
@@ -403,8 +403,8 @@ class DydxClient(BaseClient):
             'type': 'subscribe',
             'channel': 'v3_accounts',
             'accountNumber': '0',
-            'apiKey': self.keys['key'],
-            'passphrase': self.keys['passphrase'],
+            'apiKey': self.keys['API_KEY'],
+            'passphrase': self.keys['PASSPHRASE'],
             'timestamp': now_iso_string,
             'signature': signature,
         }

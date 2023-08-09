@@ -31,9 +31,9 @@ class KrakenClient(BaseClient):
         self.expect_amount_coin = None
         self.taker_fee = 0.0005
         self.leverage = leverage
-        self.symbol = keys['symbol']
-        self.__api_key = keys['api_key']
-        self.__secret_key = keys['secret_key']
+        self.symbol = keys['SYMBOL']
+        self.__api_key = keys['API_KEY']
+        self.__secret_key = keys['API_SECRET']
         self.__last_challenge = None
         self.orders = {}
         self.step_size = 0

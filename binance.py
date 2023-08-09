@@ -25,9 +25,9 @@ class BinanceClient(BaseClient):
     def __init__(self, keys, leverage):
         self.taker_fee = 0.00036
         self.leverage = leverage
-        self.symbol = keys['symbol']
-        self.__api_key = keys['api_key']
-        self.__secret_key = keys['secret_key']
+        self.symbol = keys['SYMBOL']
+        self.__api_key = keys['API_KEY']
+        self.__secret_key = keys['API_SECRET']
         self.headers = {'X-MBX-APIKEY': self.__api_key}
         self.symbol_is_active = False
         self.count_flag = False
