@@ -19,7 +19,7 @@ from dydx3.helpers.request_helpers import remove_nones
 from dydx3.starkex.order import SignableOrder
 from web3 import Web3
 
-from config import Config
+# from config import Config
 from core.base_client import BaseClient
 from clients.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
 
