@@ -9,7 +9,7 @@ import aiohttp
 from bravado.client import SwaggerClient
 from bravado.requests_client import RequestsClient
 
-from config import Config
+# from config import Config
 from core.base_client import BaseClient
 from clients.enums import ResponseStatus
 from tools.APIKeyAuthenticator import APIKeyAuthenticator as auth
