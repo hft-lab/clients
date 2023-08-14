@@ -72,11 +72,12 @@ class KrakenClient(BaseClient):
         self.pings = []
 
     def get_sizes(self):
-        asks_value = [str(x[1]) for x in self.get_orderbook_by_symbol()['asks']]
+        orderbook = asyncio.run(self.get_orderbook_by_symbol())
+        time.sleep(1)
+        asks_value = [str(x[1]) for x in orderbook['asks'][:5]]
         max_value = 0
-        for v in asks_value:
-            splt = v.split('.')[1]
-
+        for str_value in asks_value:
+            splt = str_value.split('.')[1] if '.' in str_value else ''
             if len(splt) >= max_value:
                 max_value = max(len(splt), max_value)
 
@@ -174,8 +175,6 @@ class KrakenClient(BaseClient):
                 orderbook.update({'bids': res['orderBook']['bids']})
                 orderbook.update({'asks': res['orderBook']['asks']})
                 orderbook.update({'timestamp': int(time.time() * 1000)})
-
-        self.get_sizes()
 
         return orderbook
 
