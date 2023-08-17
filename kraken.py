@@ -6,6 +6,7 @@ import hmac
 import os
 import threading
 import time
+import traceback
 import uuid
 from datetime import datetime
 from pprint import pprint
@@ -62,18 +63,17 @@ class KrakenClient(BaseClient):
                 'realized_pnl_usd': 0}
         }
         self.get_balance()
-        self._loop_public = asyncio.new_event_loop()
-        self._loop_private = asyncio.new_event_loop()
-        self.wsd_public = threading.Thread(target=self._run_forever,
-                                           args=[ConnectMethodEnum.PUBLIC, self._loop_public])
-        self.bal_check = threading.Thread(target=self._run_forever,
-                                          args=[ConnectMethodEnum.PRIVATE, self._loop_private])
+        self.get_sizes()
         self.orderbook = {self.symbol: {'sell': {}, 'buy': {}, 'timestamp': 0}}
         self.pings = []
 
     def get_sizes(self):
-        orderbook = asyncio.run(self.get_orderbook_by_symbol())
-        time.sleep(1)
+        try:
+            orderbook = asyncio.run(self.get_orderbook_by_symbol())
+            time.sleep(1)
+        except Exception:
+            orderbook = self.get_orderbook_by_symbol_non_async()
+            # traceback.print_exc()
         asks_value = [str(x[1]) for x in orderbook['asks'][:5]]
         max_value = 0
         for str_value in asks_value:
@@ -149,10 +149,13 @@ class KrakenClient(BaseClient):
         return self.last_price[side.lower()]
 
     def run_updater(self) -> None:
-        self.wsd_public.start()
-        self.bal_check.start()
+        _loop_public = asyncio.new_event_loop()
+        _loop_private = asyncio.new_event_loop()
+        wsd_public = threading.Thread(target=self._run_forever, args=[ConnectMethodEnum.PUBLIC, _loop_public])
+        bal_check = threading.Thread(target=self._run_forever, args=[ConnectMethodEnum.PRIVATE, _loop_private])
+        wsd_public.start()
+        bal_check.start()
         time.sleep(5)
-        self.get_sizes()
 
     def _run_forever(self, type, loop) -> None:
         loop.run_until_complete(self._run_loop(type))
@@ -175,7 +178,16 @@ class KrakenClient(BaseClient):
                 orderbook.update({'bids': res['orderBook']['bids']})
                 orderbook.update({'asks': res['orderBook']['asks']})
                 orderbook.update({'timestamp': int(time.time() * 1000)})
+            await session.close()
+        return orderbook
 
+    def get_orderbook_by_symbol_non_async(self, symbol=None):
+        url_path = "/derivatives/api/v3/orderbook"
+        resp = requests.get(url=self.BASE_URL + url_path + f'?symbol={symbol if symbol else self.symbol}').json()
+        orderbook = {}
+        orderbook.update({'bids': resp['orderBook']['bids']})
+        orderbook.update({'asks': resp['orderBook']['asks']})
+        orderbook.update({'timestamp': int(time.time() * 1000)})
         return orderbook
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
@@ -440,6 +452,9 @@ class KrakenClient(BaseClient):
                 self.quantity_precision = len(str(self.step_size).split('.')[1])
             else:
                 self.quantity_precision = 0
+        print(f"{amount=}")
+        print(f"{self.step_size=}")
+        print(f"{self.quantity_precision=}")
         self.expect_amount_coin = round(amount - (amount % self.step_size), self.quantity_precision)
 
     async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession, expire=5000, client_id=None):
@@ -645,26 +660,33 @@ class KrakenClient(BaseClient):
 
 
 if __name__ == '__main__':
-        client = KrakenClient(Config.KRAKEN, Config.LEVERAGE)
+        import configparser
+        import sys
+
+        config = configparser.ConfigParser()
+        config.read(sys.argv[1], "utf-8")
+        client = KrakenClient(config['KRAKEN'], config['SETTINGS']['LEVERAGE'])
         client.run_updater()
         time.sleep(5)
+        #
+        # data = client._loop_public.run_until_complete(client.get_orderbook_by_symbol())
+        # print(data)
+        # async def test_order():
+        #     async with aiohttp.ClientSession() as session:
+        #         client.fit_amount(0.017)
+        #         price = client.get_orderbook()[client.symbol]['bids'][10][0]
+        #         data = await client.create_order(price,
+        #                                          'buy',
+        #                                          session,
+        #                                          client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+        #         # print(data)
+        #         client.cancel_all_orders()
 
-        async def test_order():
-            async with aiohttp.ClientSession() as session:
-                client.fit_amount(0.017)
-                price = client.get_orderbook()[client.symbol]['bids'][10][0]
-                data = await client.create_order(price,
-                                                 'buy',
-                                                 session,
-                                                 client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-                # print(data)
-                client.cancel_all_orders()
 
-
-        asyncio.run(test_order())
-        while True:
-            time.sleep(5)
-            asyncio.run(test_order())
+        # asyncio.run(test_order())
+        # while True:
+        #     time.sleep(5)
+        #     asyncio.run(test_order())
     # while True:
     #     client.get_orderbook()
     #     # print(f"ASKS: {client.get_orderbook()[client.symbol]['asks'][:3]}")
