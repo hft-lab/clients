@@ -80,12 +80,9 @@ class KrakenClient(BaseClient):
             splt = str_value.split('.')[1] if '.' in str_value else ''
             if len(splt) >= max_value:
                 max_value = max(len(splt), max_value)
-
         self.step_size = float('0.' + '0' * (max_value - 1) + str(1))
-
         url_path = "/derivatives/api/v3/instruments"
         res = requests.get(url=self.BASE_URL + url_path).json()
-
         for instrument in res['instruments']:
             if self.symbol == instrument['symbol'].upper():
                 self.tick_size = instrument['tickSize']
@@ -98,7 +95,6 @@ class KrakenClient(BaseClient):
             if position.get('amount_usd'):
                 position_value += position['amount_usd']
                 position_value_abs += abs(position['amount_usd'])
-
         available_margin = self.balance['total'] * self.leverage
         if position_value_abs > available_margin:
             if position_value > 0:
