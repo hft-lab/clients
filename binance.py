@@ -73,7 +73,7 @@ class BinanceClient(BaseClient):
         self.bal_check = threading.Thread(target=self._balance)
         self.lk_check = threading.Thread(target=self._ping_listen_key)
 
-        self.balance['total'], self.balance['avl_balance'] = self._get_balance()
+        self._get_balance()
 
         self._get_listen_key()
         self.get_position()
@@ -90,7 +90,7 @@ class BinanceClient(BaseClient):
 
     def get_real_balance(self) -> float:
         if time.time() - self.balance['timestamp'] > 10:
-            self.balance['total'], self.balance['avl_balance'] = self._get_balance()
+            self._get_balance()
         return self.balance['total']
 
     def get_orderbook(self) -> dict:
@@ -180,25 +180,17 @@ class BinanceClient(BaseClient):
                         break
 
     async def __orderbook_update(self, ob: dict) -> None:
-        try:
-            last_ob_asks = self.orderbook[self.symbol]['asks'].copy()
-            last_ob_bids = self.orderbook[self.symbol]['bids'].copy()
-            last_ob_ask = self.orderbook[self.symbol]['asks'][0][0]
-            last_ob_bid = self.orderbook[self.symbol]['bids'][0][0]
-            if ob.get('asks'):
-                self.__check_ob(ob, 'asks')
-            if ob.get('bids'):
-                self.__check_ob(ob, 'bids')
-            if last_ob_ask != self.orderbook[self.symbol]['asks'][0][0] \
-                    or last_ob_bid != self.orderbook[self.symbol]['bids'][0][0]:
-                self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
-                self.count_flag = True
-        except:
-            print(f"\n\n\nERROR UPDATING OB {self.EXCHANGE_NAME}\nPAYLOAD: {ob}\n\nORDERBOOK: {self.orderbook}\n")
-            print(f"{last_ob_bids=}\n\n{last_ob_asks=}\n\n\n")
-            self.count_flag = False
+        ask = self.orderbook[self.symbol]['asks'][0][0]
+        bid = self.orderbook[self.symbol]['bids'][0][0]
+        if ob.get('asks'):
+            self.__check_ob(ob, 'asks')
+        if ob.get('bids'):
+            self.__check_ob(ob, 'bids')
+        if len(self.orderbook[self.symbol]['bids']) < 5 or len(self.orderbook[self.symbol]['asks']) < 5:
             self.orderbook[self.symbol] = await self.get_orderbook_by_symbol()
-            traceback.print_exc()
+        self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
+        if ask != self.orderbook[self.symbol]['asks'][0][0] or bid != self.orderbook[self.symbol]['bids'][0][0]:
+            self.count_flag = True
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
         self.orderbook[self.symbol] = await self.get_orderbook_by_symbol()
@@ -256,8 +248,8 @@ class BinanceClient(BaseClient):
 
     def _balance(self) -> None:
         while True:
-            self.balance['total'], self.balance['avl_balance'] = self._get_balance()
-            time.sleep(5)
+            self._get_balance()
+            time.sleep(59)
 
     def get_position(self):
         url_path = "/fapi/v2/account"
@@ -268,7 +260,6 @@ class BinanceClient(BaseClient):
         query_string = self._prepare_query(payload)
 
         res = requests.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers).json()
-
         if isinstance(res, dict):
             for s in res.get('positions', []):
                 if float(s['positionAmt']):
@@ -301,6 +292,8 @@ class BinanceClient(BaseClient):
             for s in res:
                 if s['asset'] == 'USDT':
                     self.balance['timestamp'] = time.time()
+                    self.balance['total'] = float(s['balance']) + float(s['crossUnPnl'])
+                    self.balance['avl_balance'] = float(s['availableBalance'])
                     return float(s['balance']) + float(s['crossUnPnl']), float(s['availableBalance'])
         else:
             # print(res)
@@ -400,7 +393,7 @@ class BinanceClient(BaseClient):
             print(f'{self.EXCHANGE_NAME} RESPONSE: {res}')
             self.LAST_ORDER_ID = res.get('orderId', 'default')
             timestamp = 0000000000000
-            if res.get('code') and -5023 < res['code'] < -1099:
+            if res.get('code'):
                 status = ResponseStatus.ERROR
                 self.error_info = res
             elif res.get('status'):
@@ -560,8 +553,11 @@ class BinanceClient(BaseClient):
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     data = orjson.loads(msg.data)
                     if data['e'] == EventTypeEnum.ACCOUNT_UPDATE and data['a']['P']:
+                        self.balance['total'] = float(data['a']['B'][0]['wb'])
+                        self.balance['timestamp'] = time.time()
                         for p in data['a']['P']:
                             if p['ps'] in PositionSideEnum.all_position_sides() and float(p['pa']):
+                                self.balance['total'] += float(p['up'])
                                 self.positions.update({p['s'].upper(): {
                                     'side': PositionSideEnum.LONG if float(p['pa']) > 0 else PositionSideEnum.SHORT,
                                     'amount_usd': float(p['pa']) * float(p['ep']),
@@ -571,6 +567,7 @@ class BinanceClient(BaseClient):
                                     'realized_pnl_usd': 0,
                                     'lever': self.leverage
                                 }})
+
                     elif data['e'] == EventTypeEnum.ORDER_TRADE_UPDATE:
                         # print(f'{data=}')
                         self.last_price[data['o']['S'].lower()] = float(data['o']['ap'])
@@ -608,13 +605,20 @@ class BinanceClient(BaseClient):
 
 
 if __name__ == '__main__':
-    client = BinanceClient(Config.BINANCE, Config.LEVERAGE)
+    import configparser
+    import sys
+
+    config = configparser.ConfigParser()
+    config.read(sys.argv[1], "utf-8")
+
+    client = BinanceClient(config['BINANCE'], config['SETTINGS']['LEVERAGE'])
     client.run_updater()
     time.sleep(5)
 
+
     async def test_order():
         async with aiohttp.ClientSession() as session:
-            client.fit_amount(0.017)
+            client.fit_amount(-0.017)
             price = client.get_orderbook()[client.symbol]['bids'][10][0]
             data = await client.create_order(price,
                                              'buy',
@@ -646,4 +650,3 @@ if __name__ == '__main__':
 #               'filterType': 'PERCENT_PRICE'}],
 #  'orderTypes': ['LIMIT', 'MARKET', 'STOP', 'STOP_MARKET', 'TAKE_PROFIT', 'TAKE_PROFIT_MARKET', 'TRAILING_STOP_MARKET'],
 #  'timeInForce': ['GTC', 'IOC', 'FOK', 'GTX']}
-

@@ -293,23 +293,31 @@ class DydxClient(BaseClient):
             limit_fee='0.0008',
             expiration_epoch_seconds=expire_date,
         )
-        data = {
-            'market': self.symbol,
-            'side': side.upper(),
-            'type': type.upper(),
-            'timeInForce': 'GTT',
-            'size': expect_amount_coin,
-            'price': expect_price,
-            'limitFee': '0.0008',
-            'expiration': expiration,
-            'postOnly': False,
-            'clientId': client_id,
-            'signature': order_to_sign.sign(self.keys['PRIVATE_KEY']),
-            'cancelId': None,
-            'triggerPrice': None,
-            'trailingPercent': None,
-            'reduceOnly': None
-        }
+        try:
+            data = {
+                'market': self.symbol,
+                'side': side.upper(),
+                'type': type.upper(),
+                'timeInForce': 'GTT',
+                'size': expect_amount_coin,
+                'price': expect_price,
+                'limitFee': '0.0008',
+                'expiration': expiration,
+                'postOnly': False,
+                'clientId': client_id,
+                'signature': order_to_sign.sign(self.keys['PRIVATE_KEY']),
+                'cancelId': None,
+                'triggerPrice': None,
+                'trailingPercent': None,
+                'reduceOnly': None
+            }
+        except Exception as e:
+            self.error_info = str(e)
+            return {
+                'exchange_name': self.EXCHANGE_NAME,
+                'timestamp': 0,
+                'status': ResponseStatus.ERROR
+            }
         print(f'DYDX BODY: {data}')
         request_path = '/v3/orders'
         signature = self.client.private.sign(
@@ -836,13 +844,18 @@ class DydxClient(BaseClient):
 #     print()
 
 if __name__ == '__main__':
-    client = DydxClient(Config.DYDX, Config.LEVERAGE)
+    import configparser
+    import sys
+
+    config = configparser.ConfigParser()
+    config.read(sys.argv[1], "utf-8")
+    client = DydxClient(config['DYDX'], config['SETTINGS']['LEVERAGE'])
     client.run_updater()
 
 
     async def test_order():
         async with aiohttp.ClientSession() as session:
-            client.fit_amount(0.017)
+            client.fit_amount(-0.017)
             price = client.get_orderbook()[client.symbol]['bids'][10][0]
             data = await client.create_order(price,
                                              'buy',

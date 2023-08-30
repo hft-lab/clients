@@ -3,12 +3,10 @@ import base64
 import hashlib
 import hmac
 
-import os
 import threading
 import time
 import uuid
 from datetime import datetime
-from pprint import pprint
 
 from urllib.parse import urlencode
 
@@ -16,7 +14,6 @@ import aiohttp
 import orjson
 import requests
 
-# from config import Config
 from core.base_client import BaseClient
 from clients.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, PositionSideEnum
 
@@ -551,7 +548,7 @@ class KrakenClient(BaseClient):
 
                             await ws.send_str(orjson.dumps({
                                 "event": "subscribe",
-                                "feed": "open_orders",
+                                "feed": "open_positions",
                                 "api_key": self.__api_key,
                                 'original_challenge': self.__last_challenge,
                                 "signed_challenge": self._get_sign_challenge(self.__last_challenge)
@@ -645,26 +642,31 @@ class KrakenClient(BaseClient):
 
 
 if __name__ == '__main__':
-        client = KrakenClient(Config.KRAKEN, Config.LEVERAGE)
-        client.run_updater()
+    import configparser
+    import sys
+
+    config = configparser.ConfigParser()
+    config.read(sys.argv[1], "utf-8")
+    client = KrakenClient(config['KRAKEN'], config['SETTINGS']['LEVERAGE'])
+    client.run_updater()
+    time.sleep(5)
+
+    async def test_order():
+        async with aiohttp.ClientSession() as session:
+            client.fit_amount(-0.017)
+            price = client.get_orderbook()[client.symbol]['bids'][10][0]
+            data = await client.create_order(price,
+                                             'buy',
+                                             session,
+                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+            print(data)
+            client.cancel_all_orders()
+
+
+    asyncio.run(test_order())
+    while True:
         time.sleep(5)
-
-        async def test_order():
-            async with aiohttp.ClientSession() as session:
-                client.fit_amount(0.017)
-                price = client.get_orderbook()[client.symbol]['bids'][10][0]
-                data = await client.create_order(price,
-                                                 'buy',
-                                                 session,
-                                                 client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-                # print(data)
-                client.cancel_all_orders()
-
-
         asyncio.run(test_order())
-        while True:
-            time.sleep(5)
-            asyncio.run(test_order())
     # while True:
     #     client.get_orderbook()
     #     # print(f"ASKS: {client.get_orderbook()[client.symbol]['asks'][:3]}")
