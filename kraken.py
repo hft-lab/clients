@@ -5,6 +5,7 @@ import hmac
 
 import threading
 import time
+import traceback
 import uuid
 from datetime import datetime
 
@@ -59,30 +60,26 @@ class KrakenClient(BaseClient):
                 'realized_pnl_usd': 0}
         }
         self.get_balance()
-        self._loop_public = asyncio.new_event_loop()
-        self._loop_private = asyncio.new_event_loop()
-        self.wsd_public = threading.Thread(target=self._run_forever,
-                                           args=[ConnectMethodEnum.PUBLIC, self._loop_public])
-        self.bal_check = threading.Thread(target=self._run_forever,
-                                          args=[ConnectMethodEnum.PRIVATE, self._loop_private])
+        self.get_sizes()
         self.orderbook = {self.symbol: {'sell': {}, 'buy': {}, 'timestamp': 0}}
         self.pings = []
 
     def get_sizes(self):
-        orderbook = asyncio.run(self.get_orderbook_by_symbol())
-        time.sleep(1)
+        try:
+            orderbook = asyncio.run(self.get_orderbook_by_symbol())
+            time.sleep(1)
+        except Exception:
+            orderbook = self.get_orderbook_by_symbol_non_async()
+            # traceback.print_exc()
         asks_value = [str(x[1]) for x in orderbook['asks'][:5]]
         max_value = 0
         for str_value in asks_value:
             splt = str_value.split('.')[1] if '.' in str_value else ''
             if len(splt) >= max_value:
                 max_value = max(len(splt), max_value)
-
         self.step_size = float('0.' + '0' * (max_value - 1) + str(1))
-
         url_path = "/derivatives/api/v3/instruments"
         res = requests.get(url=self.BASE_URL + url_path).json()
-
         for instrument in res['instruments']:
             if self.symbol == instrument['symbol'].upper():
                 self.tick_size = instrument['tickSize']
@@ -95,7 +92,6 @@ class KrakenClient(BaseClient):
             if position.get('amount_usd'):
                 position_value += position['amount_usd']
                 position_value_abs += abs(position['amount_usd'])
-
         available_margin = self.balance['total'] * self.leverage
         if position_value_abs > available_margin:
             if position_value > 0:
@@ -146,10 +142,13 @@ class KrakenClient(BaseClient):
         return self.last_price[side.lower()]
 
     def run_updater(self) -> None:
-        self.wsd_public.start()
-        self.bal_check.start()
+        _loop_public = asyncio.new_event_loop()
+        _loop_private = asyncio.new_event_loop()
+        wsd_public = threading.Thread(target=self._run_forever, args=[ConnectMethodEnum.PUBLIC, _loop_public])
+        bal_check = threading.Thread(target=self._run_forever, args=[ConnectMethodEnum.PRIVATE, _loop_private])
+        wsd_public.start()
+        bal_check.start()
         time.sleep(5)
-        self.get_sizes()
 
     def _run_forever(self, type, loop) -> None:
         loop.run_until_complete(self._run_loop(type))
@@ -172,7 +171,16 @@ class KrakenClient(BaseClient):
                 orderbook.update({'bids': res['orderBook']['bids']})
                 orderbook.update({'asks': res['orderBook']['asks']})
                 orderbook.update({'timestamp': int(time.time() * 1000)})
+            await session.close()
+        return orderbook
 
+    def get_orderbook_by_symbol_non_async(self, symbol=None):
+        url_path = "/derivatives/api/v3/orderbook"
+        resp = requests.get(url=self.BASE_URL + url_path + f'?symbol={symbol if symbol else self.symbol}').json()
+        orderbook = {}
+        orderbook.update({'bids': resp['orderBook']['bids']})
+        orderbook.update({'asks': resp['orderBook']['asks']})
+        orderbook.update({'timestamp': int(time.time() * 1000)})
         return orderbook
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
@@ -437,6 +445,9 @@ class KrakenClient(BaseClient):
                 self.quantity_precision = len(str(self.step_size).split('.')[1])
             else:
                 self.quantity_precision = 0
+        print(f"{amount=}")
+        print(f"{self.step_size=}")
+        print(f"{self.quantity_precision=}")
         self.expect_amount_coin = round(amount - (amount % self.step_size), self.quantity_precision)
 
     async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession, expire=5000, client_id=None):
@@ -663,19 +674,6 @@ if __name__ == '__main__':
             client.cancel_all_orders()
 
 
-    asyncio.run(test_order())
     while True:
         time.sleep(5)
         asyncio.run(test_order())
-    # while True:
-    #     client.get_orderbook()
-    #     # print(f"ASKS: {client.get_orderbook()[client.symbol]['asks'][:3]}")
-    #     # print(f"BIDS: {client.get_orderbook()[client.symbol]['bids'][:3]}\n")
-    #     time.sleep(1)
-#     #     pprint(client.get_orderbook()[client.symbol]['asks'][:3])
-#     #     pprint(client.get_orderbook()[client.symbol]['bids'][:3])
-# fill_buy = {"feed": "fills", "username": "4e8b59e8-a716-498c-8dcc-c4835d04f50f", "fills": [
-#     {"instrument": "PF_ETHUSD", "time": 1690295256776, "price": 1864.7, "seq": 100, "buy": True, "qty": 0.027,
-#      "remaining_order_qty": 0.0, "order_id": "1cb6667b-bd01-46f4-aaf4-34b0ca24b011", "cli_ord_id": "None",
-#      "fill_id": "e986e21b-98d1-410d-a8ef-d7a1975df2aa", "fill_type": "taker", "fee_paid": 0.02517345,
-#      "fee_currency": "USD", "taker_order_type": "lmt", "order_type": "lmt"}]}
