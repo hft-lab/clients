@@ -12,12 +12,15 @@ class ApolloxClient(BinanceClient):
 
 if __name__ == '__main__':
     import time
-    from config import Config
     import aiohttp
     import uuid
     import asyncio
+    import configparser
+    import sys
 
-    client = ApolloxClient(Config.APOLLOX, Config.LEVERAGE)
+    config = configparser.ConfigParser()
+    config.read(sys.argv[1], "utf-8")
+    client = ApolloxClient(config['APOLLOX'], config['LEVERAGE'])
     client.run_updater()
     time.sleep(5)
 
