@@ -436,7 +436,8 @@ class KrakenClient(BaseClient):
             ),
         }
         res = requests.get(headers=headers, url=self.BASE_URL + url_path).json()
-        self.balance['total'] = res['accounts']['flex']['balanceValue']
+        self.balance['total'] = res['accounts']['flex']['portfolioValue']
+        self.balance['free'] = res['accounts']['flex']['availableMargin']
         self.balance['timestamp'] = time.time()
 
     def fit_amount(self, amount) -> None:
@@ -445,9 +446,9 @@ class KrakenClient(BaseClient):
                 self.quantity_precision = len(str(self.step_size).split('.')[1])
             else:
                 self.quantity_precision = 0
-        print(f"{amount=}")
-        print(f"{self.step_size=}")
-        print(f"{self.quantity_precision=}")
+        # print(f"{amount=}")
+        # print(f"{self.step_size=}")
+        # print(f"{self.quantity_precision=}")
         self.expect_amount_coin = round(amount - (amount % self.step_size), self.quantity_precision)
 
     async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession, expire=5000, client_id=None):
@@ -568,7 +569,8 @@ class KrakenClient(BaseClient):
                         elif msg_data.get('feed') in ['balances']:
                             if msg_data.get('flex_futures'):
                                 self.balance['timestamp'] = time.time()
-                                self.balance['total'] = msg_data['flex_futures']['balance_value']
+                                self.balance['total'] = msg_data['flex_futures']['portfolio_value']
+                                self.balance['free'] = msg_data['flex_futures']['available_margin']
 
                         elif msg_data.get('feed') == 'open_positions':
                             for position in msg_data.get('positions', []):
@@ -664,14 +666,15 @@ if __name__ == '__main__':
 
     async def test_order():
         async with aiohttp.ClientSession() as session:
-            client.fit_amount(-0.017)
-            price = client.get_orderbook()[client.symbol]['bids'][10][0]
-            data = await client.create_order(price,
-                                             'buy',
-                                             session,
-                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+            # client.fit_amount(-0.017)
+            # price = client.get_orderbook()[client.symbol]['bids'][10][0]
+            # data = await client.create_order(price,
+            #                                  'buy',
+            #                                  session,
+            #                                  client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+            data = client.get_balance()
             print(data)
-            client.cancel_all_orders()
+            # client.cancel_all_orders()
 
 
     while True:
