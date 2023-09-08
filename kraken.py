@@ -63,6 +63,9 @@ class KrakenClient(BaseClient):
         self.get_sizes()
         self.orderbook = {self.symbol: {'sell': {}, 'buy': {}, 'timestamp': 0}}
         self.pings = []
+        self.expect_price = 0
+        self.expect_amount_coin = 0
+
 
     def get_sizes(self):
         try:
