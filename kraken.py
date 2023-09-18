@@ -66,7 +66,6 @@ class KrakenClient(BaseClient):
         self.expect_price = 0
         self.expect_amount_coin = 0
 
-
     def get_sizes(self):
         try:
             orderbook = asyncio.run(self.get_orderbook_by_symbol())
@@ -581,9 +580,8 @@ class KrakenClient(BaseClient):
                                 amount_usd = position['balance'] * position['mark_price']
                                 self.positions.update({position['instrument'].upper(): {
                                     'side': side,
-                                    'amount_usd': amount_usd if side == PositionSideEnum.LONG else -amount_usd,
-                                    'amount': position['balance'] if side == PositionSideEnum.LONG else -position[
-                                        'balance'],
+                                    'amount_usd': amount_usd,
+                                    'amount': position['balance'],
                                     'entry_price': position['entry_price'],
                                     'unrealized_pnl_usd': 0,
                                     'realized_pnl_usd': position['pnl'],
@@ -677,6 +675,9 @@ if __name__ == '__main__':
             #                                  client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
             data = client.get_balance()
             print(data)
+            print()
+            print()
+            print()
             # client.cancel_all_orders()
 
 
