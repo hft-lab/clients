@@ -59,7 +59,7 @@ class DydxClient(BaseClient):
         self.count_flag = False
 
         self.requestLimit = 1050  # 175 за 10 секунд https://dydxprotocol.github.io/v3-teacher/#rate-limit-api
-        self.markets = {}
+        self.markets_multi = {}
         self.balance = {'free': 0, 'total': 0}
         self.orderbook = {self.symbol: {'asks': [], 'bids': [], 'timestamp': int(time.time() * 1000)}}
 
@@ -143,12 +143,23 @@ class DydxClient(BaseClient):
     #        await self.create_order(amount, price, side, session, type)
 
     def get_markets(self):
-        markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
-        for market, value in markets['markets'].items():
+        # markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
+        for market, value in self.markets['markets'].items():
             if value['quoteAsset'] == 'USD':
                 coin = value['baseAsset']
-                self.markets.update({coin: market})
-        return self.markets
+                self.markets_multi.update({coin: market})
+        return self.markets_multi
+
+    async def get_multi_orderbook(self, symbol):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(self.urlOrderbooks + symbol) as response:
+                ob = await response.json()
+                try:
+                    return {'top_bid': ob['bids'][0]['price'], 'top_ask': ob['asks'][0]['price'],
+                            'bid_vol': ob['bids'][0]['size'], 'ask_vol': ob['asks'][0]['size'],
+                            'ts_exchange': 0}
+                except Exception as error:
+                    print(f"Error from DyDx Module, symbol: {symbol}, error: {error}")
 
     async def get_funding_payments(self, session: aiohttp.ClientSession):
         data = {}
