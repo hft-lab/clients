@@ -21,6 +21,8 @@ class BinanceClient(BaseClient):
     BASE_WS = 'wss://fstream.binance.com/ws/'
     BASE_URL = 'https://fapi.binance.com'
     EXCHANGE_NAME = 'BINANCE'
+    urlMarkets = "https://fapi.binance.com/fapi/v1/exchangeInfo"
+    urlOrderbooks = "https://fapi.binance.com/fapi/v1/depth?limit=5&symbol="
 
     def __init__(self, keys, leverage):
         self.taker_fee = 0.00036
@@ -28,14 +30,16 @@ class BinanceClient(BaseClient):
         self.symbol = keys['SYMBOL']
         self.__api_key = keys['API_KEY']
         self.__secret_key = keys['API_SECRET']
-        self.headers = {'X-MBX-APIKEY': self.__api_key}
+        self.headers = {"Content-Type": "application/json", 'X-MBX-APIKEY': self.__api_key}
         self.symbol_is_active = False
         self.count_flag = False
         self.error_info = None
         self.quantity_precision = 0
         self.tick_size = None
         self.step_size = None
+        self.markets = {}
         self.message_to_rabbit_list = []
+        self.requestLimit = 1200
         self.balance = {
             'total': 0.0,
             'avl_balance': 0.0,
@@ -98,8 +102,28 @@ class BinanceClient(BaseClient):
             time.sleep(0.001)
         return self.orderbook
 
+    async def get_multi_orderbook(self, symbol):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url=self.urlOrderbooks + symbol) as response:
+                ob = await response.json()
+                try:
+                    return {'top_bid': ob['bids'][0][0], 'top_ask': ob['asks'][0][0],
+                            'bid_vol': ob['bids'][0][1], 'ask_vol': ob['asks'][0][1],
+                            'ts_exchange': ob['E']}
+                except Exception as error:
+                    print('Error from Client. Binance Module:', symbol, error)
+
     def get_last_price(self, side: str) -> float:
         return self.last_price[side.lower()]
+
+    def get_markets(self):
+        markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
+        for market in markets['symbols']:
+            if (market['marginAsset'] == 'USDT') & (market['contractType'] == 'PERPETUAL') & (
+                    market['underlyingType'] == 'COIN') & (market['status'] == 'TRADING'):
+                coin = market['baseAsset']
+                self.markets.update({coin: market['symbol']})
+        return self.markets
 
     def run_updater(self) -> None:
         self.lk_check.start()

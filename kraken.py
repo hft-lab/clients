@@ -24,10 +24,15 @@ class KrakenClient(BaseClient):
     BASE_URL = 'https://futures.kraken.com'
     EXCHANGE_NAME = 'KRAKEN'
     LAST_ORDER_ID = None
+    urlOrderbooks = "https://futures.kraken.com/derivatives/api/v3/orderbook?symbol="
+    urlMarkets = "https://futures.kraken.com/derivatives/api/v3/tickers"
 
     def __init__(self, keys, leverage):
         self.expect_amount_coin = None
         self.taker_fee = 0.0005
+        self.requestLimit = 1200
+        self.markets = {}
+        self.headers = {"Content-Type": "application/json"}
         self.leverage = leverage
         self.symbol = keys['SYMBOL']
         self.__api_key = keys['API_KEY']
@@ -121,6 +126,15 @@ class KrakenClient(BaseClient):
     def get_positions(self) -> dict:
         return self.positions
 
+    def get_markets(self):
+        markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
+        for market in markets['tickers']:
+            if market.get('tag') is not None:
+                if (market['tag'] == 'perpetual') & (market['pair'].split(":")[1] == 'USD'):
+                    coin = market['pair'].split(":")[0]
+                    self.markets.update({coin: market['symbol']})
+        return self.markets
+
     def get_real_balance(self) -> float:
         if time.time() - self.balance['timestamp'] > 10:
             self.get_balance()
@@ -139,6 +153,17 @@ class KrakenClient(BaseClient):
                 continue
             # print(f"Orderbook fetch time: {time.time() - time_start}")
             return orderbook
+
+    async def get_multi_orderbook(self, symbol):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url=self.urlOrderbooks + symbol) as response:
+                full_response = await response.json()
+                ob = full_response['orderBook']
+                ts_exchange = int(
+                    datetime.strptime(full_response['serverTime'], "%Y-%m-%dT%H:%M:%S.%fZ").timestamp() * 1000)
+                return {'top_bid': ob['bids'][0][0], 'top_ask': ob['asks'][0][0],
+                        'bid_vol': ob['bids'][0][1], 'ask_vol': ob['asks'][0][1],
+                        'ts_exchange': ts_exchange}
 
     def get_last_price(self, side: str) -> float:
         return self.last_price[side.lower()]

@@ -28,12 +28,15 @@ class DydxClient(BaseClient):
     BASE_WS = 'wss://api.dydx.exchange/v3/ws'
     BASE_URL = 'https://api.dydx.exchange'
     EXCHANGE_NAME = 'DYDX'
+    urlMarkets = "https://api.dydx.exchange/v3/markets/"
+    urlOrderbooks = "https://api.dydx.exchange/v3/orderbook/"
 
     def __init__(self, keys=None, leverage=2):
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         self._connected = asyncio.Event()
         self.symbol = keys['SYMBOL']
+        self.headers = {"Content-Type": "application/json"}
         self.API_KEYS = {"secret": keys['API_SECRET'],
                          "key": keys['API_KEY'],
                          "passphrase": keys['PASSPHRASE']}
@@ -55,6 +58,8 @@ class DydxClient(BaseClient):
         self.positions = {self.symbol: {}}
         self.count_flag = False
 
+        self.requestLimit = 1050  # 175 за 10 секунд https://dydxprotocol.github.io/v3-teacher/#rate-limit-api
+        self.markets = {}
         self.balance = {'free': 0, 'total': 0}
         self.orderbook = {self.symbol: {'asks': [], 'bids': [], 'timestamp': int(time.time() * 1000)}}
 
@@ -136,6 +141,14 @@ class DydxClient(BaseClient):
     # async def test_create_order(self, amount: str, price: str, side: str, type: str) -> dict:
     #     async with aiohttp.ClientSession() as session:
     #        await self.create_order(amount, price, side, session, type)
+
+    def get_markets(self):
+        markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
+        for market, value in markets['markets'].items():
+            if value['quoteAsset'] == 'USD':
+                coin = value['baseAsset']
+                self.markets.update({coin: market})
+        return self.markets
 
     async def get_funding_payments(self, session: aiohttp.ClientSession):
         data = {}
