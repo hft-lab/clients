@@ -34,9 +34,6 @@ class BinanceClient(BaseClient):
         self.symbol_is_active = False
         self.count_flag = False
         self.error_info = None
-        self.quantity_precision = 0
-        self.tick_size = None
-        self.step_size = None
         self.markets = {}
         self.message_to_rabbit_list = []
         self.requestLimit = 1200
@@ -62,8 +59,8 @@ class BinanceClient(BaseClient):
         }
         self.orderbook = {self.symbol: {'asks': [], 'bids': [], 'timestamp': int(time.time() * 1000)}}
         self._check_symbol_value()
-        self.expect_amount_coin = 0
-        self.expect_price = 0
+        self.amount = 0
+        self.price = 0
 
         self._loop_public = asyncio.new_event_loop()
         self._loop_private = asyncio.new_event_loop()
@@ -148,30 +145,30 @@ class BinanceClient(BaseClient):
     # PUBLIC -----------------------------------------------------------------------------------------------------------
     def _check_symbol_value(self) -> None:
         url_path = '/fapi/v1/exchangeInfo'
-        if response := requests.get(self.BASE_URL + url_path).json():
-            for key, value in response.items():
-                # print(key)
-                if 'symbol' in key:
-                    for data in value:
-                        if data['symbol'] == self.symbol.upper():
-                            if data['status'] == 'TRADING' and data['contractType'] == 'PERPETUAL':
-                                self.quantity_precision = data['quantityPrecision']
-                                self.price_precision = data['pricePrecision']
-                                self.symbol_is_active = True
-                                for fltr in data['filters']:
-                                    if fltr['filterType'] == 'PRICE_FILTER':
-                                        self.tick_size = float(fltr['tickSize'])
-                                    elif fltr['filterType'] == 'LOT_SIZE':
-                                        self.step_size = float(fltr['stepSize'])
-                                break
-        else:
-            self.symbol_is_active = False
+        response = requests.get(self.BASE_URL + url_path).json()
+        self.exchange_info = response
+
+    def get_sizes_for_symbol(self, symbol):
+        for key, value in self.exchange_info.items():
+            # print(key)
+            if 'symbol' in key:
+                for data in value:
+                    if data['symbol'] == symbol.upper():
+                        if data['status'] == 'TRADING' and data['contractType'] == 'PERPETUAL':
+                            quantity_precision = data['quantityPrecision']
+                            price_precision = data['pricePrecision']
+                            for fltr in data['filters']:
+                                if fltr['filterType'] == 'PRICE_FILTER':
+                                    tick_size = float(fltr['tickSize'])
+                                elif fltr['filterType'] == 'LOT_SIZE':
+                                    step_size = float(fltr['stepSize'])
+                            return quantity_precision, price_precision, tick_size, step_size
 
     def __check_ob(self, ob: dict, side: str) -> None:
         reformat_ob = [[float(x[0]), float(x[1])] for x in ob[side]]
         if not len(self.orderbook[self.symbol][side]):
             for new_order in reformat_ob:
-                if new_order[1] >= self.step_size:
+                if new_order[1] > 0:
                     self.orderbook[self.symbol][side].append(new_order)
             return
         for new_order in reformat_ob:
@@ -181,12 +178,12 @@ class BinanceClient(BaseClient):
                     if new_order[0] < ob_order[0]:
                         index += 1
                     elif new_order[0] == ob_order[0]:
-                        if new_order[1] > self.step_size:
+                        if new_order[1] > 0:
                             self.orderbook[self.symbol][side][index] = new_order
                         else:
                             self.orderbook[self.symbol][side].pop(index)
                         break
-                    elif new_order[0] > ob_order[0] and new_order[1] > self.step_size:
+                    elif new_order[0] > ob_order[0] and new_order[1] > 0:
                         self.orderbook[self.symbol][side].insert(index, new_order)
                         break
             elif side == 'asks':
@@ -194,12 +191,12 @@ class BinanceClient(BaseClient):
                     if new_order[0] > ob_order[0]:
                         index += 1
                     elif new_order[0] == ob_order[0]:
-                        if new_order[1] > self.step_size:
+                        if new_order[1] > 0:
                             self.orderbook[self.symbol][side][index] = new_order
                         else:
                             self.orderbook[self.symbol][side].pop(index)
                         break
-                    elif new_order[0] < ob_order[0] and new_order[1] > self.step_size:
+                    elif new_order[0] < ob_order[0] and new_order[1] > 0:
                         self.orderbook[self.symbol][side].insert(index, new_order)
                         break
 
@@ -399,16 +396,17 @@ class BinanceClient(BaseClient):
 
         return funding_payments
 
-    def fit_amount(self, amount) -> None:
-        self.expect_amount_coin = round(amount - (amount % self.step_size), self.quantity_precision)
+    def fit_sizes(self, amount, price, symbol) -> None:
+        quantity_precision, price_precision, tick_size, step_size = self.get_sizes_for_symbol(symbol)
+        self.amount = round(amount - (amount % step_size), quantity_precision)
+        self.price = round(round(price / tick_size) * tick_size, price_precision)
 
-    async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession,
+    async def __create_order(self, symbol, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_id=None) -> dict:
         time_sent = datetime.datetime.utcnow().timestamp()
-        self.expect_price = round(round(price / self.tick_size) * self.tick_size, self.price_precision)
         url_path = '/fapi/v1/order?'
-        query_string = f"timestamp={int(time.time() * 1000)}&symbol={self.symbol}&side={side}&type=LIMIT&" \
-                       f"price={self.expect_price}&quantity={self.expect_amount_coin}&timeInForce=GTC&" \
+        query_string = f"timestamp={int(time.time() * 1000)}&symbol={symbol}&side={side}&type=LIMIT&" \
+                       f"price={self.price}&quantity={self.amount}&timeInForce=GTC&" \
                        f"recvWindow={time.time() * 1000 + expire}&newClientOrderId={client_id}"
         query_string += f'&signature={self._create_signature(query_string)}'
         print(f"{self.EXCHANGE_NAME} BODY: {query_string}")

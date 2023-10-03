@@ -28,10 +28,11 @@ class KrakenClient(BaseClient):
     urlMarkets = "https://futures.kraken.com/derivatives/api/v3/tickers"
 
     def __init__(self, keys, leverage):
-        self.expect_amount_coin = None
+        self.amount = None
         self.taker_fee = 0.0005
         self.requestLimit = 1200
         self.markets = {}
+        self.instruments = self.get_instruments()
         self.headers = {"Content-Type": "application/json"}
         self.leverage = leverage
         self.symbol = keys['SYMBOL']
@@ -39,10 +40,7 @@ class KrakenClient(BaseClient):
         self.__secret_key = keys['API_SECRET']
         self.__last_challenge = None
         self.orders = {}
-        self.step_size = 0
-        self.tick_size = None
-        self.price_precision = 0
-        self.quantity_precision = 0
+        self.tickers = None
         self.count_flag = False
         self.error_info = None
         self.balance = {
@@ -68,29 +66,37 @@ class KrakenClient(BaseClient):
         self.get_sizes()
         self.orderbook = {self.symbol: {'sell': {}, 'buy': {}, 'timestamp': 0}}
         self.pings = []
-        self.expect_price = 0
-        self.expect_amount_coin = 0
+        self.price = 0
+        self.amount = 0
 
-    def get_sizes(self):
-        try:
-            orderbook = asyncio.run(self.get_orderbook_by_symbol())
-            time.sleep(1)
-        except Exception:
-            orderbook = self.get_orderbook_by_symbol_non_async()
-            # traceback.print_exc()
-        asks_value = [str(x[1]) for x in orderbook['asks'][:5]]
+    def get_instruments(self):
+        url_path = "/derivatives/api/v3/instruments"
+        res = requests.get(url=self.BASE_URL + url_path).json()
+        return res
+
+    def get_sizes(self, symbol):
+        for ticker in self.tickers:
+            if ticker['pair'] == symbol:
+                values = [ticker['askSize'], ticker['vol24h'], ticker['lastSize'], ticker['bidSize']]
         max_value = 0
-        for str_value in asks_value:
+        for str_value in values:
             splt = str_value.split('.')[1] if '.' in str_value else ''
             if len(splt) >= max_value:
                 max_value = max(len(splt), max_value)
-        self.step_size = float('0.' + '0' * (max_value - 1) + str(1))
-        url_path = "/derivatives/api/v3/instruments"
-        res = requests.get(url=self.BASE_URL + url_path).json()
-        for instrument in res['instruments']:
-            if self.symbol == instrument['symbol'].upper():
-                self.tick_size = instrument['tickSize']
+        step_size = float('0.' + '0' * (max_value - 1) + str(1))
+        for instrument in self.instruments:
+            if symbol == instrument['symbol'].upper():
+                tick_size = instrument['tickSize']
                 break
+        if '.' in str(step_size):
+            quantity_precision = len(str(step_size).split('.')[1])
+        else:
+            quantity_precision = 0
+        if '.' in str(step_size):
+            price_precision = len(str(tick_size).split('.')[1])
+        else:
+            price_precision = 0
+        return price_precision, quantity_precision, tick_size, step_size
 
     def get_available_balance(self, side: str) -> float:
         position_value = 0
@@ -128,6 +134,7 @@ class KrakenClient(BaseClient):
 
     def get_markets(self):
         markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
+        self.tickers = markets['tickers']
         for market in markets['tickers']:
             if market.get('tag') is not None:
                 if (market['tag'] == 'perpetual') & (market['pair'].split(":")[1] == 'USD'):
@@ -467,27 +474,21 @@ class KrakenClient(BaseClient):
         self.balance['free'] = res['accounts']['flex']['availableMargin']
         self.balance['timestamp'] = time.time()
 
-    def fit_amount(self, amount) -> None:
-        if not self.quantity_precision:
-            if '.' in str(self.step_size):
-                self.quantity_precision = len(str(self.step_size).split('.')[1])
-            else:
-                self.quantity_precision = 0
-        # print(f"{amount=}")
-        # print(f"{self.step_size=}")
-        # print(f"{self.quantity_precision=}")
-        self.expect_amount_coin = round(amount - (amount % self.step_size), self.quantity_precision)
+    def fit_sizes(self, amount, price, symbol) -> None:
+        price_precision, quantity_precision, tick_size, step_size = self.get_sizes(symbol)
+        self.amount = round(amount - (amount % step_size), quantity_precision)
+        self.price = round(round(price / tick_size) * tick_size, price_precision)
 
-    async def __create_order(self, price: float, side: str, session: aiohttp.ClientSession, expire=5000, client_id=None):
+    async def __create_order(self, symbol, side: str, session: aiohttp.ClientSession, expire=5000,
+                             client_id=None):
         time_sent = datetime.utcnow().timestamp()
         nonce = str(int(time.time() * 1000))
         url_path = "/derivatives/api/v3/sendorder"
-        self.expect_price = round(round(price / self.tick_size) * self.tick_size, self.price_precision)
         params = {
             "orderType": "lmt",  # post
-            "limitPrice": self.expect_price,
+            "limitPrice": self.price,
             "side": side.lower(),
-            "size": self.expect_amount_coin,
+            "size": self.amount,
             "symbol": self.symbol,
             "cliOrdId": client_id
         }
@@ -618,11 +619,11 @@ class KrakenClient(BaseClient):
                                     qty_coin = fill['qty'] - fill['remaining_order_qty']
                                     qty_usd = round(qty_coin * fill['price'], 1)
                                     status = OrderStatus.PARTIALLY_EXECUTED
-                                    if fill['remaining_order_qty'] < self.step_size:
+                                    if fill['remaining_order_qty'] == 0:
                                         status = OrderStatus.FULLY_EXECUTED
                                     if order := self.orders.get(fill['order_id']):
                                         qty_usd = order['factual_amount_usd'] + qty_usd
-                                        factual_price = round(qty_usd / qty_coin, self.price_precision)
+                                        factual_price = qty_usd / qty_coin
                                         self.last_price['buy' if fill['buy'] else 'sell'] = factual_price
                                         self.orders.update({fill['order_id']: {
                                             'factual_price': factual_price,
@@ -633,19 +634,19 @@ class KrakenClient(BaseClient):
                                             'factual_amount_usd': qty_usd,
                                             'datetime_update': datetime.utcnow(),
                                             'ts_update': int(time.time() * 1000)
-                                            }})
+                                        }})
                                     else:
                                         self.last_price['buy' if fill['buy'] else 'sell'] = fill['price']
                                         self.orders.update({fill['order_id']: {
-                                             'factual_price': fill['price'],
-                                             'exchange_order_id': fill['order_id'],
-                                             'exchange': self.EXCHANGE_NAME,
-                                             'status': status,
-                                             'factual_amount_coin': qty_coin,
-                                             'factual_amount_usd': qty_usd,
-                                             'datetime_update': datetime.utcnow(),
-                                             'ts_update': int(time.time() * 1000)
-                                             }})
+                                            'factual_price': fill['price'],
+                                            'exchange_order_id': fill['order_id'],
+                                            'exchange': self.EXCHANGE_NAME,
+                                            'status': status,
+                                            'factual_amount_coin': qty_coin,
+                                            'factual_amount_usd': qty_usd,
+                                            'datetime_update': datetime.utcnow(),
+                                            'ts_update': int(time.time() * 1000)
+                                        }})
 
                                 # self.last_price['sell' if order['direction'] else 'buy'] = float(order['limit_price'])
                                 # status = OrderStatus.PROCESSING
@@ -687,25 +688,26 @@ if __name__ == '__main__':
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
     client = KrakenClient(config['KRAKEN'], config['SETTINGS']['LEVERAGE'])
-    client.run_updater()
+    # client.run_updater()
+    print(client.get_markets())
     time.sleep(5)
 
-    async def test_order():
-        async with aiohttp.ClientSession() as session:
-            # client.fit_amount(-0.017)
-            # price = client.get_orderbook()[client.symbol]['bids'][10][0]
-            # data = await client.create_order(price,
-            #                                  'buy',
-            #                                  session,
-            #                                  client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-            data = client.get_balance()
-            print(data)
-            print()
-            print()
-            print()
-            # client.cancel_all_orders()
-
-
-    while True:
-        time.sleep(5)
-        asyncio.run(test_order())
+    # async def test_order():
+    #     async with aiohttp.ClientSession() as session:
+    #         # client.fit_amount(-0.017)
+    #         # price = client.get_orderbook()[client.symbol]['bids'][10][0]
+    #         # data = await client.create_order(price,
+    #         #                                  'buy',
+    #         #                                  session,
+    #         #                                  client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+    #         data = client.get_balance()
+    #         print(data)
+    #         print()
+    #         print()
+    #         print()
+    #         # client.cancel_all_orders()
+    #
+    #
+    # while True:
+    #     time.sleep(5)
+    #     asyncio.run(test_order())

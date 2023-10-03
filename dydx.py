@@ -63,8 +63,8 @@ class DydxClient(BaseClient):
         self.balance = {'free': 0, 'total': 0}
         self.orderbook = {self.symbol: {'asks': [], 'bids': [], 'timestamp': int(time.time() * 1000)}}
 
-        self.expect_amount_coin = 0
-        self.expect_price = 0
+        self.amount = 0
+        self.price = 0
 
         self.keys = keys
         self.user = self.client.private.get_user().data
@@ -79,14 +79,9 @@ class DydxClient(BaseClient):
         # self.maker_fee = float(self.user['user']['makerFeeRate'])
         self.taker_fee = float(self.user['user']['takerFeeRate'])
 
-        self.tick_size = float(self.markets['markets'][self.symbol]['tickSize'])
-        self.step_size = float(self.markets['markets'][self.symbol]['stepSize'])
-
         self._updates = 0
         self.offsets = {}
         # self.time_sent = time.time()
-
-        self.quantity_precision = len(str(self.step_size).split('.')[1]) if '.' in str(self.step_size) else 1
         self.get_position()
 
         self.wst = threading.Thread(target=self._run_ws_forever, daemon=True)
@@ -116,17 +111,6 @@ class DydxClient(BaseClient):
             except:
                 pass
         return balance
-
-    def fit_amount(self, amount) -> None:
-        self.expect_amount_coin = round(amount - (amount % self.step_size), self.quantity_precision)
-
-    def fit_price(self, price):
-        if '.' in str(self.tick_size):
-            round_price_len = len(str(self.tick_size).split('.')[1])
-        else:
-            round_price_len = 0
-        price = str(round(price - (price % self.tick_size), round_price_len))
-        return price
 
     def exit(self):
         self._ws.close()
@@ -295,14 +279,25 @@ class DydxClient(BaseClient):
 
             return orders
 
-    async def create_order(self, price: float, side: str, session: aiohttp.ClientSession,
-                           type: str = 'LIMIT', expire: int = 10000, client_id: str = None, expiration=None) -> dict:
+    def get_sizes_for_symbol(self, symbol):
+        tick_size = float(self.markets['markets'][symbol]['tickSize'])
+        step_size = float(self.markets['markets'][symbol]['stepSize'])
+        quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
+        return tick_size, step_size, quantity_precision
 
+    def fit_sizes(self, amount, price, symbol) -> None:
+        tick_size, step_size, quantity_precision = self.get_sizes_for_symbol(symbol)
+        self.amount = round(amount - (amount % step_size), quantity_precision)
+        if '.' in str(tick_size):
+            round_price_len = len(str(tick_size).split('.')[1])
+        else:
+            round_price_len = 0
+        self.price = str(round(price - (price % tick_size), round_price_len))
+
+    async def create_order(self, symbol, side: str, session: aiohttp.ClientSession,
+                           type: str = 'LIMIT', expire: int = 10000, client_id: str = None, expiration=None) -> dict:
         time_sent = datetime.utcnow().timestamp()
         expire_date = int(round(time.time()) + expire)
-        expect_amount_coin = str(self.expect_amount_coin)
-        expect_price = self.fit_price(price)
-        self.expect_price = float(expect_price)
         now_iso_string = generate_now_iso()
         expiration = expiration or epoch_seconds_to_iso(expire_date)
         client_id = client_id if client_id else random_client_id()
@@ -310,21 +305,21 @@ class DydxClient(BaseClient):
             network_id=NETWORK_ID_MAINNET,
             position_id=self.position_id,
             client_id=client_id,
-            market=self.symbol,
+            market=symbol,
             side=side.upper(),
-            human_size=expect_amount_coin,
-            human_price=expect_price,
+            human_size=str(self.amount),
+            human_price=self.price,
             limit_fee='0.0008',
             expiration_epoch_seconds=expire_date,
         )
         try:
             data = {
-                'market': self.symbol,
+                'market': symbol,
                 'side': side.upper(),
                 'type': type.upper(),
                 'timeInForce': 'GTT',
-                'size': expect_amount_coin,
-                'price': expect_price,
+                'size': str(self.amount),
+                'price': self.price,
                 'limitFee': '0.0008',
                 'expiration': expiration,
                 'postOnly': False,
