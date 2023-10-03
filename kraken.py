@@ -63,7 +63,6 @@ class KrakenClient(BaseClient):
                 'realized_pnl_usd': 0}
         }
         self.get_balance()
-        self.get_sizes()
         self.orderbook = {self.symbol: {'sell': {}, 'buy': {}, 'timestamp': 0}}
         self.pings = []
         self.price = 0
@@ -76,8 +75,9 @@ class KrakenClient(BaseClient):
 
     def get_sizes(self, symbol):
         for ticker in self.tickers:
-            if ticker['pair'] == symbol:
-                values = [ticker['askSize'], ticker['vol24h'], ticker['lastSize'], ticker['bidSize']]
+            if ticker.get('symbol'):
+                if ticker['symbol'] == symbol:
+                    values = [ticker['askSize'], ticker['vol24h'], ticker['lastSize'], ticker['bidSize']]
         max_value = 0
         for str_value in values:
             splt = str_value.split('.')[1] if '.' in str_value else ''
@@ -489,7 +489,7 @@ class KrakenClient(BaseClient):
             "limitPrice": self.price,
             "side": side.lower(),
             "size": self.amount,
-            "symbol": self.symbol,
+            "symbol": symbol,
             "cliOrdId": client_id
         }
         post_string = "&".join([f"{key}={params[key]}" for key in sorted(params)])

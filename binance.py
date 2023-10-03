@@ -137,7 +137,7 @@ class BinanceClient(BaseClient):
 
     async def _run_loop(self, type) -> None:
         async with aiohttp.ClientSession() as session:
-            if type == ConnectMethodEnum.PUBLIC and self.symbol_is_active:
+            if type == ConnectMethodEnum.PUBLIC:
                 await self._symbol_data_getter(session)
             elif type == ConnectMethodEnum.PRIVATE and self.listen_key:
                 await self._user_data_getter(session)
@@ -166,39 +166,14 @@ class BinanceClient(BaseClient):
 
     def __check_ob(self, ob: dict, side: str) -> None:
         reformat_ob = [[float(x[0]), float(x[1])] for x in ob[side]]
-        if not len(self.orderbook[self.symbol][side]):
-            for new_order in reformat_ob:
-                if new_order[1] > 0:
-                    self.orderbook[self.symbol][side].append(new_order)
-            return
+        # if not len(self.orderbook[self.symbol][side]):
+        self.orderbook[self.symbol][side] = []
         for new_order in reformat_ob:
-            index = 0
-            if side == 'bids':
-                for ob_order in self.orderbook[self.symbol][side]:
-                    if new_order[0] < ob_order[0]:
-                        index += 1
-                    elif new_order[0] == ob_order[0]:
-                        if new_order[1] > 0:
-                            self.orderbook[self.symbol][side][index] = new_order
-                        else:
-                            self.orderbook[self.symbol][side].pop(index)
-                        break
-                    elif new_order[0] > ob_order[0] and new_order[1] > 0:
-                        self.orderbook[self.symbol][side].insert(index, new_order)
-                        break
-            elif side == 'asks':
-                for ob_order in self.orderbook[self.symbol][side]:
-                    if new_order[0] > ob_order[0]:
-                        index += 1
-                    elif new_order[0] == ob_order[0]:
-                        if new_order[1] > 0:
-                            self.orderbook[self.symbol][side][index] = new_order
-                        else:
-                            self.orderbook[self.symbol][side].pop(index)
-                        break
-                    elif new_order[0] < ob_order[0] and new_order[1] > 0:
-                        self.orderbook[self.symbol][side].insert(index, new_order)
-                        break
+            if len(self.orderbook[self.symbol][side]) > 10:
+                return
+            if new_order[1] > 0:
+                self.orderbook[self.symbol][side].append(new_order)
+
 
     async def __orderbook_update(self, ob: dict) -> None:
         ask = self.orderbook[self.symbol]['asks'][0][0]
@@ -638,24 +613,24 @@ if __name__ == '__main__':
     time.sleep(5)
 
 
-    async def test_order():
-        async with aiohttp.ClientSession() as session:
-            client.fit_amount(-0.017)
-            price = client.get_orderbook()[client.symbol]['bids'][10][0]
-            data = await client.create_order(price,
-                                             'buy',
-                                             session,
-                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-            # data = await client.get_orderbook_by_symbol()
-            print(data)
-            client.cancel_all_orders()
-
-
-    asyncio.run(test_order())
+    # async def test_order():
+    #     async with aiohttp.ClientSession() as session:
+    #         client.fit_amount(-0.017)
+    #         price = client.get_orderbook()[client.symbol]['bids'][10][0]
+    #         data = await client.create_order(price,
+    #                                          'buy',
+    #                                          session,
+    #                                          client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+    #         # data = await client.get_orderbook_by_symbol()
+    #         print(data)
+    #         client.cancel_all_orders()
+    #
+    #
+    # asyncio.run(test_order())
 
     while True:
         time.sleep(5)
-        asyncio.run(test_order())
+        # asyncio.run(test_order())
         # print(client.get_orderbook())
 
 # {'symbol': 'ETHUSDT', 'pair': 'ETHUSDT', 'contractType': 'PERPETUAL', 'deliveryDate': 4133404800000,
