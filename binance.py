@@ -370,8 +370,10 @@ class BinanceClient(BaseClient):
 
     def fit_sizes(self, amount, price, symbol) -> None:
         quantity_precision, price_precision, tick_size, step_size = self.get_sizes_for_symbol(symbol)
-        self.amount = round(amount - (amount % step_size), quantity_precision)
-        self.price = round(price - (price % tick_size), price_precision)
+        amount_extra = float('0.' + str(amount / step_size).split('.')[1]) * step_size if '.' in str(amount / step_size) else 0
+        price_extra = float('0.' + str(price / tick_size).split('.')[1]) * tick_size if '.' in str(price / tick_size) else 0
+        self.amount = round(amount - amount_extra, quantity_precision)
+        self.price = round(price - price_extra, price_precision)
 
     async def __create_order(self, symbol, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_id=None) -> dict:

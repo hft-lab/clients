@@ -89,7 +89,10 @@ class KrakenClient(BaseClient):
             splt = str(value).split('.')[1] if '.' in str(value) else ''
             if len(splt) >= max_value:
                 max_value = max(len(splt), max_value)
-        step_size = float('0.' + '0' * (max_value - 1) + str(1))
+        if max_value:
+            step_size = float('0.' + '0' * (max_value - 1) + str(1))
+        else:
+            step_size = 1
         for instrument in self.instruments:
             if symbol == instrument['symbol']:
                 tick_size = instrument['tickSize']
@@ -129,10 +132,6 @@ class KrakenClient(BaseClient):
             return available_margin - position_value
         elif side == 'sell':
             return available_margin + position_value
-
-    async def create_order(self, price, side, session: aiohttp.ClientSession,
-                           expire: int = 5000, client_id: str = None) -> dict:
-        return await self.__create_order(price, side.upper(), session, expire, client_id)
 
     def cancel_all_orders(self, orderID=None) -> dict:
         return self.__cancel_open_orders()
@@ -484,11 +483,12 @@ class KrakenClient(BaseClient):
 
     def fit_sizes(self, amount, price, symbol) -> None:
         price_precision, quantity_precision, tick_size, step_size = self.get_sizes(symbol)
-        self.amount = round(amount - (amount % step_size), quantity_precision)
-        self.price = round(price - (price % tick_size), price_precision)
+        amount_extra = float('0.' + str(amount / step_size).split('.')[1]) * step_size if '.' in str(amount / step_size) else 0
+        price_extra = float('0.' + str(price / tick_size).split('.')[1]) * tick_size if '.' in str(price / tick_size) else 0
+        self.amount = round(amount - amount_extra, quantity_precision)
+        self.price = round(price - price_extra, price_precision)
 
-    async def __create_order(self, symbol, side: str, session: aiohttp.ClientSession, expire=5000,
-                             client_id=None):
+    async def create_order(self, symbol, side: str, session: aiohttp.ClientSession, expire=5000, client_id=None):
         time_sent = datetime.utcnow().timestamp()
         nonce = str(int(time.time() * 1000))
         url_path = "/derivatives/api/v3/sendorder"
@@ -513,7 +513,7 @@ class KrakenClient(BaseClient):
             response = await resp.json()
             print(f'KRAKEN RESPONSE: {response}')
             self.LAST_ORDER_ID = response.get('sendStatus', {}).get('order_id', 'default')
-            if response.get('result') == 'success':
+            if response['sendStatus'].get('receivedTime'):
                 timestamp = response['sendStatus']['receivedTime']
                 timestamp = int(datetime.timestamp(datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
                 status = ResponseStatus.SUCCESS
@@ -623,6 +623,7 @@ class KrakenClient(BaseClient):
                                 }})
                         elif msg_data.get('fills') and msg_data['feed'] != 'fills_snapshot':
                             for fill in msg_data['fills']:
+                                print(fill)
                                 qty_coin = fill['qty'] - fill['remaining_order_qty']
                                 qty_usd = round(qty_coin * fill['price'], 1)
                                 status = OrderStatus.PARTIALLY_EXECUTED
@@ -642,6 +643,7 @@ class KrakenClient(BaseClient):
                                         'datetime_update': datetime.utcnow(),
                                         'ts_update': int(time.time() * 1000)
                                     }})
+                                    print(self.orders)
                                 else:
                                     self.last_price['buy' if fill['buy'] else 'sell'] = fill['price']
                                     self.orders.update({fill['order_id']: {
@@ -654,6 +656,7 @@ class KrakenClient(BaseClient):
                                         'datetime_update': datetime.utcnow(),
                                         'ts_update': int(time.time() * 1000)
                                     }})
+                                    print(self.orders)
 
                                 # self.last_price['sell' if order['direction'] else 'buy'] = float(order['limit_price'])
                                 # status = OrderStatus.PROCESSING
@@ -695,26 +698,30 @@ if __name__ == '__main__':
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
     client = KrakenClient(config['KRAKEN'], config['SETTINGS']['LEVERAGE'])
-    # client.run_updater()
-    print(client.get_markets())
-    time.sleep(5)
+    client.run_updater()
+    # print(client.get_markets())
+    # time.sleep(5)
 
-    # async def test_order():
-    #     async with aiohttp.ClientSession() as session:
-    #         # client.fit_amount(-0.017)
-    #         # price = client.get_orderbook()[client.symbol]['bids'][10][0]
-    #         # data = await client.create_order(price,
-    #         #                                  'buy',
-    #         #                                  session,
-    #         #                                  client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-    #         data = client.get_balance()
-    #         print(data)
-    #         print()
-    #         print()
-    #         print()
-    #         # client.cancel_all_orders()
+    async def test_order():
+        async with aiohttp.ClientSession() as session:
+            ob = await client.get_multi_orderbook('pf_runeusd')
+            price = ob['top_ask']
+            client.get_markets()
+            client.fit_sizes(30, price, 'pf_runeusd')
+            data = await client.create_order('pf_runeusd',
+                                             'buy',
+                                             session,
+                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+            # data = client.get_balance()
+            print(data)
+            print()
+            print()
+            print()
+            # client.cancel_all_orders()
     #
     #
-    # while True:
-    #     time.sleep(5)
-    #     asyncio.run(test_order())
+    time.sleep(5)
+    asyncio.run(test_order())
+    while True:
+        time.sleep(5)
+    #

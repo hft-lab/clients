@@ -287,12 +287,14 @@ class DydxClient(BaseClient):
 
     def fit_sizes(self, amount, price, symbol) -> None:
         tick_size, step_size, quantity_precision = self.get_sizes_for_symbol(symbol)
-        self.amount = round(amount - (amount % step_size), quantity_precision)
+        amount_extra = float('0.' + str(amount / step_size).split('.')[1]) * step_size if '.' in str(amount / step_size) else 0
+        price_extra = float('0.' + str(price / tick_size).split('.')[1]) * tick_size if '.' in str(price / tick_size) else 0
+        self.amount = round(amount - amount_extra, quantity_precision)
         if '.' in str(tick_size):
             round_price_len = len(str(tick_size).split('.')[1])
         else:
             round_price_len = 0
-        self.price = round(price - (price % tick_size), round_price_len)
+        self.price = round(price - price_extra, round_price_len)
 
     async def create_order(self, symbol, side: str, session: aiohttp.ClientSession,
                            type: str = 'LIMIT', expire: int = 10000, client_id: str = None, expiration=None) -> dict:
