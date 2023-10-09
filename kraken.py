@@ -32,7 +32,6 @@ class KrakenClient(BaseClient):
         self.taker_fee = 0.0005
         self.requestLimit = 1200
         self.markets = {}
-        self.instruments = self.get_instruments()
         self.headers = {"Content-Type": "application/json"}
         self.leverage = leverage
         self.symbol = keys['SYMBOL']
@@ -67,33 +66,42 @@ class KrakenClient(BaseClient):
         self.pings = []
         self.price = 0
         self.amount = 0
+        self.instruments = self.get_instruments()
 
     def get_instruments(self):
         url_path = "/derivatives/api/v3/instruments"
         res = requests.get(url=self.BASE_URL + url_path).json()
-        return res
+        return res['instruments']
 
     def get_sizes(self, symbol):
         for ticker in self.tickers:
             if ticker.get('symbol'):
                 if ticker['symbol'] == symbol:
-                    values = [ticker['askSize'], ticker['vol24h'], ticker['lastSize'], ticker['bidSize']]
+                    values = [ticker.get('askSize', None),
+                              ticker.get('vol24h', None),
+                              ticker.get('lastSize', None),
+                              ticker.get('bidSize', None)]
+
         max_value = 0
-        for str_value in values:
-            splt = str_value.split('.')[1] if '.' in str_value else ''
+        for value in values:
+            if not value:
+                continue
+            splt = str(value).split('.')[1] if '.' in str(value) else ''
             if len(splt) >= max_value:
                 max_value = max(len(splt), max_value)
         step_size = float('0.' + '0' * (max_value - 1) + str(1))
         for instrument in self.instruments:
-            if symbol == instrument['symbol'].upper():
+            if symbol == instrument['symbol']:
                 tick_size = instrument['tickSize']
                 break
         if '.' in str(step_size):
             quantity_precision = len(str(step_size).split('.')[1])
         else:
             quantity_precision = 0
-        if '.' in str(step_size):
+        if '.' in str(tick_size):
             price_precision = len(str(tick_size).split('.')[1])
+        elif 'e' in str(tick_size):
+            price_precision = int((str(tick_size).split('-')[1])) - 1
         else:
             price_precision = 0
         return price_precision, quantity_precision, tick_size, step_size
@@ -477,7 +485,7 @@ class KrakenClient(BaseClient):
     def fit_sizes(self, amount, price, symbol) -> None:
         price_precision, quantity_precision, tick_size, step_size = self.get_sizes(symbol)
         self.amount = round(amount - (amount % step_size), quantity_precision)
-        self.price = round(round(price / tick_size) * tick_size, price_precision)
+        self.price = round(price - (price % tick_size), price_precision)
 
     async def __create_order(self, symbol, side: str, session: aiohttp.ClientSession, expire=5000,
                              client_id=None):
@@ -615,38 +623,37 @@ class KrakenClient(BaseClient):
                                 }})
                         elif msg_data.get('fills') and msg_data['feed'] != 'fills_snapshot':
                             for fill in msg_data['fills']:
-                                if self.symbol.upper() == fill['instrument'].upper():
-                                    qty_coin = fill['qty'] - fill['remaining_order_qty']
-                                    qty_usd = round(qty_coin * fill['price'], 1)
-                                    status = OrderStatus.PARTIALLY_EXECUTED
-                                    if fill['remaining_order_qty'] == 0:
-                                        status = OrderStatus.FULLY_EXECUTED
-                                    if order := self.orders.get(fill['order_id']):
-                                        qty_usd = order['factual_amount_usd'] + qty_usd
-                                        factual_price = qty_usd / qty_coin
-                                        self.last_price['buy' if fill['buy'] else 'sell'] = factual_price
-                                        self.orders.update({fill['order_id']: {
-                                            'factual_price': factual_price,
-                                            'exchange_order_id': fill['order_id'],
-                                            'exchange': self.EXCHANGE_NAME,
-                                            'status': status,
-                                            'factual_amount_coin': qty_coin,
-                                            'factual_amount_usd': qty_usd,
-                                            'datetime_update': datetime.utcnow(),
-                                            'ts_update': int(time.time() * 1000)
-                                        }})
-                                    else:
-                                        self.last_price['buy' if fill['buy'] else 'sell'] = fill['price']
-                                        self.orders.update({fill['order_id']: {
-                                            'factual_price': fill['price'],
-                                            'exchange_order_id': fill['order_id'],
-                                            'exchange': self.EXCHANGE_NAME,
-                                            'status': status,
-                                            'factual_amount_coin': qty_coin,
-                                            'factual_amount_usd': qty_usd,
-                                            'datetime_update': datetime.utcnow(),
-                                            'ts_update': int(time.time() * 1000)
-                                        }})
+                                qty_coin = fill['qty'] - fill['remaining_order_qty']
+                                qty_usd = round(qty_coin * fill['price'], 1)
+                                status = OrderStatus.PARTIALLY_EXECUTED
+                                if fill['remaining_order_qty'] == 0:
+                                    status = OrderStatus.FULLY_EXECUTED
+                                if order := self.orders.get(fill['order_id']):
+                                    qty_usd = order['factual_amount_usd'] + qty_usd
+                                    factual_price = qty_usd / qty_coin
+                                    self.last_price['buy' if fill['buy'] else 'sell'] = factual_price
+                                    self.orders.update({fill['order_id']: {
+                                        'factual_price': factual_price,
+                                        'exchange_order_id': fill['order_id'],
+                                        'exchange': self.EXCHANGE_NAME,
+                                        'status': status,
+                                        'factual_amount_coin': qty_coin,
+                                        'factual_amount_usd': qty_usd,
+                                        'datetime_update': datetime.utcnow(),
+                                        'ts_update': int(time.time() * 1000)
+                                    }})
+                                else:
+                                    self.last_price['buy' if fill['buy'] else 'sell'] = fill['price']
+                                    self.orders.update({fill['order_id']: {
+                                        'factual_price': fill['price'],
+                                        'exchange_order_id': fill['order_id'],
+                                        'exchange': self.EXCHANGE_NAME,
+                                        'status': status,
+                                        'factual_amount_coin': qty_coin,
+                                        'factual_amount_usd': qty_usd,
+                                        'datetime_update': datetime.utcnow(),
+                                        'ts_update': int(time.time() * 1000)
+                                    }})
 
                                 # self.last_price['sell' if order['direction'] else 'buy'] = float(order['limit_price'])
                                 # status = OrderStatus.PROCESSING

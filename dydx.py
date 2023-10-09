@@ -292,7 +292,7 @@ class DydxClient(BaseClient):
             round_price_len = len(str(tick_size).split('.')[1])
         else:
             round_price_len = 0
-        self.price = str(round(price - (price % tick_size), round_price_len))
+        self.price = round(price - (price % tick_size), round_price_len)
 
     async def create_order(self, symbol, side: str, session: aiohttp.ClientSession,
                            type: str = 'LIMIT', expire: int = 10000, client_id: str = None, expiration=None) -> dict:
@@ -308,7 +308,7 @@ class DydxClient(BaseClient):
             market=symbol,
             side=side.upper(),
             human_size=str(self.amount),
-            human_price=self.price,
+            human_price=str(self.price),
             limit_fee='0.0008',
             expiration_epoch_seconds=expire_date,
         )
@@ -319,7 +319,7 @@ class DydxClient(BaseClient):
                 'type': type.upper(),
                 'timeInForce': 'GTT',
                 'size': str(self.amount),
-                'price': self.price,
+                'price': str(self.price),
                 'limitFee': '0.0008',
                 'expiration': expiration,
                 'postOnly': False,
@@ -594,8 +594,7 @@ class DydxClient(BaseClient):
                     'ts_update': int(time.time() * 1000)
                 }
 
-                if self.symbol == order.get('market'):
-                    self.orders.update({order['id']: result})
+                self.orders.update({order['id']: result})
 
             # if self.orders.get(order['market']):
             #     if not order['status'] in ['CANCELED', 'FILLED']:

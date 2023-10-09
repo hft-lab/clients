@@ -174,7 +174,6 @@ class BinanceClient(BaseClient):
             if new_order[1] > 0:
                 self.orderbook[self.symbol][side].append(new_order)
 
-
     async def __orderbook_update(self, ob: dict) -> None:
         ask = self.orderbook[self.symbol]['asks'][0][0]
         bid = self.orderbook[self.symbol]['bids'][0][0]
@@ -182,8 +181,6 @@ class BinanceClient(BaseClient):
             self.__check_ob(ob, 'asks')
         if ob.get('bids'):
             self.__check_ob(ob, 'bids')
-        if len(self.orderbook[self.symbol]['bids']) < 5 or len(self.orderbook[self.symbol]['asks']) < 5:
-            self.orderbook[self.symbol] = await self.get_orderbook_by_symbol()
         self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
         if ask != self.orderbook[self.symbol]['asks'][0][0] or bid != self.orderbook[self.symbol]['bids'][0][0]:
             self.count_flag = True
@@ -374,7 +371,7 @@ class BinanceClient(BaseClient):
     def fit_sizes(self, amount, price, symbol) -> None:
         quantity_precision, price_precision, tick_size, step_size = self.get_sizes_for_symbol(symbol)
         self.amount = round(amount - (amount % step_size), quantity_precision)
-        self.price = round(round(price / tick_size) * tick_size, price_precision)
+        self.price = round(price - (price % tick_size), price_precision)
 
     async def __create_order(self, symbol, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_id=None) -> dict:
@@ -597,7 +594,7 @@ class BinanceClient(BaseClient):
                                 'ts_update': int((time.time() - 3600) * 1000)
                             }
 
-                            if self.symbol == data['o']['s'] and result['status'] != OrderStatus.PROCESSING:
+                            if result['status'] != OrderStatus.PROCESSING:
                                 self.orders.update({data['o']['i']: result})
 
 
