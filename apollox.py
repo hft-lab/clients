@@ -6,8 +6,8 @@ class ApolloxClient(BinanceClient):
     BASE_URL = 'https://fapi.apollox.finance'
     EXCHANGE_NAME = 'APOLLOX'
 
-    def __init__(self, keys, leverage):
-        super().__init__(keys, leverage)
+    def __init__(self, keys, leverage, alert_id, alert_token):
+        super().__init__(keys, leverage, alert_id, alert_token)
 
 
 if __name__ == '__main__':
