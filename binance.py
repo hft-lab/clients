@@ -83,8 +83,6 @@ class BinanceClient(BaseClient):
         self.get_position()
         self.pings = []
 
-    async def create_order(self, price, side, session: aiohttp.ClientSession, expire=100, client_id=None):
-        return await self.__create_order(price, side.upper(), session, expire, client_id)
 
     def cancel_all_orders(self, orderID=None) -> dict:
         return self.__cancel_open_orders()
@@ -382,8 +380,9 @@ class BinanceClient(BaseClient):
         self.amount = round(amount - (amount % step_size), quantity_precision)
         self.price = round(price - (price % tick_size), price_precision)
 
-    async def __create_order(self, symbol, side: str, session: aiohttp.ClientSession,
+    async def create_order(self, symbol, side: str, session: aiohttp.ClientSession,
                              expire=5000, client_id=None) -> dict:
+        side = side.upper()
         time_sent = datetime.datetime.utcnow().timestamp()
         url_path = '/fapi/v1/order?'
         query_string = f"timestamp={int(time.time() * 1000)}&symbol={symbol}&side={side}&type=LIMIT&" \
@@ -517,7 +516,16 @@ class BinanceClient(BaseClient):
 
         async with session.get(url=self.BASE_URL + url_path + "?" + query_string, headers=self.headers) as resp:
             res = await resp.json()
-
+            if res.get('msg') == 'Order does not exist.':
+                return {
+                    'exchange_order_id': order_id,
+                    'exchange': self.EXCHANGE_NAME,
+                    'status': 'Order does not exist.',
+                    'factual_price': 0,
+                    'factual_amount_coin': 0,
+                    'factual_amount_usd': 0,
+                    'datetime_update': datetime.datetime.utcnow(),
+                    'ts_update': int((time.time() - 3600) * 1000)}
             if res.get('status') == ClientsOrderStatuses.FILLED and res.get('time', 0) == res.get('updateTime'):
                 status = OrderStatus.FULLY_EXECUTED
             elif res.get('status') == ClientsOrderStatuses.FILLED and float(res['origQty']) > float(
