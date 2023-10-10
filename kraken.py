@@ -17,6 +17,7 @@ import requests
 
 from core.base_client import BaseClient
 from clients.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, PositionSideEnum
+import telebot
 
 
 class KrakenClient(BaseClient):
@@ -27,7 +28,9 @@ class KrakenClient(BaseClient):
     urlOrderbooks = "https://futures.kraken.com/derivatives/api/v3/orderbook?symbol="
     urlMarkets = "https://futures.kraken.com/derivatives/api/v3/tickers"
 
-    def __init__(self, keys, leverage):
+    def __init__(self, keys, leverage, alert_id, alert_token):
+        self.chat_id = int(alert_id)
+        self.telegram_bot = telebot.TeleBot(alert_token)
         self.amount = None
         self.taker_fee = 0.0005
         self.requestLimit = 1200
@@ -71,6 +74,9 @@ class KrakenClient(BaseClient):
     def get_instruments(self):
         url_path = "/derivatives/api/v3/instruments"
         res = requests.get(url=self.BASE_URL + url_path).json()
+        # for instrument in res['instruments']:
+        #     if instrument['symbol'] == 'pf_seiusd':
+        #         print(instrument)
         return res['instruments']
 
     def get_sizes(self, symbol):
@@ -145,6 +151,13 @@ class KrakenClient(BaseClient):
         for market in markets['tickers']:
             if market.get('tag') is not None:
                 if (market['tag'] == 'perpetual') & (market['pair'].split(":")[1] == 'USD'):
+                    if market['postOnly']:
+                        message = f"{self.EXCHANGE_NAME}:\n{market['symbol']} has status PostOnly"
+                        try:
+                            self.telegram_bot.send_message(self.chat_id, '<pre>' + message + '</pre>', parse_mode='HTML')
+                        except:
+                            pass
+                        continue
                     coin = market['pair'].split(":")[0]
                     self.markets.update({coin: market['symbol']})
         return self.markets
@@ -642,7 +655,7 @@ class KrakenClient(BaseClient):
                                         'datetime_update': datetime.utcnow(),
                                         'ts_update': int(time.time() * 1000)
                                     }})
-                                    print(self.orders)
+                                    # print(self.orders)
                                 else:
                                     self.last_price['buy' if fill['buy'] else 'sell'] = fill['price']
                                     self.orders.update({fill['order_id']: {
@@ -655,7 +668,7 @@ class KrakenClient(BaseClient):
                                         'datetime_update': datetime.utcnow(),
                                         'ts_update': int(time.time() * 1000)
                                     }})
-                                    print(self.orders)
+                                    # print(self.orders)
 
                                 # self.last_price['sell' if order['direction'] else 'buy'] = float(order['limit_price'])
                                 # status = OrderStatus.PROCESSING
@@ -696,31 +709,34 @@ if __name__ == '__main__':
 
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
-    client = KrakenClient(config['KRAKEN'], config['SETTINGS']['LEVERAGE'])
+    client = KrakenClient(config['KRAKEN'],
+                          config['SETTINGS']['LEVERAGE'],
+                          config['TELEGRAM']['ALERT_CHAT_ID'],
+                          config['TELEGRAM']['ALERT_BOT_TOKEN'])
     client.run_updater()
-    # print(client.get_markets())
+    print(client.get_markets())
     # time.sleep(5)
 
-    async def test_order():
-        async with aiohttp.ClientSession() as session:
-            ob = await client.get_multi_orderbook('pf_runeusd')
-            price = ob['top_ask']
-            client.get_markets()
-            client.fit_sizes(30, price, 'pf_runeusd')
-            data = await client.create_order('pf_runeusd',
-                                             'buy',
-                                             session,
-                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-            # data = client.get_balance()
-            print(data)
-            print()
-            print()
-            print()
-            # client.cancel_all_orders()
-    #
-    #
-    time.sleep(5)
-    asyncio.run(test_order())
-    while True:
-        time.sleep(5)
+    # async def test_order():
+    #     async with aiohttp.ClientSession() as session:
+    #         ob = await client.get_multi_orderbook('pf_runeusd')
+    #         price = ob['top_ask']
+    #         client.get_markets()
+    #         client.fit_sizes(30, price, 'pf_runeusd')
+    #         data = await client.create_order('pf_runeusd',
+    #                                          'buy',
+    #                                          session,
+    #                                          client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+    #         # data = client.get_balance()
+    #         print(data)
+    #         print()
+    #         print()
+    #         print()
+    #         # client.cancel_all_orders()
+    # #
+    # #
+    # time.sleep(5)
+    # asyncio.run(test_order())
+    # while True:
+    #     time.sleep(5)
     #

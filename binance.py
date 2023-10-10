@@ -15,6 +15,7 @@ import requests
 from core.base_client import BaseClient
 from clients.enums import ConnectMethodEnum, EventTypeEnum, PositionSideEnum, ResponseStatus, OrderStatus, \
     ClientsOrderStatuses
+import telebot
 
 
 class BinanceClient(BaseClient):
@@ -24,7 +25,9 @@ class BinanceClient(BaseClient):
     urlMarkets = "https://fapi.binance.com/fapi/v1/exchangeInfo"
     urlOrderbooks = "https://fapi.binance.com/fapi/v1/depth?limit=5&symbol="
 
-    def __init__(self, keys, leverage):
+    def __init__(self, keys, leverage, alert_id, alert_token):
+        self.chat_id = int(alert_id)
+        self.telegram_bot = telebot.TeleBot(alert_token)
         self.taker_fee = 0.00036
         self.leverage = leverage
         self.symbol = keys['SYMBOL']
@@ -116,10 +119,16 @@ class BinanceClient(BaseClient):
     def get_markets(self):
         markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
         for market in markets['symbols']:
-            if (market['marginAsset'] == 'USDT') & (market['contractType'] == 'PERPETUAL') & (
-                    market['underlyingType'] == 'COIN') & (market['status'] == 'TRADING'):
-                coin = market['baseAsset']
-                self.markets.update({coin: market['symbol']})
+            if market['marginAsset'] == 'USDT' and market['contractType'] == 'PERPETUAL' and market['underlyingType'] == 'COIN':
+                if market['status'] == 'TRADING':
+                    coin = market['baseAsset']
+                    self.markets.update({coin: market['symbol']})
+                else:
+                    message = f"{self.EXCHANGE_NAME}:\n{market['symbol']} has status {market['status']}"
+                    try:
+                        self.telegram_bot.send_message(self.chat_id, '<pre>' + message + '</pre>', parse_mode='HTML')
+                    except:
+                        pass
         return self.markets
 
     def run_updater(self) -> None:
@@ -605,8 +614,12 @@ if __name__ == '__main__':
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
 
-    client = BinanceClient(config['BINANCE'], config['SETTINGS']['LEVERAGE'])
+    client = BinanceClient(config['BINANCE'],
+                           config['SETTINGS']['LEVERAGE'],
+                           config['TELEGRAM']['ALERT_CHAT_ID'],
+                           config['TELEGRAM']['ALERT_BOT_TOKEN'])
     client.run_updater()
+    client.get_markets()
     time.sleep(5)
 
 
@@ -625,8 +638,8 @@ if __name__ == '__main__':
     #
     # asyncio.run(test_order())
 
-    while True:
-        time.sleep(5)
+    # while True:
+    #     time.sleep(5)
         # asyncio.run(test_order())
         # print(client.get_orderbook())
 

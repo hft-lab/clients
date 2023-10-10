@@ -22,6 +22,7 @@ from web3 import Web3
 # from config import Config
 from core.base_client import BaseClient
 from clients.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
+import telebot
 
 
 class DydxClient(BaseClient):
@@ -31,7 +32,9 @@ class DydxClient(BaseClient):
     urlMarkets = "https://api.dydx.exchange/v3/markets/"
     urlOrderbooks = "https://api.dydx.exchange/v3/orderbook/"
 
-    def __init__(self, keys=None, leverage=2):
+    def __init__(self, keys, leverage, alert_id, alert_token):
+        self.chat_id = int(alert_id)
+        self.telegram_bot = telebot.TeleBot(alert_token)
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         self._connected = asyncio.Event()
@@ -100,7 +103,7 @@ class DydxClient(BaseClient):
                     'lever': self.leverage
                 }})
 
-    def cancel_all_orders(self, orderID=None):
+    def cancel_all_orders(self, order_id=None):
         self.client.private.cancel_active_orders(market=self.symbol)
 
     def get_real_balance(self):
@@ -129,9 +132,15 @@ class DydxClient(BaseClient):
     def get_markets(self):
         # markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
         for market, value in self.markets['markets'].items():
-            if value['quoteAsset'] == 'USD':
+            if value['quoteAsset'] == 'USD' and value['status'] == 'ONLINE':
                 coin = value['baseAsset']
                 self.markets_multi.update({coin: market})
+            else:
+                message = f"{self.EXCHANGE_NAME}:\n{market} has status {value['status']}"
+                try:
+                    self.telegram_bot.send_message(self.chat_id, '<pre>' + message + '</pre>', parse_mode='HTML')
+                except:
+                    pass
         return self.markets_multi
 
     async def get_multi_orderbook(self, symbol):
@@ -867,21 +876,25 @@ if __name__ == '__main__':
 
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
-    client = DydxClient(config['DYDX'], config['SETTINGS']['LEVERAGE'])
+    client = DydxClient(config['DYDX'],
+                        config['SETTINGS']['LEVERAGE'],
+                        config['TELEGRAM']['ALERT_CHAT_ID'],
+                        config['TELEGRAM']['ALERT_BOT_TOKEN'])
     client.run_updater()
+    client.get_markets()
 
 
-    async def test_order():
-        async with aiohttp.ClientSession() as session:
-            client.fit_amount(-0.017)
-            price = client.get_orderbook()[client.symbol]['bids'][10][0]
-            data = await client.create_order(price,
-                                             'buy',
-                                             session,
-                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-            print(data)
-            client.cancel_all_orders()
-
-    while True:
-        time.sleep(5)
-        asyncio.run(test_order())
+    # async def test_order():
+    #     async with aiohttp.ClientSession() as session:
+    #         client.fit_amount(-0.017)
+    #         price = client.get_orderbook()[client.symbol]['bids'][10][0]
+    #         data = await client.create_order(price,
+    #                                          'buy',
+    #                                          session,
+    #                                          client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+    #         print(data)
+    #         client.cancel_all_orders()
+    #
+    # while True:
+    #     time.sleep(5)
+    #     asyncio.run(test_order())
