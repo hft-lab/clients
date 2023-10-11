@@ -47,7 +47,8 @@ class KrakenClient(BaseClient):
         self.error_info = None
         self.balance = {
             'total': 0.0,
-            'timestamp': time.time()
+            'free': 0,
+            'timestamp': 0
         }
         self.last_price = {
             'sell': 0,
@@ -64,7 +65,7 @@ class KrakenClient(BaseClient):
                 'amount_usd': 0,
                 'realized_pnl_usd': 0}
         }
-        self.get_balance()
+        self.get_real_balance()
         self.orderbook = {self.symbol: {'sell': {}, 'buy': {}, 'timestamp': 0}}
         self.pings = []
         self.price = 0
@@ -491,6 +492,7 @@ class KrakenClient(BaseClient):
             ),
         }
         res = requests.get(headers=headers, url=self.BASE_URL + url_path).json()
+        print(res)
         self.balance['total'] = res['accounts']['flex']['portfolioValue']
         self.balance['free'] = res['accounts']['flex']['availableMargin']
         self.balance['timestamp'] = time.time()
@@ -713,7 +715,8 @@ if __name__ == '__main__':
                           config['SETTINGS']['LEVERAGE'],
                           config['TELEGRAM']['ALERT_CHAT_ID'],
                           config['TELEGRAM']['ALERT_BOT_TOKEN'])
-    client.run_updater()
+    # client.run_updater()
+
     # print(client.get_markets())
     # time.sleep(5)
 
@@ -739,4 +742,5 @@ if __name__ == '__main__':
     # asyncio.run(test_order())
     while True:
         time.sleep(5)
+        print(client.get_balance())
     #

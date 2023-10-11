@@ -75,10 +75,7 @@ class DydxClient(BaseClient):
         self.markets = self.client.public.get_markets().data
         self.leverage = leverage
 
-        self.balance = {'free': float(self.account['account']['equity']),
-                        'total': float(self.account['account']['freeCollateral']),
-                        'timestamp': time.time()}
-        self.position_id = self.account['account']['positionId']
+        self.get_real_balance()
 
         # self.maker_fee = float(self.user['user']['makerFeeRate'])
         self.taker_fee = float(self.user['user']['takerFeeRate'])
@@ -113,9 +110,9 @@ class DydxClient(BaseClient):
             self.balance = {'free': float(res['account']['freeCollateral']),
                             'total': float(res['account']['equity']),
                             'timestamp': time.time()}
+            self.position_id = self.account['account']['positionId']
         except:
             pass
-        return self.balance['total']
 
     def exit(self):
         self._ws.close()
@@ -885,9 +882,9 @@ if __name__ == '__main__':
                         config['SETTINGS']['LEVERAGE'],
                         config['TELEGRAM']['ALERT_CHAT_ID'],
                         config['TELEGRAM']['ALERT_BOT_TOKEN'])
-    client.run_updater()
-    client.get_real_balance()
-
+    # client.run_updater()
+    # client.get_real_balance()
+    print(client.get_balance())
 
     # async def test_order():
     #     async with aiohttp.ClientSession() as session:
@@ -902,4 +899,5 @@ if __name__ == '__main__':
     #
     while True:
         time.sleep(5)
+        print(client.get_balance())
     #     asyncio.run(test_order())
