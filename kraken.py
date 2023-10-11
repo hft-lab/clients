@@ -154,7 +154,8 @@ class KrakenClient(BaseClient):
                     if market['postOnly']:
                         message = f"{self.EXCHANGE_NAME}:\n{market['symbol']} has status PostOnly"
                         try:
-                            self.telegram_bot.send_message(self.chat_id, '<pre>' + message + '</pre>', parse_mode='HTML')
+                            self.telegram_bot.send_message(self.chat_id, '<pre>' + message + '</pre>',
+                                                           parse_mode='HTML')
                         except:
                             pass
                         continue
@@ -164,7 +165,7 @@ class KrakenClient(BaseClient):
 
     def get_balance(self) -> float:
         if time.time() - self.balance['timestamp'] > 60:
-            self.get_balance()
+            self.get_real_balance()
         return self.balance['total']
 
     def get_orderbook(self) -> dict:
@@ -613,11 +614,11 @@ class KrakenClient(BaseClient):
                                 "signed_challenge": self._get_sign_challenge(self.__last_challenge)
                             }).decode('utf-8'))
 
-                        elif msg_data.get('feed') in ['balances']:
-                            if msg_data.get('flex_futures'):
+                        elif msg_data.get('feed') == 'balances':
+                            if msg_data.get('balance_value'):
                                 self.balance['timestamp'] = time.time()
-                                self.balance['total'] = msg_data['flex_futures']['portfolio_value']
-                                self.balance['free'] = msg_data['flex_futures']['available_margin']
+                                self.balance['total'] = msg_data['portfolio_value']
+                                self.balance['free'] = msg_data['available_margin']
 
                         elif msg_data.get('feed') == 'open_positions':
                             for position in msg_data.get('positions', []):
@@ -713,7 +714,7 @@ if __name__ == '__main__':
                           config['TELEGRAM']['ALERT_CHAT_ID'],
                           config['TELEGRAM']['ALERT_BOT_TOKEN'])
     client.run_updater()
-    print(client.get_markets())
+    # print(client.get_markets())
     # time.sleep(5)
 
     # async def test_order():
@@ -736,6 +737,6 @@ if __name__ == '__main__':
     # #
     # time.sleep(5)
     # asyncio.run(test_order())
-    # while True:
-    #     time.sleep(5)
+    while True:
+        time.sleep(5)
     #

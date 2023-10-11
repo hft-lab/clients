@@ -286,14 +286,13 @@ class BinanceClient(BaseClient):
         query_string = self._prepare_query(payload)
         payload["signature"] = self._create_signature(query_string)
         query_string = self._prepare_query(payload)
-
         res = requests.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers).json()
         if isinstance(res, list):
             for s in res:
                 if s['asset'] == 'USDT':
                     self.balance['timestamp'] = time.time()
                     self.balance['total'] = float(s['balance']) + float(s['crossUnPnl'])
-                    self.balance['avl_balance'] = float(s['availableBalance'])
+                    self.balance['free'] = float(s['availableBalance'])
                     return float(s['balance']) + float(s['crossUnPnl']), float(s['availableBalance'])
         else:
             # print(res)
@@ -564,11 +563,8 @@ class BinanceClient(BaseClient):
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     data = orjson.loads(msg.data)
                     if data['e'] == EventTypeEnum.ACCOUNT_UPDATE and data['a']['P']:
-                        self.balance['total'] = float(data['a']['B'][0]['wb'])
-                        self.balance['timestamp'] = time.time()
                         for p in data['a']['P']:
                             if p['ps'] in PositionSideEnum.all_position_sides() and float(p['pa']):
-                                self.balance['total'] += float(p['up'])
                                 self.positions.update({p['s'].upper(): {
                                     'side': PositionSideEnum.LONG if float(p['pa']) > 0 else PositionSideEnum.SHORT,
                                     'amount_usd': float(p['pa']) * float(p['ep']),
@@ -627,8 +623,8 @@ if __name__ == '__main__':
                            config['TELEGRAM']['ALERT_CHAT_ID'],
                            config['TELEGRAM']['ALERT_BOT_TOKEN'])
     client.run_updater()
-    client.get_markets()
-    time.sleep(5)
+    # client.get_markets()
+    # time.sleep(5)
 
 
     # async def test_order():
@@ -646,8 +642,8 @@ if __name__ == '__main__':
     #
     # asyncio.run(test_order())
 
-    # while True:
-    #     time.sleep(5)
+    while True:
+        time.sleep(5)
         # asyncio.run(test_order())
         # print(client.get_orderbook())
 

@@ -108,13 +108,14 @@ class DydxClient(BaseClient):
         self.client.private.cancel_active_orders(market=self.symbol)
 
     def get_real_balance(self):
-        balance = None
-        while not balance:
-            try:
-                balance = float(self.client.private.get_account().data['account']['equity'])
-            except:
-                pass
-        return balance
+        try:
+            res = self.client.private.get_account().data
+            self.balance = {'free': float(res['account']['freeCollateral']),
+                            'total': float(res['account']['equity']),
+                            'timestamp': time.time()}
+        except:
+            pass
+        return self.balance['total']
 
     def exit(self):
         self._ws.close()
@@ -885,7 +886,7 @@ if __name__ == '__main__':
                         config['TELEGRAM']['ALERT_CHAT_ID'],
                         config['TELEGRAM']['ALERT_BOT_TOKEN'])
     client.run_updater()
-    client.get_markets()
+    client.get_real_balance()
 
 
     # async def test_order():
@@ -899,6 +900,6 @@ if __name__ == '__main__':
     #         print(data)
     #         client.cancel_all_orders()
     #
-    # while True:
-    #     time.sleep(5)
+    while True:
+        time.sleep(5)
     #     asyncio.run(test_order())
