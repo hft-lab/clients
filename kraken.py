@@ -162,8 +162,8 @@ class KrakenClient(BaseClient):
                     self.markets.update({coin: market['symbol']})
         return self.markets
 
-    def get_real_balance(self) -> float:
-        if time.time() - self.balance['timestamp'] > 10:
+    def get_balance(self) -> float:
+        if time.time() - self.balance['timestamp'] > 60:
             self.get_balance()
         return self.balance['total']
 
@@ -477,7 +477,7 @@ class KrakenClient(BaseClient):
         }
         return requests.post(headers=headers, url=self.BASE_URL + url_path, data=post_string).json()
 
-    def get_balance(self):
+    def get_real_balance(self):
         url_path = "/derivatives/api/v3/accounts"
         nonce = str(int(time.time() * 1000))
 
@@ -498,7 +498,6 @@ class KrakenClient(BaseClient):
         price_precision, quantity_precision, tick_size, step_size = self.get_sizes(symbol)
         self.amount = round(amount - (amount % step_size), quantity_precision)
         self.price = round(price - (price % tick_size), price_precision)
-
 
     async def create_order(self, symbol, side: str, session: aiohttp.ClientSession, expire=5000, client_id=None):
         time_sent = datetime.utcnow().timestamp()

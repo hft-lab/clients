@@ -77,7 +77,7 @@ class BinanceClient(BaseClient):
         self.bal_check = threading.Thread(target=self._balance)
         self.lk_check = threading.Thread(target=self._ping_listen_key)
 
-        self._get_balance()
+        self.get_real_balance()
 
         self._get_listen_key()
         self.get_position()
@@ -90,9 +90,9 @@ class BinanceClient(BaseClient):
     def get_positions(self) -> dict:
         return self.positions
 
-    def get_real_balance(self) -> float:
-        if time.time() - self.balance['timestamp'] > 10:
-            self._get_balance()
+    def get_balance(self) -> float:
+        if time.time() - self.balance['timestamp'] > 60:
+            self.get_real_balance()
         return self.balance['total']
 
     def get_orderbook(self) -> dict:
@@ -248,7 +248,7 @@ class BinanceClient(BaseClient):
 
     def _balance(self) -> None:
         while True:
-            self._get_balance()
+            self.get_real_balance()
             time.sleep(59)
 
     def get_position(self):
@@ -276,7 +276,7 @@ class BinanceClient(BaseClient):
             time.sleep(5)
             self.get_position()
 
-    def _get_balance(self) -> [float, float]:
+    def get_real_balance(self) -> [float, float]:
         url_path = "/fapi/v2/balance"
         payload = {
             "timestamp": int(time.time() * 1000),
@@ -298,7 +298,7 @@ class BinanceClient(BaseClient):
         else:
             # print(res)
             time.sleep(5)
-            return self._get_balance()
+            return self.get_real_balance()
 
     async def get_historical_price(self, session, symbol, time_):
         url_path = "/fapi/v1/markPriceKlines"

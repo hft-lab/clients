@@ -63,7 +63,7 @@ class DydxClient(BaseClient):
 
         self.requestLimit = 1050  # 175 за 10 секунд https://dydxprotocol.github.io/v3-teacher/#rate-limit-api
         self.markets_multi = {}
-        self.balance = {'free': 0, 'total': 0}
+        self.balance = {'free': 0, 'total': 0, 'timestamp': time.time()}
         self.orderbook = {self.symbol: {'asks': [], 'bids': [], 'timestamp': int(time.time() * 1000)}}
 
         self.amount = 0
@@ -76,7 +76,8 @@ class DydxClient(BaseClient):
         self.leverage = leverage
 
         self.balance = {'free': float(self.account['account']['equity']),
-                        'total': float(self.account['account']['freeCollateral'])}
+                        'total': float(self.account['account']['freeCollateral']),
+                        'timestamp': time.time()}
         self.position_id = self.account['account']['positionId']
 
         # self.maker_fee = float(self.user['user']['makerFeeRate'])
@@ -679,11 +680,14 @@ class DydxClient(BaseClient):
         return self.fills
 
     def get_balance(self):
+        if time.time() - self.balance['timestamp'] > 60:
+            self.get_real_balance()
         return self.balance['total']
 
     def _update_account(self, account):
         self.balance = {'free': float(account['freeCollateral']),
-                        'total': float(account['equity'])}
+                        'total': float(account['equity']),
+                        'timestamp': time.time()}
         for market, position in account['openPositions'].items():
             position = self._append_format_pos(position)
             self.positions[market] = position
