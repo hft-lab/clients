@@ -492,7 +492,7 @@ class KrakenClient(BaseClient):
             ),
         }
         res = requests.get(headers=headers, url=self.BASE_URL + url_path).json()
-        print(res)
+        # print(res)
         self.balance['total'] = res['accounts']['flex']['portfolioValue']
         self.balance['free'] = res['accounts']['flex']['availableMargin']
         self.balance['timestamp'] = time.time()
