@@ -32,7 +32,8 @@ class DydxClient(BaseClient):
     urlMarkets = "https://api.dydx.exchange/v3/markets/"
     urlOrderbooks = "https://api.dydx.exchange/v3/orderbook/"
 
-    def __init__(self, keys, leverage, alert_id, alert_token):
+    def __init__(self, keys, leverage, max_pos_part, alert_id, alert_token):
+        self.max_pos_part = max_pos_part
         self.chat_id = int(alert_id)
         self.telegram_bot = telebot.TeleBot(alert_token)
         self._loop = asyncio.new_event_loop()
@@ -717,6 +718,38 @@ class DydxClient(BaseClient):
     #    'id': 'f47ae945-06ae-5c47-aaad-450c0ffc6164', 'quoteBalance': '87257.614961',
     #    'createdAt': '2022-08-16T18:52:16.881Z'}
 
+    def new_get_available_balance(self):
+        available_balances = {}
+        position_value = 0
+        position_value_abs = 0
+        available_margin = self.balance['total'] * self.leverage
+        avl_margin_per_market = available_margin / 100 * self.max_pos_part
+        for symbol, position in self.positions.items():
+            if position.get('amount_usd'):
+                position_value += position['amount_usd']
+                position_value_abs += abs(position['amount_usd'])
+                if position['amount_usd'] < 0:
+                    available_balances.update({symbol: {'buy': avl_margin_per_market + position['amount_usd'],
+                                                        'sell': avl_margin_per_market - position['amount_usd']}})
+                else:
+                    available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
+                                                        'sell': avl_margin_per_market + position['amount_usd']}})
+        if position_value_abs < available_margin:
+            available_balances['buy'] = available_margin - position_value
+            available_balances['sell'] = available_margin + position_value
+        else:
+            for symbol, position in self.positions.items():
+                if position.get('amount_usd'):
+                    if position['amount_usd'] < 0:
+                        available_balances.update({symbol: {'buy': abs(position['amount_usd']),
+                                                            'sell': 0}})
+                    else:
+                        available_balances.update({symbol: {'buy': 0,
+                                                            'sell': position['amount_usd']}})
+            available_balances['buy'] = 0
+            available_balances['sell'] = 0
+        return available_balances
+
     def get_available_balance(self, side):
         position_value = 0
         position_value_abs = 0
@@ -724,8 +757,6 @@ class DydxClient(BaseClient):
             if position.get('amount_usd'):
                 position_value += position['amount_usd']
                 position_value_abs += abs(position['amount_usd'])
-
-        available_margin = self.balance['total'] * self.leverage
         if position_value_abs > available_margin:
             if position_value > 0:
                 if side == 'buy':
@@ -879,12 +910,21 @@ if __name__ == '__main__':
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
     client = DydxClient(config['DYDX'],
-                        config['SETTINGS']['LEVERAGE'],
-                        config['TELEGRAM']['ALERT_CHAT_ID'],
+                        float(config['SETTINGS']['LEVERAGE']),
+                        int(config['SETTINGS']['PERCENT_PER_MARKET']),
+                        int(config['TELEGRAM']['ALERT_CHAT_ID']),
                         config['TELEGRAM']['ALERT_BOT_TOKEN'])
     # client.run_updater()
     # client.get_real_balance()
     print(client.get_balance())
+    client.run_updater()
+    time.sleep(3)
+    print(client.get_balance())
+    print()
+    print(client.positions)
+    print()
+    print(client.new_get_available_balance())
+
 
     # async def test_order():
     #     async with aiohttp.ClientSession() as session:
@@ -897,7 +937,9 @@ if __name__ == '__main__':
     #         print(data)
     #         client.cancel_all_orders()
     #
-    while True:
-        time.sleep(5)
-        print(client.get_balance())
+    # while True:
+    #     time.sleep(5)
+    #     print(client.get_balance())
+    # while True:
+    #     time.sleep(5)
     #     asyncio.run(test_order())

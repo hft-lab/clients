@@ -25,7 +25,8 @@ class BinanceClient(BaseClient):
     urlMarkets = "https://fapi.binance.com/fapi/v1/exchangeInfo"
     urlOrderbooks = "https://fapi.binance.com/fapi/v1/depth?limit=5&symbol="
 
-    def __init__(self, keys, leverage, alert_id, alert_token):
+    def __init__(self, keys, leverage, max_pos_part, alert_id, alert_token):
+        self.max_pos_part = max_pos_part
         self.chat_id = int(alert_id)
         self.telegram_bot = telebot.TeleBot(alert_token)
         self.taker_fee = 0.00036
@@ -182,15 +183,18 @@ class BinanceClient(BaseClient):
                 self.orderbook[self.symbol][side].append(new_order)
 
     async def __orderbook_update(self, ob: dict) -> None:
-        ask = self.orderbook[self.symbol]['asks'][0][0]
-        bid = self.orderbook[self.symbol]['bids'][0][0]
+        ask = self.orderbook[self.symbol]['asks'][0][0] if len(self.orderbook[self.symbol]['asks']) else 0
+        bid = self.orderbook[self.symbol]['bids'][0][0] if len(self.orderbook[self.symbol]['bids']) else 0
         if ob.get('asks'):
             self.__check_ob(ob, 'asks')
         if ob.get('bids'):
             self.__check_ob(ob, 'bids')
         self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
-        if ask != self.orderbook[self.symbol]['asks'][0][0] or bid != self.orderbook[self.symbol]['bids'][0][0]:
-            self.count_flag = True
+        if len(self.orderbook[self.symbol]['asks']) and len(self.orderbook[self.symbol]['bids']):
+            if ask != self.orderbook[self.symbol]['asks'][0][0] or bid != self.orderbook[self.symbol]['bids'][0][0]:
+                self.count_flag = True
+
+
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
         self.orderbook[self.symbol] = await self.get_orderbook_by_symbol()
@@ -214,6 +218,38 @@ class BinanceClient(BaseClient):
     @staticmethod
     def _prepare_query(params: dict) -> str:
         return urlencode(params)
+
+    def new_get_available_balance(self):
+        available_balances = {}
+        position_value = 0
+        position_value_abs = 0
+        available_margin = self.balance['total'] * self.leverage
+        avl_margin_per_market = available_margin / 100 * self.max_pos_part
+        for symbol, position in self.positions.items():
+            if position.get('amount_usd'):
+                position_value += position['amount_usd']
+                position_value_abs += abs(position['amount_usd'])
+                if position['amount_usd'] < 0:
+                    available_balances.update({symbol: {'buy': avl_margin_per_market + position['amount_usd'],
+                                                        'sell': avl_margin_per_market - position['amount_usd']}})
+                else:
+                    available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
+                                                        'sell': avl_margin_per_market + position['amount_usd']}})
+        if position_value_abs < available_margin:
+            available_balances['buy'] = available_margin - position_value
+            available_balances['sell'] = available_margin + position_value
+        else:
+            for symbol, position in self.positions.items():
+                if position.get('amount_usd'):
+                    if position['amount_usd'] < 0:
+                        available_balances.update({symbol: {'buy': abs(position['amount_usd']),
+                                                            'sell': 0}})
+                    else:
+                        available_balances.update({symbol: {'buy': 0,
+                                                            'sell': position['amount_usd']}})
+            available_balances['buy'] = 0
+            available_balances['sell'] = 0
+        return available_balances
 
     def get_available_balance(self, side):
         position_value = 0
@@ -619,10 +655,17 @@ if __name__ == '__main__':
     config.read(sys.argv[1], "utf-8")
 
     client = BinanceClient(config['BINANCE'],
-                           config['SETTINGS']['LEVERAGE'],
-                           config['TELEGRAM']['ALERT_CHAT_ID'],
+                           float(config['SETTINGS']['LEVERAGE']),
+                           int(config['SETTINGS']['PERCENT_PER_MARKET']),
+                           int(config['TELEGRAM']['ALERT_CHAT_ID']),
                            config['TELEGRAM']['ALERT_BOT_TOKEN'])
     client.run_updater()
+    time.sleep(3)
+    print(client.get_balance())
+    print()
+    print(client.positions)
+    print()
+    print(client.new_get_available_balance())
     # client.get_markets()
     # time.sleep(5)
 
@@ -642,8 +685,8 @@ if __name__ == '__main__':
     #
     # asyncio.run(test_order())
 
-    while True:
-        time.sleep(5)
+    # while True:
+    #     time.sleep(5)
         # asyncio.run(test_order())
         # print(client.get_orderbook())
 

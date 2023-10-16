@@ -28,7 +28,8 @@ class KrakenClient(BaseClient):
     urlOrderbooks = "https://futures.kraken.com/derivatives/api/v3/orderbook?symbol="
     urlMarkets = "https://futures.kraken.com/derivatives/api/v3/tickers"
 
-    def __init__(self, keys, leverage, alert_id, alert_token):
+    def __init__(self, keys, leverage, max_pos_part, alert_id, alert_token):
+        self.max_pos_part = max_pos_part
         self.chat_id = int(alert_id)
         self.telegram_bot = telebot.TeleBot(alert_token)
         self.amount = None
@@ -47,7 +48,10 @@ class KrakenClient(BaseClient):
         self.error_info = None
         self.balance = {
             'total': 0.0,
+<<<<<<< Updated upstream
             'free': 0,
+=======
+>>>>>>> Stashed changes
             'timestamp': 0
         }
         self.last_price = {
@@ -115,6 +119,38 @@ class KrakenClient(BaseClient):
         else:
             price_precision = 0
         return price_precision, quantity_precision, tick_size, step_size
+
+    def new_get_available_balance(self):
+        available_balances = {}
+        position_value = 0
+        position_value_abs = 0
+        available_margin = self.balance['total'] * self.leverage
+        avl_margin_per_market = available_margin / 100 * self.max_pos_part
+        for symbol, position in self.positions.items():
+            if position.get('amount_usd'):
+                position_value += position['amount_usd']
+                position_value_abs += abs(position['amount_usd'])
+                if position['amount_usd'] < 0:
+                    available_balances.update({symbol: {'buy': avl_margin_per_market + position['amount_usd'],
+                                                        'sell': avl_margin_per_market - position['amount_usd']}})
+                else:
+                    available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
+                                                        'sell': avl_margin_per_market + position['amount_usd']}})
+        if position_value_abs < available_margin:
+            available_balances['buy'] = available_margin - position_value
+            available_balances['sell'] = available_margin + position_value
+        else:
+            for symbol, position in self.positions.items():
+                if position.get('amount_usd'):
+                    if position['amount_usd'] < 0:
+                        available_balances.update({symbol: {'buy': abs(position['amount_usd']),
+                                                            'sell': 0}})
+                    else:
+                        available_balances.update({symbol: {'buy': 0,
+                                                            'sell': position['amount_usd']}})
+            available_balances['buy'] = 0
+            available_balances['sell'] = 0
+        return available_balances
 
     def get_available_balance(self, side: str) -> float:
         position_value = 0
@@ -712,11 +748,17 @@ if __name__ == '__main__':
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
     client = KrakenClient(config['KRAKEN'],
-                          config['SETTINGS']['LEVERAGE'],
-                          config['TELEGRAM']['ALERT_CHAT_ID'],
+                          float(config['SETTINGS']['LEVERAGE']),
+                          int(config['SETTINGS']['PERCENT_PER_MARKET']),
+                          int(config['TELEGRAM']['ALERT_CHAT_ID']),
                           config['TELEGRAM']['ALERT_BOT_TOKEN'])
-    # client.run_updater()
-
+    client.run_updater()
+    time.sleep(3)
+    print(client.get_balance())
+    print()
+    print(client.positions)
+    print()
+    print(client.new_get_available_balance())
     # print(client.get_markets())
     # time.sleep(5)
 
@@ -740,7 +782,6 @@ if __name__ == '__main__':
     # #
     # time.sleep(5)
     # asyncio.run(test_order())
-    while True:
-        time.sleep(5)
-        print(client.get_balance())
+    # while True:
+    #     time.sleep(5)
     #
