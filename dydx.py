@@ -718,7 +718,7 @@ class DydxClient(BaseClient):
     #    'id': 'f47ae945-06ae-5c47-aaad-450c0ffc6164', 'quoteBalance': '87257.614961',
     #    'createdAt': '2022-08-16T18:52:16.881Z'}
 
-    def new_get_available_balance(self):
+    def get_available_balance(self):
         available_balances = {}
         position_value = 0
         position_value_abs = 0
@@ -750,28 +750,28 @@ class DydxClient(BaseClient):
             available_balances['sell'] = 0
         return available_balances
 
-    def get_available_balance(self, side):
-        position_value = 0
-        position_value_abs = 0
-        for symbol, position in self.positions.items():
-            if position.get('amount_usd'):
-                position_value += position['amount_usd']
-                position_value_abs += abs(position['amount_usd'])
-        if position_value_abs > available_margin:
-            if position_value > 0:
-                if side == 'buy':
-                    return available_margin - position_value
-                elif side == 'sell':
-                    return available_margin + position_value
-            else:
-                if side == 'buy':
-                    return available_margin + abs(position_value)
-                elif side == 'sell':
-                    return available_margin - abs(position_value)
-        if side == 'buy':
-            return available_margin - position_value
-        elif side == 'sell':
-            return available_margin + position_value
+    # def get_available_balance(self, side):
+    #     position_value = 0
+    #     position_value_abs = 0
+    #     for symbol, position in self.positions.items():
+    #         if position.get('amount_usd'):
+    #             position_value += position['amount_usd']
+    #             position_value_abs += abs(position['amount_usd'])
+    #     if position_value_abs > available_margin:
+    #         if position_value > 0:
+    #             if side == 'buy':
+    #                 return available_margin - position_value
+    #             elif side == 'sell':
+    #                 return available_margin + position_value
+    #         else:
+    #             if side == 'buy':
+    #                 return available_margin + abs(position_value)
+    #             elif side == 'sell':
+    #                 return available_margin - abs(position_value)
+    #     if side == 'buy':
+    #         return available_margin - position_value
+    #     elif side == 'sell':
+    #         return available_margin + position_value
 
     def _process_msg(self, msg: aiohttp.WSMessage):
         if msg.type == aiohttp.WSMsgType.TEXT:

@@ -48,10 +48,7 @@ class KrakenClient(BaseClient):
         self.error_info = None
         self.balance = {
             'total': 0.0,
-<<<<<<< Updated upstream
             'free': 0,
-=======
->>>>>>> Stashed changes
             'timestamp': 0
         }
         self.last_price = {
@@ -120,7 +117,7 @@ class KrakenClient(BaseClient):
             price_precision = 0
         return price_precision, quantity_precision, tick_size, step_size
 
-    def new_get_available_balance(self):
+    def get_available_balance(self):
         available_balances = {}
         position_value = 0
         position_value_abs = 0
@@ -152,29 +149,29 @@ class KrakenClient(BaseClient):
             available_balances['sell'] = 0
         return available_balances
 
-    def get_available_balance(self, side: str) -> float:
-        position_value = 0
-        position_value_abs = 0
-        for symbol, position in self.positions.items():
-            if position.get('amount_usd'):
-                position_value += position['amount_usd']
-                position_value_abs += abs(position['amount_usd'])
-        available_margin = self.balance['total'] * self.leverage
-        if position_value_abs > available_margin:
-            if position_value > 0:
-                if side == 'buy':
-                    return available_margin - position_value
-                elif side == 'sell':
-                    return available_margin + position_value
-            else:
-                if side == 'buy':
-                    return available_margin + abs(position_value)
-                elif side == 'sell':
-                    return available_margin - abs(position_value)
-        if side == 'buy':
-            return available_margin - position_value
-        elif side == 'sell':
-            return available_margin + position_value
+    # def get_available_balance(self, side: str) -> float:
+    #     position_value = 0
+    #     position_value_abs = 0
+    #     for symbol, position in self.positions.items():
+    #         if position.get('amount_usd'):
+    #             position_value += position['amount_usd']
+    #             position_value_abs += abs(position['amount_usd'])
+    #     available_margin = self.balance['total'] * self.leverage
+    #     if position_value_abs > available_margin:
+    #         if position_value > 0:
+    #             if side == 'buy':
+    #                 return available_margin - position_value
+    #             elif side == 'sell':
+    #                 return available_margin + position_value
+    #         else:
+    #             if side == 'buy':
+    #                 return available_margin + abs(position_value)
+    #             elif side == 'sell':
+    #                 return available_margin - abs(position_value)
+    #     if side == 'buy':
+    #         return available_margin - position_value
+    #     elif side == 'sell':
+    #         return available_margin + position_value
 
     def cancel_all_orders(self, orderID=None) -> dict:
         return self.__cancel_open_orders()
