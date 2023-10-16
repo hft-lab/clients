@@ -32,7 +32,7 @@ class DydxClient(BaseClient):
     urlMarkets = "https://api.dydx.exchange/v3/markets/"
     urlOrderbooks = "https://api.dydx.exchange/v3/orderbook/"
 
-    def __init__(self, keys, leverage, max_pos_part, alert_id, alert_token):
+    def __init__(self, keys, leverage, alert_id, alert_token, max_pos_part=20):
         self.max_pos_part = max_pos_part
         self.chat_id = int(alert_id)
         self.telegram_bot = telebot.TeleBot(alert_token)

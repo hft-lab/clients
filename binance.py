@@ -25,7 +25,7 @@ class BinanceClient(BaseClient):
     urlMarkets = "https://fapi.binance.com/fapi/v1/exchangeInfo"
     urlOrderbooks = "https://fapi.binance.com/fapi/v1/depth?limit=5&symbol="
 
-    def __init__(self, keys, leverage, max_pos_part, alert_id, alert_token):
+    def __init__(self, keys, leverage, alert_id, alert_token, max_pos_part=20):
         self.max_pos_part = max_pos_part
         self.chat_id = int(alert_id)
         self.telegram_bot = telebot.TeleBot(alert_token)
