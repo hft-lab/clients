@@ -425,31 +425,39 @@ class BinanceClient(BaseClient):
                        f"recvWindow={time.time() * 1000 + expire}&newClientOrderId={client_id}"
         query_string += f'&signature={self._create_signature(query_string)}'
         print(f"{self.EXCHANGE_NAME} BODY: {query_string}")
-        async with session.post(url=self.BASE_URL + url_path + query_string, headers=self.headers) as resp:
-            res = await resp.json()
-            print(f'{self.EXCHANGE_NAME} RESPONSE: {res}')
-            self.LAST_ORDER_ID = res.get('orderId', 'default')
-            timestamp = 0000000000000
-            if res.get('code'):
-                status = ResponseStatus.ERROR
-                self.error_info = res
-            elif res.get('status'):
-                status = ResponseStatus.SUCCESS
-                timestamp = res['updateTime']
-                utc_diff = round((datetime.datetime.utcnow().timestamp() - time.time()) * 1000)
-                timestamp += utc_diff
-            else:
-                status = ResponseStatus.NO_CONNECTION
-            ping = int(round(timestamp - (time_sent * 1000), 0))
-            self.pings.append(ping)
-            with open(f'{self.EXCHANGE_NAME}_pings.txt', 'a') as file:
-                file.write(str(datetime.datetime.utcnow()) + ' ' + str(ping) + '\n')
-            avr = int(round((sum(self.pings) / len(self.pings)), 0))
-            print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
+        try:
+            async with session.post(url=self.BASE_URL + url_path + query_string, headers=self.headers) as resp:
+                res = await resp.json()
+                print(f'{self.EXCHANGE_NAME} RESPONSE: {res}')
+                self.LAST_ORDER_ID = res.get('orderId', 'default')
+                timestamp = 0000000000000
+                if res.get('code'):
+                    status = ResponseStatus.ERROR
+                    self.error_info = res
+                elif res.get('status'):
+                    status = ResponseStatus.SUCCESS
+                    timestamp = res['updateTime']
+                    utc_diff = round((datetime.datetime.utcnow().timestamp() - time.time()) * 1000)
+                    timestamp += utc_diff
+                else:
+                    status = ResponseStatus.NO_CONNECTION
+                ping = int(round(timestamp - (time_sent * 1000), 0))
+                self.pings.append(ping)
+                with open(f'{self.EXCHANGE_NAME}_pings.txt', 'a') as file:
+                    file.write(str(datetime.datetime.utcnow()) + ' ' + str(ping) + '\n')
+                avr = int(round((sum(self.pings) / len(self.pings)), 0))
+                print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
+                return {
+                    'exchange_name': self.EXCHANGE_NAME,
+                    'timestamp': timestamp,
+                    'status': status
+                }
+        except Exception as e:
+            self.error_info = e
             return {
                 'exchange_name': self.EXCHANGE_NAME,
-                'timestamp': timestamp,
-                'status': status
+                'timestamp': int(round(datetime.datetime.utcnow().timestamp() * 1000)),
+                'status': ResponseStatus.ERROR
             }
 
     def __cancel_open_orders(self) -> dict:

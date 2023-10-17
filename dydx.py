@@ -366,31 +366,39 @@ class DydxClient(BaseClient):
             'User-Agent': 'dydx/python'
         }
 
-        async with session.post(url=self.BASE_URL + request_path, headers=headers,
-                                data=json.dumps(remove_nones(data))) as resp:
-            res = await resp.json()
-            print(f'DYDX RESPONSE: {res}')
-            self.LAST_ORDER_ID = res.get('order', {'id': 'default'})['id']
-            timestamp = 0000000000000
-            if res.get('errors'):
-                status = ResponseStatus.ERROR
-                self.error_info = res
-            elif res.get('order') and res['order'].get('status'):
-                timestamp = int(
-                    datetime.timestamp(datetime.strptime(res['order']['createdAt'], '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
-                status = ResponseStatus.SUCCESS
-            else:
-                status = ResponseStatus.NO_CONNECTION
-            ping = int(round(timestamp - (time_sent * 1000), 0))
-            self.pings.append(ping)
-            with open(f'{self.EXCHANGE_NAME}_pings.txt', 'a') as file:
-                file.write(str(datetime.utcnow()) + ' ' + str(ping) + '\n')
-            avr = int(round((sum(self.pings) / len(self.pings)), 0))
-            print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
+        try:
+            async with session.post(url=self.BASE_URL + request_path, headers=headers,
+                                    data=json.dumps(remove_nones(data))) as resp:
+                res = await resp.json()
+                print(f'DYDX RESPONSE: {res}')
+                self.LAST_ORDER_ID = res.get('order', {'id': 'default'})['id']
+                timestamp = 0000000000000
+                if res.get('errors'):
+                    status = ResponseStatus.ERROR
+                    self.error_info = res
+                elif res.get('order') and res['order'].get('status'):
+                    timestamp = int(
+                        datetime.timestamp(datetime.strptime(res['order']['createdAt'], '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
+                    status = ResponseStatus.SUCCESS
+                else:
+                    status = ResponseStatus.NO_CONNECTION
+                ping = int(round(timestamp - (time_sent * 1000), 0))
+                self.pings.append(ping)
+                with open(f'{self.EXCHANGE_NAME}_pings.txt', 'a') as file:
+                    file.write(str(datetime.utcnow()) + ' ' + str(ping) + '\n')
+                avr = int(round((sum(self.pings) / len(self.pings)), 0))
+                print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
+                return {
+                    'exchange_name': self.EXCHANGE_NAME,
+                    'timestamp': timestamp,
+                    'status': status
+                }
+        except Exception as e:
+            self.error_info = e
             return {
                 'exchange_name': self.EXCHANGE_NAME,
-                'timestamp': timestamp,
-                'status': status
+                'timestamp': int(round(datetime.utcnow().timestamp() * 1000)),
+                'status': ResponseStatus.ERROR
             }
 
     def get_funding_history(self):

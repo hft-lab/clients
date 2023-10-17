@@ -557,28 +557,36 @@ class KrakenClient(BaseClient):
             "Authent": self.get_kraken_futures_signature(url_path, post_string, nonce).decode('utf-8'),
         }
         url = self.BASE_URL + url_path + '?' + post_string
-        async with session.post(url=url, headers=headers, data=post_string) as resp:
-            response = await resp.json()
-            print(f'KRAKEN RESPONSE: {response}')
-            self.LAST_ORDER_ID = response.get('sendStatus', {}).get('order_id', 'default')
-            if response['sendStatus'].get('receivedTime'):
-                timestamp = response['sendStatus']['receivedTime']
-                timestamp = int(datetime.timestamp(datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
-                status = ResponseStatus.SUCCESS
-            else:
-                timestamp = 0000000000000
-                status = ResponseStatus.ERROR
-                self.error_info = response
-            ping = int(round(timestamp - (time_sent * 1000), 0))
-            self.pings.append(ping)
-            with open(f'{self.EXCHANGE_NAME}_pings.txt', 'a') as file:
-                file.write(str(datetime.utcnow()) + ' ' + str(ping) + '\n')
-            avr = int(round((sum(self.pings) / len(self.pings)), 0))
-            print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
+        try:
+            async with session.post(url=url, headers=headers, data=post_string) as resp:
+                response = await resp.json()
+                print(f'KRAKEN RESPONSE: {response}')
+                self.LAST_ORDER_ID = response.get('sendStatus', {}).get('order_id', 'default')
+                if response['sendStatus'].get('receivedTime'):
+                    timestamp = response['sendStatus']['receivedTime']
+                    timestamp = int(datetime.timestamp(datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
+                    status = ResponseStatus.SUCCESS
+                else:
+                    timestamp = 0000000000000
+                    status = ResponseStatus.ERROR
+                    self.error_info = response
+                ping = int(round(timestamp - (time_sent * 1000), 0))
+                self.pings.append(ping)
+                with open(f'{self.EXCHANGE_NAME}_pings.txt', 'a') as file:
+                    file.write(str(datetime.utcnow()) + ' ' + str(ping) + '\n')
+                avr = int(round((sum(self.pings) / len(self.pings)), 0))
+                print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
+                return {
+                    'exchange_name': self.EXCHANGE_NAME,
+                    'timestamp': timestamp,
+                    'status': status
+                }
+        except Exception as e:
+            self.error_info = e
             return {
                 'exchange_name': self.EXCHANGE_NAME,
-                'timestamp': timestamp,
-                'status': status
+                'timestamp': int(round(datetime.utcnow().timestamp() * 1000)),
+                'status': ResponseStatus.ERROR
             }
 
     # NEW FUNCTIONS
