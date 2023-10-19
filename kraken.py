@@ -290,14 +290,15 @@ class KrakenClient(BaseClient):
         async with session.ws_connect(self.BASE_WS) as ws:
             # self.markets_list = list(self.markets.keys())[:10]
             for symbol in self.markets_list:
-                await ws.send_str(orjson.dumps({
-                    "event": "subscribe",
-                    "feed": "book",
-                    'snapshot': False,
-                    "product_ids": [
-                        self.markets[symbol].upper(),
-                    ]
-                }).decode('utf-8'))
+                if market := self.markets.get(symbol):
+                    await ws.send_str(orjson.dumps({
+                        "event": "subscribe",
+                        "feed": "book",
+                        'snapshot': False,
+                        "product_ids": [
+                            market.upper(),
+                        ]
+                    }).decode('utf-8'))
 
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:

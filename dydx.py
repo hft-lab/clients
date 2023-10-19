@@ -470,14 +470,15 @@ class DydxClient(BaseClient):
     async def _subscribe_orderbooks(self):
         # self.markets_list = list(self.markets_multi.keys())[:10]
         for symbol in self.markets_list:
-            msg = {
-                'type': 'subscribe',
-                'channel': 'v3_orderbook',
-                'id': self.markets_multi[symbol],
-                'includeOffsets': True
-            }
-            await self._connected.wait()
-            await self._ws.send_json(msg)
+            if market := self.markets_multi.get(symbol):
+                msg = {
+                    'type': 'subscribe',
+                    'channel': 'v3_orderbook',
+                    'id': market,
+                    'includeOffsets': True
+                }
+                await self._connected.wait()
+                await self._ws.send_json(msg)
 
     def _first_orderbook_update(self, ob: dict):
         symbol = ob['id']

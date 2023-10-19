@@ -212,11 +212,12 @@ class BinanceClient(BaseClient):
         async with session.ws_connect(self.BASE_WS + self.symbol.lower()) as ws:
             # self.markets_list = list(self.markets.keys())[:10]
             for symbol in self.markets_list:
-                await ws.send_str(orjson.dumps({
-                    'id': 1,
-                    'method': 'SUBSCRIBE',
-                    'params': [f"{self.markets[symbol].lower()}@depth@100ms"]
-                }).decode('utf-8'))
+                if market := self.markets.get(symbol):
+                    await ws.send_str(orjson.dumps({
+                        'id': 1,
+                        'method': 'SUBSCRIBE',
+                        'params': [f"{market.lower()}@depth@100ms"]
+                    }).decode('utf-8'))
 
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
