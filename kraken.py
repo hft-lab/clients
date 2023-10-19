@@ -221,6 +221,7 @@ class KrakenClient(BaseClient):
     def get_all_tops(self):
         orderbooks = dict()
         [orderbooks.update(self.get_orderbook(self.markets[x])) for x in self.markets_list if self.markets.get(x)]
+
         tops = {}
         for symbol, orderbook in orderbooks.items():
             coin = symbol.upper().split('_')[1].split('USD')[0]
