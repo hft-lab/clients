@@ -28,7 +28,8 @@ class KrakenClient(BaseClient):
     urlOrderbooks = "https://futures.kraken.com/derivatives/api/v3/orderbook?symbol="
     urlMarkets = "https://futures.kraken.com/derivatives/api/v3/tickers"
 
-    def __init__(self, keys, leverage, alert_id, alert_token, max_pos_part=20):
+    def __init__(self, keys, leverage, alert_id, alert_token, markets_list=[], max_pos_part=20):
+        self.markets_list = markets_list
         self.max_pos_part = max_pos_part
         self.chat_id = int(alert_id)
         self.telegram_bot = telebot.TeleBot(alert_token)
@@ -68,7 +69,7 @@ class KrakenClient(BaseClient):
                 'realized_pnl_usd': 0}
         }
         self.get_real_balance()
-        self.orderbook = {self.symbol: {'sell': {}, 'buy': {}, 'timestamp': 0}}
+        self.orderbook = {}
         self.pings = []
         self.price = 0
         self.amount = 0
@@ -203,19 +204,31 @@ class KrakenClient(BaseClient):
             self.get_real_balance()
         return self.balance['total']
 
-    def get_orderbook(self) -> dict:
+    def get_orderbook(self, symbol) -> dict:
         orderbook = {}
         # time_start = time.time()
         while True:
-            snap = self.orderbook[self.symbol]
-            orderbook[self.symbol] = {'timestamp': self.orderbook[self.symbol]['timestamp']}
+            snap = self.orderbook[symbol]
+            orderbook[symbol] = {'timestamp': self.orderbook[symbol]['timestamp']}
             try:
-                orderbook[self.symbol]['asks'] = [[x, snap['sell'][x]] for x in sorted(snap['sell'])]
-                orderbook[self.symbol]['bids'] = [[x, snap['buy'][x]] for x in sorted(snap['buy'])][::-1]
+                orderbook[symbol]['asks'] = [[x, snap['sell'][x]] for x in sorted(snap['sell'])]
+                orderbook[symbol]['bids'] = [[x, snap['buy'][x]] for x in sorted(snap['buy'])][::-1]
             except:
                 continue
             # print(f"Orderbook fetch time: {time.time() - time_start}")
             return orderbook
+
+    def get_all_tops(self):
+        orderbooks = dict()
+        [orderbooks.update(self.get_orderbook(x)) for x in self.markets_list]
+        tops = {}
+        for symbol, orderbook in orderbooks.items():
+            coin = symbol.upper().split('_')[1].split('USD')[0]
+            tops.update({self.EXCHANGE_NAME + '__' + coin:
+                             {'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
+                              'bid_vol': orderbook['bids'][0][1], 'ask_vol': orderbook['asks'][0][1],
+                              'ts_exchange': orderbook['timestamp']}})
+        return tops
 
     async def get_multi_orderbook(self, symbol):
         async with aiohttp.ClientSession() as session:
@@ -274,38 +287,40 @@ class KrakenClient(BaseClient):
         return orderbook
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
-        # await self.get_orderbook_by_symbol()
-
         async with session.ws_connect(self.BASE_WS) as ws:
-            await ws.send_str(orjson.dumps({
-                "event": "subscribe",
-                "feed": "book",
-                'snapshot': False,
-                "product_ids": [
-                    self.symbol.upper(),
-                ]
-            }).decode('utf-8'))
+            # self.markets_list = list(self.markets.keys())[:10]
+            for symbol in self.markets_list:
+                await ws.send_str(orjson.dumps({
+                    "event": "subscribe",
+                    "feed": "book",
+                    'snapshot': False,
+                    "product_ids": [
+                        self.markets[symbol].upper(),
+                    ]
+                }).decode('utf-8'))
 
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     payload = orjson.loads(msg.data)
                     if not payload.get('event'):
                         if payload.get('feed') == 'book_snapshot':
-                            self.orderbook[self.symbol] = {
+                            symbol = payload['product_id']
+                            self.orderbook[symbol] = {
                                 'sell': {x['price']: x['qty'] for x in payload['asks']},
                                 'buy': {x['price']: x['qty'] for x in payload['bids']},
                                 'timestamp': payload['timestamp']
                             }
-                            self.max_bid = max(self.orderbook[self.symbol]['buy'].keys())
-                            self.min_ask = min(self.orderbook[self.symbol]['sell'].keys())
+                            self.max_bid = max(self.orderbook[symbol]['buy'].keys())
+                            self.min_ask = min(self.orderbook[symbol]['sell'].keys())
                             self.count_flag = True
                         elif payload.get('feed') == 'book':
-                            res = self.orderbook[self.symbol][payload['side']]
+                            symbol = payload['product_id']
+                            res = self.orderbook[symbol][payload['side']]
                             if res.get(payload['price']) and not payload['qty']:
                                 del res[payload['price']]
                             else:
-                                self.orderbook[self.symbol][payload['side']][payload['price']] = payload['qty']
-                                self.orderbook[self.symbol]['timestamp'] = payload['timestamp']
+                                self.orderbook[symbol][payload['side']][payload['price']] = payload['qty']
+                                self.orderbook[symbol]['timestamp'] = payload['timestamp']
                             if payload['side'] == 'sell':
                                 if payload['price'] < self.min_ask:
                                     self.min_ask = payload['price']
@@ -755,16 +770,16 @@ if __name__ == '__main__':
     config.read(sys.argv[1], "utf-8")
     client = KrakenClient(config['KRAKEN'],
                           float(config['SETTINGS']['LEVERAGE']),
-                          int(config['SETTINGS']['PERCENT_PER_MARKET']),
                           int(config['TELEGRAM']['ALERT_CHAT_ID']),
-                          config['TELEGRAM']['ALERT_BOT_TOKEN'])
+                          config['TELEGRAM']['ALERT_BOT_TOKEN'],
+                          max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']))
     client.run_updater()
-    time.sleep(3)
-    print(client.get_balance())
-    print()
-    print(client.positions)
-    print()
-    print(client.new_get_available_balance())
+    # time.sleep(3)
+    # print(client.get_balance())
+    # print()
+    # print(client.positions)
+    # print()
+    # print(client.new_get_available_balance())
     # print(client.get_markets())
     # time.sleep(5)
 
@@ -788,6 +803,6 @@ if __name__ == '__main__':
     # #
     # time.sleep(5)
     # asyncio.run(test_order())
-    # while True:
-    #     time.sleep(5)
-    #
+    while True:
+        time.sleep(5)
+        print(client.get_all_tops())

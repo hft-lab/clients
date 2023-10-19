@@ -32,7 +32,8 @@ class DydxClient(BaseClient):
     urlMarkets = "https://api.dydx.exchange/v3/markets/"
     urlOrderbooks = "https://api.dydx.exchange/v3/orderbook/"
 
-    def __init__(self, keys, leverage, alert_id, alert_token, max_pos_part=20):
+    def __init__(self, keys, leverage, alert_id, alert_token, markets_list=[], max_pos_part=20):
+        self.markets_list = markets_list
         self.max_pos_part = max_pos_part
         self.chat_id = int(alert_id)
         self.telegram_bot = telebot.TeleBot(alert_token)
@@ -85,7 +86,7 @@ class DydxClient(BaseClient):
         self.offsets = {}
         # self.time_sent = time.time()
         self.get_position()
-
+        self.get_markets()
         self.wst = threading.Thread(target=self._run_ws_forever, daemon=True)
         self.pings = []
 
@@ -153,6 +154,17 @@ class DydxClient(BaseClient):
                             'ts_exchange': 0}
                 except Exception as error:
                     print(f"Error from DyDx Module, symbol: {symbol}, error: {error}")
+
+    def get_all_tops(self):
+        tops = {}
+        for symbol, orderbook in self.orderbook.items():
+            coin = symbol.upper().split('-')[0]
+            tops.update({self.EXCHANGE_NAME + '__' + coin:
+                             {'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
+                              'bid_vol': orderbook['bids'][0][1], 'ask_vol': orderbook['asks'][0][1],
+                              'ts_exchange': orderbook['timestamp']}})
+
+        return tops
 
     async def get_funding_payments(self, session: aiohttp.ClientSession):
         data = {}
@@ -426,7 +438,7 @@ class DydxClient(BaseClient):
                     print("DyDx: connected")
                     self._connected.set()
                     self._ws = ws
-                    self._loop.create_task(self._subscribe_orderbook(self.symbol))
+                    self._loop.create_task(self._subscribe_orderbooks())
                     self._loop.create_task(self._subscribe_account())
                     async for msg in ws:
                         self._process_msg(msg)
@@ -455,15 +467,17 @@ class DydxClient(BaseClient):
         await self._connected.wait()
         await self._ws.send_json(msg)
 
-    async def _subscribe_orderbook(self, symbol):
-        msg = {
-            'type': 'subscribe',
-            'channel': 'v3_orderbook',
-            'id': symbol,
-            'includeOffsets': True
-        }
-        await self._connected.wait()
-        await self._ws.send_json(msg)
+    async def _subscribe_orderbooks(self):
+        # self.markets_list = list(self.markets_multi.keys())[:10]
+        for symbol in self.markets_list:
+            msg = {
+                'type': 'subscribe',
+                'channel': 'v3_orderbook',
+                'id': self.markets_multi[symbol],
+                'includeOffsets': True
+            }
+            await self._connected.wait()
+            await self._ws.send_json(msg)
 
     def _first_orderbook_update(self, ob: dict):
         symbol = ob['id']
@@ -516,7 +530,6 @@ class DydxClient(BaseClient):
         self.orderbook[symbol]['timestamp'] = int(time.time())
 
     def _channel_orderbook_update(self, ob: dict):
-        # time_start = time.time()
         symbol = ob['id']
         last_ob_ask = self.orderbook[symbol]['asks'][0][0]
         last_ob_bid = self.orderbook[symbol]['bids'][0][0]
@@ -525,8 +538,7 @@ class DydxClient(BaseClient):
         if len(ob['contents']['asks']):
             self._append_new_order(ob, 'asks')
         self.orderbook[symbol]['timestamp'] = int(time.time() * 1000)
-        if last_ob_ask != self.orderbook[symbol]['asks'][0][0] \
-                or last_ob_bid != self.orderbook[symbol]['bids'][0][0]:
+        if last_ob_ask != self.orderbook[symbol]['asks'][0][0] or last_ob_bid != self.orderbook[symbol]['bids'][0][0]:
             self.count_flag = True
         # print(f"\n\nDYDX NEW OB APPEND TIME: {time.time() - time_start} sec\n\n")
 
@@ -570,8 +582,8 @@ class DydxClient(BaseClient):
         realized_pnl = float(position['realizedPnl'])
         entry_price = float(position['entryPrice'])
         size = float(position['size'])
-        index_price = self.get_orderbook()
-        index_price = (index_price['asks'][0][0] + index_price['bids'][0][0]) / 2
+        ob = self.get_orderbook(self.symbol)
+        index_price = (ob['asks'][0][0] + ob['bids'][0][0]) / 2
         unrealized_pnl = size * (index_price - entry_price)
         return unrealized_pnl + realized_pnl
 
@@ -840,8 +852,11 @@ class DydxClient(BaseClient):
                     }
                 return orderbook
 
-    def get_orderbook(self):
-        return self.orderbook
+    def get_orderbook(self, symbol):
+        while not self.orderbook.get(symbol):
+            print(f"{self.EXCHANGE_NAME}: CAN'T GET OB {symbol}")
+            time.sleep(0.01)
+        return self.orderbook[symbol]
 
 
 #
@@ -919,19 +934,19 @@ if __name__ == '__main__':
     config.read(sys.argv[1], "utf-8")
     client = DydxClient(config['DYDX'],
                         float(config['SETTINGS']['LEVERAGE']),
-                        int(config['SETTINGS']['PERCENT_PER_MARKET']),
                         int(config['TELEGRAM']['ALERT_CHAT_ID']),
-                        config['TELEGRAM']['ALERT_BOT_TOKEN'])
+                        config['TELEGRAM']['ALERT_BOT_TOKEN'],
+                        max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']))
     # client.run_updater()
     # client.get_real_balance()
-    print(client.get_balance())
+    # print(client.get_balance())
     client.run_updater()
-    time.sleep(3)
-    print(client.get_balance())
-    print()
-    print(client.positions)
-    print()
-    print(client.new_get_available_balance())
+    # time.sleep(3)
+    # print(client.get_balance())
+    # print()
+    # print(client.positions)
+    # print()
+    # print(client.new_get_available_balance())
 
 
     # async def test_order():
@@ -945,8 +960,9 @@ if __name__ == '__main__':
     #         print(data)
     #         client.cancel_all_orders()
     #
-    # while True:
-    #     time.sleep(5)
+    while True:
+        time.sleep(5)
+        print(client.get_all_tops())
     #     print(client.get_balance())
     # while True:
     #     time.sleep(5)

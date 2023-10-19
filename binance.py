@@ -25,7 +25,8 @@ class BinanceClient(BaseClient):
     urlMarkets = "https://fapi.binance.com/fapi/v1/exchangeInfo"
     urlOrderbooks = "https://fapi.binance.com/fapi/v1/depth?limit=5&symbol="
 
-    def __init__(self, keys, leverage, alert_id, alert_token, max_pos_part=20):
+    def __init__(self, keys, leverage, alert_id, alert_token, markets_list=[], max_pos_part=20):
+        self.markets_list = markets_list
         self.max_pos_part = max_pos_part
         self.chat_id = int(alert_id)
         self.telegram_bot = telebot.TeleBot(alert_token)
@@ -65,7 +66,7 @@ class BinanceClient(BaseClient):
         self._check_symbol_value()
         self.amount = 0
         self.price = 0
-
+        self.get_markets()
         self._loop_public = asyncio.new_event_loop()
         self._loop_private = asyncio.new_event_loop()
         self._loop_message = asyncio.new_event_loop()
@@ -77,9 +78,7 @@ class BinanceClient(BaseClient):
                                             daemon=True)
         self.bal_check = threading.Thread(target=self._balance)
         self.lk_check = threading.Thread(target=self._ping_listen_key)
-
         self.get_real_balance()
-
         self._get_listen_key()
         self.get_position()
         self.pings = []
@@ -96,10 +95,22 @@ class BinanceClient(BaseClient):
             self.get_real_balance()
         return self.balance['total']
 
-    def get_orderbook(self) -> dict:
-        while not self.orderbook.get(self.symbol):
-            time.sleep(0.001)
-        return self.orderbook
+    def get_orderbook(self, symbol) -> dict:
+        while not self.orderbook.get(symbol):
+            print(f"{self.EXCHANGE_NAME}: CAN'T GET OB {symbol}")
+            time.sleep(0.01)
+        return self.orderbook[symbol]
+
+    def get_all_tops(self):
+        time_start = time.time()
+        tops = {}
+        for symbol, orderbook in self.orderbook.items():
+            coin = symbol.upper().split('USD')[0]
+            tops.update({self.EXCHANGE_NAME + '__' + coin:
+                             {'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
+                              'bid_vol': orderbook['bids'][0][1], 'ask_vol': orderbook['asks'][0][1],
+                              'ts_exchange': orderbook['timestamp']}})
+        return tops
 
     async def get_multi_orderbook(self, symbol):
         async with aiohttp.ClientSession() as session:
@@ -172,39 +183,40 @@ class BinanceClient(BaseClient):
                                     step_size = float(fltr['stepSize'])
                             return quantity_precision, price_precision, tick_size, step_size
 
-    def __check_ob(self, ob: dict, side: str) -> None:
+    def __check_ob(self, ob: dict, side: str, symbol) -> None:
         reformat_ob = [[float(x[0]), float(x[1])] for x in ob[side]]
         # if not len(self.orderbook[self.symbol][side]):
-        self.orderbook[self.symbol][side] = []
+        self.orderbook[symbol][side] = []
         for new_order in reformat_ob:
-            if len(self.orderbook[self.symbol][side]) > 10:
+            if len(self.orderbook[symbol][side]) > 10:
                 return
             if new_order[1] > 0:
-                self.orderbook[self.symbol][side].append(new_order)
+                self.orderbook[symbol][side].append(new_order)
 
     async def __orderbook_update(self, ob: dict) -> None:
-        ask = self.orderbook[self.symbol]['asks'][0][0] if len(self.orderbook[self.symbol]['asks']) else 0
-        bid = self.orderbook[self.symbol]['bids'][0][0] if len(self.orderbook[self.symbol]['bids']) else 0
+        symbol = ob['s']
+        if not self.orderbook.get(symbol):
+            self.orderbook.update({symbol: {'asks': [], 'bids': []}})
+        ask = self.orderbook[symbol]['asks'][0][0] if len(self.orderbook[symbol]['asks']) else 0
+        bid = self.orderbook[symbol]['bids'][0][0] if len(self.orderbook[symbol]['bids']) else 0
         if ob.get('asks'):
-            self.__check_ob(ob, 'asks')
+            self.__check_ob(ob, 'asks', symbol)
         if ob.get('bids'):
-            self.__check_ob(ob, 'bids')
-        self.orderbook[self.symbol]['timestamp'] = int(time.time() * 1000)
-        if len(self.orderbook[self.symbol]['asks']) and len(self.orderbook[self.symbol]['bids']):
-            if ask != self.orderbook[self.symbol]['asks'][0][0] or bid != self.orderbook[self.symbol]['bids'][0][0]:
+            self.__check_ob(ob, 'bids', symbol)
+        self.orderbook[symbol]['timestamp'] = ob['E']
+        if len(self.orderbook[symbol]['asks']) and len(self.orderbook[symbol]['bids']):
+            if ask != self.orderbook[symbol]['asks'][0][0] or bid != self.orderbook[symbol]['bids'][0][0]:
                 self.count_flag = True
 
-
-
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
-        self.orderbook[self.symbol] = await self.get_orderbook_by_symbol()
-
         async with session.ws_connect(self.BASE_WS + self.symbol.lower()) as ws:
-            await ws.send_str(orjson.dumps({
-                'id': 1,
-                'method': 'SUBSCRIBE',
-                'params': [f"{self.symbol.lower()}@depth@100ms"]
-            }).decode('utf-8'))
+            # self.markets_list = list(self.markets.keys())[:10]
+            for symbol in self.markets_list:
+                await ws.send_str(orjson.dumps({
+                    'id': 1,
+                    'method': 'SUBSCRIBE',
+                    'params': [f"{self.markets[symbol].lower()}@depth@100ms"]
+                }).decode('utf-8'))
 
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
@@ -332,7 +344,7 @@ class BinanceClient(BaseClient):
                     return float(s['balance']) + float(s['crossUnPnl']), float(s['availableBalance'])
         else:
             # print(res)
-            time.sleep(5)
+            time.sleep(120)
             return self.get_real_balance()
 
     async def get_historical_price(self, session, symbol, time_):
@@ -415,8 +427,7 @@ class BinanceClient(BaseClient):
         self.amount = round(amount - (amount % step_size), quantity_precision)
         self.price = round(price - (price % tick_size), price_precision)
 
-    async def create_order(self, symbol, side: str, session: aiohttp.ClientSession,
-                             expire=5000, client_id=None) -> dict:
+    async def create_order(self, symbol, side: str, session: aiohttp.ClientSession, expire=5000, client_id=None) -> dict:
         side = side.upper()
         time_sent = datetime.datetime.utcnow().timestamp()
         url_path = '/fapi/v1/order?'
@@ -661,19 +672,18 @@ if __name__ == '__main__':
 
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
-
     client = BinanceClient(config['BINANCE'],
                            float(config['SETTINGS']['LEVERAGE']),
-                           int(config['SETTINGS']['PERCENT_PER_MARKET']),
                            int(config['TELEGRAM']['ALERT_CHAT_ID']),
-                           config['TELEGRAM']['ALERT_BOT_TOKEN'])
+                           config['TELEGRAM']['ALERT_BOT_TOKEN'],
+                           max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']))
     client.run_updater()
-    time.sleep(3)
-    print(client.get_balance())
-    print()
-    print(client.positions)
-    print()
-    print(client.new_get_available_balance())
+    # time.sleep(3)
+    # print(client.get_balance())
+    # print()
+    # print(client.positions)
+    # print()
+    # print(client.new_get_available_balance())
     # client.get_markets()
     # time.sleep(5)
 
@@ -693,8 +703,9 @@ if __name__ == '__main__':
     #
     # asyncio.run(test_order())
 
-    # while True:
-    #     time.sleep(5)
+    while True:
+        time.sleep(5)
+        print(client.get_all_tops())
         # asyncio.run(test_order())
         # print(client.get_orderbook())
 
