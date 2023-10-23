@@ -62,7 +62,7 @@ class BinanceClient(BaseClient):
                 'realized_pnl_usd': 0
             }
         }
-        self.orderbook = {self.symbol: {'asks': [], 'bids': [], 'timestamp': int(time.time() * 1000)}}
+        self.orderbook = {}
         self._check_symbol_value()
         self.amount = 0
         self.price = 0
@@ -105,6 +105,9 @@ class BinanceClient(BaseClient):
         time_start = time.time()
         tops = {}
         for symbol, orderbook in self.orderbook.items():
+            print(symbol, orderbook, '\n')
+            if len(orderbook['bids']) < 10 or len(orderbook['asks']) < 10:
+                asyncio.run(self.get_multi_orderbook(symbol))
             coin = symbol.upper().split('USD')[0]
             tops.update({self.EXCHANGE_NAME + '__' + coin:
                              {'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
@@ -116,6 +119,7 @@ class BinanceClient(BaseClient):
         async with aiohttp.ClientSession() as session:
             async with session.get(url=self.urlOrderbooks + symbol) as response:
                 ob = await response.json()
+                print(ob)
                 try:
                     return {'top_bid': ob['bids'][0][0], 'top_ask': ob['asks'][0][0],
                             'bid_vol': ob['bids'][0][1], 'ask_vol': ob['asks'][0][1],
@@ -210,7 +214,7 @@ class BinanceClient(BaseClient):
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
         async with session.ws_connect(self.BASE_WS + self.symbol.lower()) as ws:
-            # self.markets_list = list(self.markets.keys())[:10]
+            self.markets_list = list(self.markets.keys())[:10]
             for symbol in self.markets_list:
                 if market := self.markets.get(symbol):
                     await ws.send_str(orjson.dumps({
