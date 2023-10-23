@@ -67,7 +67,6 @@ class DydxClient(BaseClient):
         self.markets_multi = {}
         self.balance = {'free': 0, 'total': 0, 'timestamp': time.time()}
         self.orderbook = {}
-
         self.amount = 0
         self.price = 0
 
