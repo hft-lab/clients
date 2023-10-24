@@ -219,14 +219,14 @@ class KrakenClient(BaseClient):
     def get_all_tops(self):
         orderbooks = dict()
         [orderbooks.update({self.markets[x]: self.get_orderbook(self.markets[x])}) for x in self.markets_list if self.markets.get(x)]
-
         tops = {}
         for symbol, orderbook in orderbooks.items():
             coin = symbol.upper().split('_')[1].split('USD')[0]
-            tops.update({self.EXCHANGE_NAME + '__' + coin:
-                             {'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
-                              'bid_vol': orderbook['bids'][0][1], 'ask_vol': orderbook['asks'][0][1],
-                              'ts_exchange': orderbook['timestamp']}})
+            if len(orderbook['bids']) and len(orderbook['asks']):
+                tops.update({self.EXCHANGE_NAME + '__' + coin:
+                                 {'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
+                                  'bid_vol': orderbook['bids'][0][1], 'ask_vol': orderbook['asks'][0][1],
+                                  'ts_exchange': orderbook['timestamp']}})
         return tops
 
     async def get_multi_orderbook(self, symbol):
