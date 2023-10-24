@@ -205,22 +205,20 @@ class KrakenClient(BaseClient):
         return self.balance['total']
 
     def get_orderbook(self, symbol) -> dict:
-        orderbook = {}
-        # time_start = time.time()
         while True:
             snap = self.orderbook[symbol]
-            orderbook[symbol] = {'timestamp': self.orderbook[symbol]['timestamp']}
+            orderbook = {'timestamp': self.orderbook[symbol]['timestamp']}
             try:
-                orderbook[symbol]['asks'] = [[x, snap['sell'][x]] for x in sorted(snap['sell'])]
-                orderbook[symbol]['bids'] = [[x, snap['buy'][x]] for x in sorted(snap['buy'])][::-1]
+                orderbook['asks'] = [[x, snap['sell'][x]] for x in sorted(snap['sell'])]
+                orderbook['bids'] = [[x, snap['buy'][x]] for x in sorted(snap['buy'])][::-1]
             except:
                 continue
             # print(f"Orderbook fetch time: {time.time() - time_start}")
-            return orderbook[symbol]
+            return orderbook
 
     def get_all_tops(self):
         orderbooks = dict()
-        [orderbooks.update(self.get_orderbook(self.markets[x])) for x in self.markets_list if self.markets.get(x)]
+        [orderbooks.update({self.markets[x]: self.get_orderbook(self.markets[x])}) for x in self.markets_list if self.markets.get(x)]
 
         tops = {}
         for symbol, orderbook in orderbooks.items():
