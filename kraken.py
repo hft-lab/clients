@@ -459,8 +459,8 @@ class KrakenClient(BaseClient):
                         rsn = last_update['reason']
                         if rsn in ['full_fill', 'partial_fill']:
                             stts = OrderStatus.FULLY_EXECUTED if rsn == 'full_fill' else OrderStatus.PARTIALLY_EXECUTED
-                            price = last_update['newOrder']['limitPrice']
-                            amount = last_update['newOrder']['filled']
+                            price = float(last_update['newOrder']['limitPrice'])
+                            amount = float(last_update['newOrder']['filled'])
                         elif rsn in ['cancelled_by_user', 'cancelled_by_admin', 'not_enough_margin']:
                             stts = OrderStatus.NOT_EXECUTED
                         return {
