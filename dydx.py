@@ -60,7 +60,7 @@ class DydxClient(BaseClient):
         self.error_info = None
         self.orders = {}
         self.fills = {}
-        self.positions = {self.symbol: {}}
+        self.positions = {}
         self.count_flag = False
 
         self.requestLimit = 1050  # 175 за 10 секунд https://dydxprotocol.github.io/v3-teacher/#rate-limit-api
@@ -103,7 +103,9 @@ class DydxClient(BaseClient):
                 }})
 
     def cancel_all_orders(self, order_id=None):
-        self.client.private.cancel_active_orders(market=self.symbol)
+        for coin in self.markets_list:
+            market = self.markets_multi[coin]
+            self.client.private.cancel_active_orders(market=market)
 
     def get_real_balance(self):
         try:
@@ -278,7 +280,7 @@ class DydxClient(BaseClient):
                             'status': status,
                             'exchange': self.EXCHANGE_NAME,
                             'side': order['side'].lower(),
-                            'symbol': self.symbol,
+                            'symbol': symbol,
                             'expect_price': float(order['price']),
                             'expect_amount_coin': float(order['size']),
                             'expect_amount_usd': float(order['price']) * float(order['size']),
@@ -442,7 +444,8 @@ class DydxClient(BaseClient):
                     async for msg in ws:
                         self._process_msg(msg)
             except Exception as e:
-                print("DyDx ws loop exited: ", e)
+                print("DyDx ws loop exited: ")
+                traceback.print_exc()
             finally:
                 self._connected.clear()
 
@@ -526,7 +529,7 @@ class DydxClient(BaseClient):
                         break
                 index += 1
             if index == 0:
-                self._check_for_error()
+                self._check_for_error(symbol)
         self.orderbook[symbol]['timestamp'] = int(time.time())
 
     def _channel_orderbook_update(self, ob: dict):
@@ -542,15 +545,15 @@ class DydxClient(BaseClient):
             self.count_flag = True
         # print(f"\n\nDYDX NEW OB APPEND TIME: {time.time() - time_start} sec\n\n")
 
-    def _check_for_error(self):
-        orderbook = self.orderbook[self.symbol]
+    def _check_for_error(self, symbol):
+        orderbook = self.orderbook[symbol]
         top_ask = orderbook['asks'][0]
         top_bid = orderbook['bids'][0]
         if top_ask[0] < top_bid[0]:
             if top_ask[2] <= top_bid[2]:
-                self.orderbook[self.symbol]['asks'].remove(top_ask)
+                self.orderbook[symbol]['asks'].remove(top_ask)
             else:
-                self.orderbook[self.symbol]['bids'].remove(top_bid)
+                self.orderbook[symbol]['bids'].remove(top_bid)
 
     @staticmethod
     def _append_format_pos(position):
@@ -591,6 +594,7 @@ class DydxClient(BaseClient):
         return self.positions
 
     def _update_orders(self, orders):
+        # print('WS resp:\n', orders, '\n\n')
         for order in orders:
             # print(f'DYDX websocket update {order=}')
             status = None
@@ -607,22 +611,24 @@ class DydxClient(BaseClient):
                 status = OrderStatus.NOT_EXECUTED
 
             if status:
-                executed_size = float(order['size']) - float(order['remainingSize'])
+                if status in [OrderStatus.PROCESSING, OrderStatus.NOT_EXECUTED]:
+                    real_price = 0
+                    executed_size = 0
+                    executed_size_usd = 0
+                else:
+                    real_price = self.get_last_price(order['market'], order['side'])
+                    executed_size = float(order['size']) - float(order['remainingSize'])
+                    executed_size_usd = executed_size * real_price
                 result = {
                     'exchange_order_id': order['id'],
                     'exchange': self.EXCHANGE_NAME,
                     'status': status,
-                    'factual_price': 0 if status in [OrderStatus.PROCESSING, OrderStatus.NOT_EXECUTED] else float(
-                        order['price']),
-                    'factual_amount_coin': 0 if status in [OrderStatus.PROCESSING,
-                                                           OrderStatus.NOT_EXECUTED] else executed_size,
-                    'factual_amount_usd': 0 if status in [OrderStatus.PROCESSING,
-                                                          OrderStatus.NOT_EXECUTED] else executed_size * float(
-                        order['price']),
+                    'factual_price': real_price,
+                    'factual_amount_coin':  executed_size,
+                    'factual_amount_usd': executed_size_usd,
                     'datetime_update': datetime.utcnow(),
                     'ts_update': int(time.time() * 1000)
                 }
-
                 self.orders.update({order['id']: result})
 
             # if self.orders.get(order['market']):
@@ -711,12 +717,12 @@ class DydxClient(BaseClient):
             position = self._append_format_pos(position)
             self.positions[market] = position
 
-    def get_last_price(self, side):
+    def get_last_price(self, market, side):
         side = side.upper()
         last_trade = self.get_fills()
         last_price = 0
-        if last_trade.get(self.symbol):
-            last_trade = last_trade[self.symbol][0]
+        if last_trade.get(market):
+            last_trade = last_trade[market][0]
             if last_trade['side'] == side:
                 last_price = last_trade['price']
         return last_price
@@ -808,19 +814,15 @@ class DydxClient(BaseClient):
                     if obj['contents'].get('positions'):
                         if len(obj['contents']['positions']):
                             self._update_positions(obj['contents']['positions'])
-                    if obj['contents'].get('orders'):
-                        if len(obj['contents']['orders']):
-                            self._update_orders(obj['contents']['orders'])
                     if obj['contents'].get('fills'):
                         if len(obj['contents']['fills']):
                             self._update_fills(obj['contents']['fills'])
+                    if obj['contents'].get('orders'):
+                        if len(obj['contents']['orders']):
+                            self._update_orders(obj['contents']['orders'])
                     if obj['contents'].get('account'):
                         if len(obj['contents']['account']):
                             self._update_account(obj['contents']['account'])
-
-                            # print('ACCOUNT!!!:')
-                            # print(obj['contents']['account'])
-                            # print()
 
     async def get_orderbook_by_symbol(self, symbol=None):
         async with aiohttp.ClientSession() as session:
@@ -936,7 +938,8 @@ if __name__ == '__main__':
                         float(config['SETTINGS']['LEVERAGE']),
                         int(config['TELEGRAM']['ALERT_CHAT_ID']),
                         config['TELEGRAM']['ALERT_BOT_TOKEN'],
-                        max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']))
+                        max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
+                        markets_list=['RUNE'])
     # client.run_updater()
     # client.get_real_balance()
     # print(client.get_balance())
@@ -949,20 +952,25 @@ if __name__ == '__main__':
     # print(client.new_get_available_balance())
 
 
-    # async def test_order():
-    #     async with aiohttp.ClientSession() as session:
-    #         client.fit_amount(-0.017)
-    #         price = client.get_orderbook()[client.symbol]['bids'][10][0]
-    #         data = await client.create_order(price,
-    #                                          'buy',
-    #                                          session,
-    #                                          client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+    async def test_order():
+        async with aiohttp.ClientSession() as session:
+            ob = client.get_orderbook('RUNE-USD')
+            price = ob['asks'][5][0]
+            # client.get_markets()
+            client.fit_sizes(10, price, 'RUNE-USD')
+            data = await client.create_order('RUNE-USD',
+                                             'buy',
+                                             session=session,
+                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+            # print(data)
     #         print(data)
     #         client.cancel_all_orders()
     #
+    time.sleep(5)
+    asyncio.run(test_order())
     while True:
         time.sleep(5)
-        print(client.get_all_tops())
+    #     print(client.get_all_tops())
     #     print(client.get_balance())
     # while True:
     #     time.sleep(5)
