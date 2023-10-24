@@ -216,7 +216,7 @@ class KrakenClient(BaseClient):
             except:
                 continue
             # print(f"Orderbook fetch time: {time.time() - time_start}")
-            return orderbook
+            return orderbook[symbol]
 
     def get_all_tops(self):
         orderbooks = dict()
