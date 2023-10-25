@@ -64,7 +64,7 @@ class DydxClient(BaseClient):
         self.count_flag = False
 
         self.requestLimit = 1050  # 175 за 10 секунд https://dydxprotocol.github.io/v3-teacher/#rate-limit-api
-        self.markets_multi = {}
+        self.markets = {}
         self.balance = {'free': 0, 'total': 0, 'timestamp': time.time()}
         self.orderbook = {}
         self.amount = 0
@@ -73,7 +73,7 @@ class DydxClient(BaseClient):
         self.keys = keys
         self.user = self.client.private.get_user().data
         self.account = self.client.private.get_account().data
-        self.markets = self.client.public.get_markets().data
+        self.instruments = self.client.public.get_markets().data
         self.leverage = leverage
 
         self.get_real_balance()
@@ -104,7 +104,7 @@ class DydxClient(BaseClient):
 
     def cancel_all_orders(self, order_id=None):
         for coin in self.markets_list:
-            market = self.markets_multi[coin]
+            market = self.markets[coin]
             self.client.private.cancel_active_orders(market=market)
 
     def get_real_balance(self):
@@ -133,17 +133,17 @@ class DydxClient(BaseClient):
 
     def get_markets(self):
         # markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
-        for market, value in self.markets['markets'].items():
+        for market, value in self.instruments['markets'].items():
             if value['quoteAsset'] == 'USD' and value['status'] == 'ONLINE':
                 coin = value['baseAsset']
-                self.markets_multi.update({coin: market})
+                self.markets.update({coin: market})
             else:
                 message = f"{self.EXCHANGE_NAME}:\n{market} has status {value['status']}"
                 try:
                     self.telegram_bot.send_message(self.chat_id, '<pre>' + message + '</pre>', parse_mode='HTML')
                 except:
                     pass
-        return self.markets_multi
+        return self.markets
 
     async def get_multi_orderbook(self, symbol):
         async with aiohttp.ClientSession() as session:
@@ -303,19 +303,23 @@ class DydxClient(BaseClient):
             return orders
 
     def get_sizes_for_symbol(self, symbol):
-        tick_size = float(self.markets['markets'][symbol]['tickSize'])
-        step_size = float(self.markets['markets'][symbol]['stepSize'])
+        tick_size = float(self.instruments['markets'][symbol]['tickSize'])
+        step_size = float(self.instruments['markets'][symbol]['stepSize'])
         quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
         return tick_size, step_size, quantity_precision
 
     def fit_sizes(self, amount, price, symbol) -> None:
         tick_size, step_size, quantity_precision = self.get_sizes_for_symbol(symbol)
-        self.amount = round(amount - (amount % step_size), quantity_precision)
+        rounded_amount = round(amount / step_size) * step_size
+        self.amount = round(rounded_amount, quantity_precision)
         if '.' in str(tick_size):
             round_price_len = len(str(tick_size).split('.')[1])
+        elif '-' in str(tick_size):
+            round_price_len = int(str(tick_size).split('-')[1])
         else:
             round_price_len = 0
-        self.price = round(price - (price % tick_size), round_price_len)
+        rounded_price = round(price / tick_size) * tick_size
+        self.price = round(rounded_price, round_price_len)
 
     async def create_order(self, symbol, side: str, session: aiohttp.ClientSession,
                            type: str = 'LIMIT', expire: int = 10000, client_id: str = None, expiration=None) -> dict:
@@ -471,9 +475,9 @@ class DydxClient(BaseClient):
         await self._ws.send_json(msg)
 
     async def _subscribe_orderbooks(self):
-        # self.markets_list = list(self.markets_multi.keys())[:10]
+        # self.markets_list = list(self.markets.keys())[:10]
         for symbol in self.markets_list:
-            if market := self.markets_multi.get(symbol):
+            if market := self.markets.get(symbol):
                 msg = {
                     'type': 'subscribe',
                     'channel': 'v3_orderbook',

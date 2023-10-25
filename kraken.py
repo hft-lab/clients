@@ -548,8 +548,10 @@ class KrakenClient(BaseClient):
 
     def fit_sizes(self, amount, price, symbol) -> None:
         price_precision, quantity_precision, tick_size, step_size = self.get_sizes(symbol)
-        self.amount = round(amount - (amount % step_size), quantity_precision)
-        self.price = round(price - (price % tick_size), price_precision)
+        rounded_amount = round(amount / step_size) * step_size
+        self.amount = round(rounded_amount, quantity_precision)
+        rounded_price = round(price / tick_size) * tick_size
+        self.price = round(rounded_price, price_precision)
 
     async def create_order(self, symbol, side: str, session: aiohttp.ClientSession, expire=5000, client_id=None):
         time_sent = datetime.utcnow().timestamp()

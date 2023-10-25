@@ -8,48 +8,53 @@ import base64
 import json
 import threading
 import string
-import datetime
+from datetime import datetime
 import requests
 import random
 import queue
+import telebot
+import uuid
 
 from core.base_client import BaseClient
-from clients.enums import ResponseStatus
+from clients.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
 
 
 class OkxClient(BaseClient):
     URI_WS_AWS = "wss://wsaws.okx.com:8443/ws/v5/public"
-    URI_WS_PRIVATE = "wss://ws.okx.com:8443/ws/v5/private"
+    URI_WS_PRIVATE = "wss://wsaws.okx.com:8443/ws/v5/private"
+    headers = {'Content-Type': 'application/json'}
     EXCHANGE_NAME = 'OKX'
 
-    def __init__(self, keys, leverage=2):
-        self.create_order_response = {}
+    def __init__(self, keys, leverage, alert_id, alert_token, markets_list=[], max_pos_part=20):
+        self.max_pos_part = max_pos_part
+        self.markets_list = markets_list
+        self.chat_id = int(alert_id)
+        self.telegram_bot = telebot.TeleBot(alert_token)
+        self.create_order_response = False
         self.symbol = keys['symbol']
         self.leverage = leverage
-        self.public_key = keys['public_key']
-        self.secret_key = keys['secret_key']
-        self.passphrase = keys['passphrase']
-        self.positions = {self.symbol: {'side': 0, 'amount_usd': 0, 'amount': 0, 'entry_price': 0,
-                                        'unrealized_pnl_usd': 0, 'realized_pnl_usd': 0, 'lever': self.leverage}}
+        self.public_key = keys['API_KEY']
+        self.secret_key = keys['API_SECRET']
+        self.passphrase = keys['PASSPHRASE']
+        self.positions = {}
         self._loop_public = asyncio.new_event_loop()
         self._loop_private = asyncio.new_event_loop()
         self.queue = queue.Queue()
         self._connected = asyncio.Event()
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=['public', self._loop_public])
         self.wst_private = threading.Thread(target=self._run_ws_forever, args=['private', self._loop_private])
-        self.instrument = self.get_instrument()
-        self.tick_size = float(self.instrument['tickSz'])
-        self.step_size = float(self.instrument['lotSz'])
-        print('OKX STEP', self.step_size)
-        self.quantity_precision = len(str(self.step_size).split('.')[1]) if '.' in str(self.step_size) else 1
+        self.instruments = self.get_instruments()
+        self.markets = self.get_markets()
 
+        self.price = 0
+        self.amount = 0
         self.orderbook = {}
         self.orders = {}
-        self.last_price = {'buy': 0, 'sell': 0}
+        self.last_price = {}
         self.balance = {'free': 0, 'total': 0}
         self.taker_fee = 0
-        self.start_time = int(time.time())
-        self.time_sent = time.time()
+        self.start_time = int(datetime.utcnow().timestamp())
+        self.time_sent = datetime.utcnow().timestamp()
 
     @staticmethod
     def id_generator(size=12, chars=string.digits):
@@ -85,15 +90,18 @@ class OkxClient(BaseClient):
 
         return base64.b64encode(signature).decode('UTF-8')
 
-    async def _subscribe_orderbook(self):
-        msg = {
-            "op": "subscribe",
-            "args": [{
-                "channel": "bbo-tbt",  # 0-l2-tbt",
-                "instId": self.symbol
-            }]}
-        await self._connected.wait()
-        await self._ws_public.send_json(msg)
+    async def _subscribe_orderbooks(self):
+        # for symbol in list(self.markets.values())[:10]:
+        for symbol in self.markets_list:
+            if market := self.markets.get(symbol):
+                msg = {
+                    "op": "subscribe",
+                    "args": [{
+                        "channel": "books5",  # 0-l2-tbt",
+                        "instId": market
+                    }]}
+                await self._connected.wait()
+                await self._ws_public.send_json(msg)
 
     async def _subscribe_account(self):
         msg = {
@@ -102,37 +110,44 @@ class OkxClient(BaseClient):
                 "channel": "account"
             }]}
         await self._connected.wait()
-        await self._ws_private.send_json(msg)
+        try:
+            await self._ws_private.send_json(msg)
+        except Exception as e:
+            traceback.print_exc()
 
     async def _subscribe_positions(self):
-        msg = {
-            "op": "subscribe",
-            "args": [
-                {
-                    "channel": "positions",
-                    "instType": "SWAP",
-                    "instFamily": "BTC-USDT",
-                    "instId": "BTC-USDT-SWAP"
+        for symbol in self.markets_list:
+            if market := self.markets.get(symbol):
+                msg = {
+                    "op": "subscribe",
+                    "args": [
+                        {
+                            "channel": "positions",
+                            "instType": "SWAP",
+                            "instFamily": market.split('-SWAP')[0],
+                            "instId": market
+                        }
+                    ]
                 }
-            ]
-        }
-        await self._connected.wait()
-        await self._ws_private.send_json(msg)
+                await self._connected.wait()
+                await self._ws_private.send_json(msg)
 
     async def _subscribe_orders(self):
-        msg = {
-            "op": "subscribe",
-            "args": [
-                {
-                    "channel": "orders",
-                    "instType": "SWAP",
-                    "instFamily": "BTC-USDT",
-                    "instId": "BTC-USDT-SWAP"
+        for symbol in self.markets_list:
+            if market := self.markets.get(symbol):
+                msg = {
+                    "op": "subscribe",
+                    "args": [
+                        {
+                            "channel": "orders",
+                            "instType": "SWAP",
+                            "instFamily": market.split('-SWAP')[0],
+                            "instId": market
+                        }
+                    ]
                 }
-            ]
-        }
-        await self._connected.wait()
-        await self._ws_private.send_json(msg)
+                await self._connected.wait()
+                await self._ws_private.send_json(msg)
 
     def _run_ws_forever(self, type, loop):
         while True:
@@ -166,20 +181,40 @@ class OkxClient(BaseClient):
                 else:
                     self._ws_public = ws
                     self._loop_public.create_task(self._login(ws, self._connected))
-                    self._loop_public.create_task(self._subscribe_orderbook())
+                    self._loop_public.create_task(self._subscribe_orderbooks())
                 async for msg in ws:
-
                     try:
-                        await self._send_order(**self.queue.get_nowait())
+                        args = self.queue.get_nowait()
+                        print(f"ORDER SENDING: {args}")
+                        await self._send_order(**args)
                     except queue.Empty:
                         await self._ping(ws)
                     self._process_msg(msg)
 
     async def _ping(self, ws):
-        time_from = int(int(round(time.time())) - self.start_time) % 5
+        time_from = int(int(round(datetime.utcnow().timestamp())) - self.start_time) % 5
         if not time_from:
             await ws.ping(b'PING')
             self.start_time -= 1
+
+    def get_position(self):
+        way = 'https://www.okx.com/api/v5/account/positions'
+        headers = self.get_private_headers('GET', '/api/v5/account/positions')
+        resp = requests.get(url=way, headers=headers).json()
+        for pos in resp['data']:
+            side = 'LONG' if float(pos['pos']) > 0 else 'SHORT'
+            amount_usd = float(pos['notionalUsd'])
+            if side == 'SHORT':
+                amount = -amount_usd / float(pos['markPx'])
+            else:
+                amount = amount_usd / float(pos['markPx'])
+            self.positions.update({pos['instId']: {'side': side,
+                                                   'amount_usd': amount_usd,
+                                                   'amount': amount,
+                                                   'entry_price': float(pos['avgPx']),
+                                                   'unrealized_pnl_usd': float(pos['upl']),
+                                                   'realized_pnl_usd': 0,
+                                                   'lever': self.leverage}})
 
     def _update_positions(self, obj):
         if not obj['data']:
@@ -191,14 +226,21 @@ class OkxClient(BaseClient):
                 amount = -amount_usd / float(obj['data'][0]['markPx'])
             else:
                 amount = amount_usd / float(obj['data'][0]['markPx'])
-            self.positions.update({obj['arg']['instId']: {'side': side, 'amount_usd': amount_usd, 'amount': amount,
+            self.positions.update({obj['arg']['instId']: {'side': side,
+                                                          'amount_usd': amount_usd,
+                                                          'amount': amount,
                                                           'entry_price': float(obj['data'][0]['avgPx']),
                                                           'unrealized_pnl_usd': float(obj['data'][0]['upl']),
-                                                          'realized_pnl_usd': 0}})
+                                                          'realized_pnl_usd': 0,
+                                                          'lever': self.leverage}})
         else:
-            self.positions.update({obj['arg']['instId']: {'side': 'LONG', 'amount_usd': 0, 'amount': 0,
-                                                          'entry_price': 0, 'unrealized_pnl_usd': 0,
-                                                          'realized_pnl_usd': 0}})
+            self.positions.update({obj['arg']['instId']: {'side': 'LONG',
+                                                          'amount_usd': 0,
+                                                          'amount': 0,
+                                                          'entry_price': 0,
+                                                          'unrealized_pnl_usd': 0,
+                                                          'realized_pnl_usd': 0,
+                                                          'lever': self.leverage}})
         # print(self.positions)
         # for one in obj['data'][0]:
         #     if obj['data'][0][one]:
@@ -212,36 +254,57 @@ class OkxClient(BaseClient):
                                         'timestamp': int(orderbook['ts'])}})
 
     def _update_account(self, obj):
-        resp = obj['data'][0]['details'][0]
-        self.balance = {'free': float(resp['availBal']),
-                        'total': float(resp['availBal']) + float(resp['frozenBal'])}
+        resp = obj['data']
+        if len(resp):
+            acc_data = resp[0]['details'][0]
+            self.balance = {'free': float(acc_data['availBal']),
+                            'total': float(acc_data['availBal']) + float(acc_data['frozenBal']),
+                            'timestamp': int(resp[0]['uTime'])}
+        else:
+            self.balance = {'free': 0,
+                            'total': 0,
+                            'timestamp': int(round(datetime.utcnow().timestamp() * 1000))}
 
     def _update_orders(self, obj):
         if obj.get('data') and obj.get('arg'):
-            self.create_order_response = obj
-            if obj['data'][0]['state'] == 'live':
-                print(f"OKEX ORDER PLACE TIME: {float(obj['data'][0]['uTime']) - self.time_sent * 1000} ms\n")
-        # print(obj)
+            for order in obj.get('data'):
+                print(f"OKEX RESPONSE: {order}\n")
+                status = None
+                if order['state'] == 'live':
+                    if float(order['px']) == self.price and float(order['sz']) == self.amount:
+                        self.create_order_response = True
+                    print(f"OKEX ORDER PLACE TIME: {float(order['uTime']) - self.time_sent} ms\n")
+                    if self.orders.get(order['ordId']):
+                        continue
+                    else:
+                        status = OrderStatus.PROCESSING
+                if order['state'] == 'filled':
+                    status = OrderStatus.FULLY_EXECUTED
+                elif order['state'] == 'canceled' and order['fillSz'] != '0' and order['fillSz'] != order['sz']:
+                    status = OrderStatus.PARTIALLY_EXECUTED
+                elif order['state'] == 'partially_filled':
+                    status = OrderStatus.PARTIALLY_EXECUTED
+                elif order['state'] == 'canceled' and order['fillSz'] == '0':
+                    status = OrderStatus.NOT_EXECUTED
+                self.get_taker_fee(order)
+                contract_value = self.get_contract_value(order['instId'])
+                result = {
+                    'exchange_order_id': order['ordId'],
+                    'exchange': self.EXCHANGE_NAME,
+                    'status': status,
+                    'factual_price': float(order['fillPx']) if order['fillPx'] else 0,
+                    'factual_amount_coin': float(order['fillSz']) * contract_value if order['fillSz'] else 0,
+                    'factual_amount_usd': float(order['fillNotionalUsd']) if order['fillNotionalUsd'] else 0,
+                    'datetime_update': datetime.utcnow(),
+                    'ts_update': int(round(datetime.utcnow().timestamp() * 1000))
+                }
+                self.orders.update({order['ordId']: result})
+
+    def get_taker_fee(self, order):
         if not self.taker_fee:
-            if obj.get('arg'):
-                if obj['data'][0]['fillNotionalUsd'] != '':  # TODO ???
-                    self.taker_fee = abs(float(obj['data'][0]['fillFee'])) / float(obj['data'][0]['fillNotionalUsd'])
-                    self.taker_fee = 0.0003
-        if not obj['arg']['instId'] == self.symbol:
-            return
-        if obj['data'][0]['state'] in ['partially_filled', 'filled', 'canceled']:
-            try:
-                self.orders.pop(obj['data'][0]['ordId'])
-            except:
-                pass
-            last_order = obj['data'][0]
-            if last_order['fillPx'] != '':
-                try:
-                    self.last_price[last_order['side']] = float(last_order['fillPx'])
-                except Exception as e:
-                    print(f"last_order info:\nERROR:{e}\nValue:{last_order}")
-        elif obj['data'][0]['state'] == 'live':
-            self.orders.update({obj['data'][0]['ordId']: obj['data'][0]})
+            if order['fillNotionalUsd']:
+                self.taker_fee = abs(float(order['fillFee'])) / float(order['fillNotionalUsd'])
+                print(self.taker_fee, 'TAKER FEE')
 
     def _process_msg(self, msg: aiohttp.WSMessage):
         obj = json.loads(msg.data)
@@ -257,32 +320,64 @@ class OkxClient(BaseClient):
             elif obj['arg']['channel'] == 'orders':
                 self._update_orders(obj)
 
-    async def create_order(self, amount: float, price: float, side: str, session: aiohttp.ClientSession,
-                           expire: int = 100, client_ID: str = None) -> dict:
-        self.time_sent = time.time() * 1000
-        self.queue.put_nowait({'amount': amount, 'price': price, 'side': side, 'expire': expire})
+    def get_contract_value(self, symbol):
+        for instrument in self.instruments:
+            if instrument['instId'] == symbol:
+                contract_value = float(instrument['ctVal'])
+                return contract_value
 
+    def get_sizes_for_symbol(self, symbol):
+        for instrument in self.instruments:
+            if instrument['instId'] == symbol:
+                tick_size = float(instrument['tickSz'])
+                step_size = float(instrument['lotSz'])
+                contract_value = float(instrument['ctVal'])
+                min_size = float(instrument['minSz'])
+                quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
+                return tick_size, step_size, quantity_precision, contract_value, min_size
+
+    def fit_sizes(self, amount, price, symbol) -> None:
+        tick_size, step_size, quantity_precision, contract_value, min_size = self.get_sizes_for_symbol(symbol)
+        amount = amount / contract_value
+        if min_size > amount:
+            print(f"\n\nOKEX {symbol} ORDER LESS THAN MIN SIZE: {min_size}\n\n")
+        rounded_amount = round(amount / step_size) * step_size
+        self.amount = round(rounded_amount, quantity_precision)
+        if '.' in str(tick_size):
+            round_price_len = len(str(tick_size).split('.')[1])
+        elif '-' in str(tick_size):
+            round_price_len = int(str(tick_size).split('-')[1])
+        else:
+            round_price_len = 0
+        rounded_price = round(price / tick_size) * tick_size
+        self.price = round(rounded_price, round_price_len)
+
+    async def create_order(self, symbol, side, session: aiohttp.ClientSession, expire=100, client_id=None) -> dict:
+        self.time_sent = int(round((datetime.utcnow().timestamp()) * 1000))
+        self.queue.put_nowait({'symbol': symbol,
+                               'amount': self.amount,
+                               'price': self.price,
+                               'side': side,
+                               'expire': expire})
+        while not self.create_order_response or datetime.utcnow().timestamp() - (self.time_sent / 1000) < 5:
+            time.sleep(0.01)
         response = {
             'exchange_name': self.EXCHANGE_NAME,
-            'timestamp': (self.time_sent +  time.time() * 1000) / 2,
-            'status': ResponseStatus.SUCCESS if self.create_order_response.get('code') == '0' else ResponseStatus.ERROR
+            'timestamp': int(round((datetime.utcnow().timestamp()) * 1000)),
+            'status': ResponseStatus.SUCCESS if self.create_order_response else ResponseStatus.ERROR
         }
-        self.create_order_response = {}
+        self.create_order_response = False
         return response
 
-    async def _send_order(self, amount, price, side, expire=1000):
-        # expire_date = str(round((time.time() + expire) * 1000))
-
-        amount = self.fit_amount(float(amount))
-        price = self.fit_price(price)
-
+    async def _send_order(self, symbol, amount, price, side, expire=100):
+        # expire_date = str(round((datetime.utcnow().timestamp() + expire) * 1000))
         msg = {
             "id": self.id_generator(),
             "op": "order",
             "args": [
                 {
                     "side": side,
-                    "instId": self.symbol,
+                    "instId": symbol,
                     "tdMode": "cross",
                     "ordType": 'limit',
                     "sz": amount,
@@ -293,64 +388,218 @@ class OkxClient(BaseClient):
         }
         await self._ws_private.send_json(msg)
 
-    def fit_amount(self, amount):
-        amount = int((amount - (amount % float(self.instrument['ctVal']))) / float(self.instrument['ctVal']))
-        return str(amount - (amount % self.step_size))
-
-    def fit_price(self, price):
-        if '.' in str(self.tick_size):
-            float_len = len(str(self.tick_size).split('.')[1])
-            price = round(price - (price % self.tick_size), float_len)
-        else:
-            price = int(round(price - (price % self.tick_size)))
-        return str(price)
-
     @staticmethod
     def get_timestamp():
-        now = datetime.datetime.utcnow()
+        now = datetime.utcnow()
         t = now.isoformat("T", "milliseconds")
         return t + "Z"
 
-    def get_instrument(self):
+    def get_instruments(self):
         way = f'https://www.okx.com/api/v5/public/instruments?instType=SWAP'
-        headers = {'Content-Type': 'application/json',
-                   'instId': self.symbol}
-        instrument = requests.get(url=way, headers=headers).json()
-        for inst in instrument['data']:
-            if inst['instId'] == self.symbol:
-                instrument = inst
-                break
-        return instrument
+        resp = requests.get(url=way, headers=self.headers).json()
+        return resp['data']
 
-    def get_available_balance(self, side):
-        orderbook = self.get_orderbook()[self.symbol]
-        position = self.get_positions()[self.symbol]
-        change = (orderbook['asks'][0][0] + orderbook['bids'][0][0]) / 2
-        while not self.balance['total']:
-            print(f"Balance not updated. Line 380. Func get_avail_bal")
-            time.sleep(0.01)
-        locked_balance = self.balance['total'] - self.balance['free']
-        real_leverage = (locked_balance * self.leverage) / self.balance['total']
-        if side == 'buy':
-            avail_balance = (self.leverage - real_leverage) * self.balance['total'] - position['amount'] * change
+    def get_markets(self):
+        markets = {}
+        for instrument in self.instruments:
+            coin = instrument['ctValCcy']
+            market = instrument['instId']
+            if instrument['state'] == 'live':
+                if instrument['settleCcy'] == 'USDT':
+                    markets.update({coin: market})
+            else:
+                message = f"{self.EXCHANGE_NAME}:\n{market} has status {instrument['state']}"
+                try:
+                    self.telegram_bot.send_message(self.chat_id, '<pre>' + message + '</pre>', parse_mode='HTML')
+                except:
+                    pass
+            # print(inst['instId'], inst, '\n')
+        return markets
+
+    def get_available_balance(self):
+        available_balances = {}
+        position_value = 0
+        position_value_abs = 0
+        available_margin = self.balance['total'] * self.leverage
+        avl_margin_per_market = available_margin / 100 * self.max_pos_part
+        for symbol, position in self.positions.items():
+            if position.get('amount_usd'):
+                position_value += position['amount_usd']
+                position_value_abs += abs(position['amount_usd'])
+                if position['amount_usd'] < 0:
+                    available_balances.update({symbol: {'buy': avl_margin_per_market + position['amount_usd'],
+                                                        'sell': avl_margin_per_market - position['amount_usd']}})
+                else:
+                    available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
+                                                        'sell': avl_margin_per_market + position['amount_usd']}})
+        if position_value_abs < available_margin:
+            available_balances['buy'] = available_margin - position_value
+            available_balances['sell'] = available_margin + position_value
         else:
-            avail_balance = (self.leverage - real_leverage) * self.balance['total'] + position['amount'] * change
-        order_size = orderbook['bids'][0][1] * change if side == 'sell' else orderbook['asks'][0][1] * change
-        return min(avail_balance, order_size)
+            for symbol, position in self.positions.items():
+                if position.get('amount_usd'):
+                    if position['amount_usd'] < 0:
+                        available_balances.update({symbol: {'buy': abs(position['amount_usd']),
+                                                            'sell': 0}})
+                    else:
+                        available_balances.update({symbol: {'buy': 0,
+                                                            'sell': position['amount_usd']}})
+            available_balances['buy'] = 0
+            available_balances['sell'] = 0
+        return available_balances
 
     def get_positions(self):
         return self.positions
 
-    def get_real_balance(self):
-        return self.balance['total']
+    def get_private_headers(self, method, way, body=None):
+        dt = datetime.utcnow()
+        formatted_datetime = dt.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        timestamp = str(formatted_datetime)[:-4] + 'Z'
+        signature = self.signature(timestamp, method, way, body)
+        headers = {'OK-ACCESS-KEY': self.public_key,
+                   'OK-ACCESS-SIGN': signature,
+                   'OK-ACCESS-TIMESTAMP': timestamp,
+                   'OK-ACCESS-PASSPHRASE': self.passphrase}
+        return headers
 
-    def get_orderbook(self):
-        while not self.orderbook.get(self.symbol):
-            time.sleep(0.001)
-        return self.orderbook
+    def get_real_balance(self):
+        way = 'https://www.okx.com/api/v5/account/balance?ccy=USDT'
+        headers = self.get_private_headers('GET', '/api/v5/account/balance?ccy=USDT')
+        headers.update(self.headers)
+        resp = requests.get(url=way, headers=headers).json()
+        if resp.get('code') == '0':
+            self.balance = {'free': float(resp['data'][0]['details'][0]['availEq']),
+                            'total': float(resp['data'][0]['details'][0]['eq']),
+                            'timestamp': datetime.utcnow().timestamp()}
+        # {'code': '0', 'data': [{'adjEq': '', 'borrowFroz': '', 'details': [
+        #     {'availBal': '466.6748538968118', 'availEq': '466.6748538968118', 'borrowFroz': '',
+        #      'cashBal': '500.0581872301451', 'ccy': 'USDT', 'crossLiab': '', 'disEq': '500.25821050503714',
+        #      'eq': '500.0581872301451', 'eqUsd': '500.25821050503714', 'fixedBal': '0',
+        #      'frozenBal': '33.38333333333333', 'interest': '', 'isoEq': '0', 'isoLiab': '', 'isoUpl': '0', 'liab': '',
+        #      'maxLoan': '', 'mgnRatio': '', 'notionalLever': '0', 'ordFrozen': '33.333333333333336', 'spotInUseAmt': '',
+        #      'spotIsoBal': '0', 'stgyEq': '0', 'twap': '0', 'uTime': '1698244053657', 'upl': '0', 'uplLiab': ''}],
+        #                         'imr': '', 'isoEq': '0', 'mgnRatio': '', 'mmr': '', 'notionalUsd': '', 'ordFroz': '',
+        #                         'totalEq': '500.25821050503714', 'uTime': '1698245152624'}], 'msg': ''}
+
+    def get_orderbook(self, symbol):
+        while not self.orderbook.get(symbol):
+            print(f"{self.EXCHANGE_NAME}: CAN'T GET OB {symbol}")
+            time.sleep(0.01)
+        return self.orderbook[symbol]
 
     def get_last_price(self, side):
         return self.last_price[side]
 
+    def get_orders(self):
+        return self.orders
+
     def cancel_all_orders(self, orderID=None):
         pass
+
+    def get_orderbook_by_symbol(self, symbol):
+        pass
+
+if __name__ == '__main__':
+    import configparser
+    import sys
+
+    config = configparser.ConfigParser()
+    config.read(sys.argv[1], "utf-8")
+    client = OkxClient(config['OKX'],
+                       float(config['SETTINGS']['LEVERAGE']),
+                       int(config['TELEGRAM']['ALERT_CHAT_ID']),
+                       config['TELEGRAM']['ALERT_BOT_TOKEN'],
+                       max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
+                       markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
+    # client.run_updater()
+
+    time.sleep(5)
+    # print(client.get_available_balance())
+    # price = client.get_orderbook('SOL-USDT-SWAP')['asks'][4][0]
+    # client.fit_sizes(1, price, 'SOL-USDT-SWAP')
+    client.get_position()
+    print(client.positions)
+    client.get_real_balance()
+    print(client.balance)
+    # print(client.get_available_balance())
+
+
+
+    async def test_order():
+        async with aiohttp.ClientSession() as session:
+            data = await client.create_order('SOL-USDT-SWAP',
+                                             'buy',
+                                             session=session,
+                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+            print(data)
+
+
+    # asyncio.run(test_order())
+    # time.sleep(5)
+    # client.get_position()
+    while True:
+        time.sleep(5)
+    # client.get_markets()
+
+# import asyncio
+# import aiohttp
+#
+# class WebSocketClient:
+#     def __init__(self, url):
+#         self.url = url
+#         self.ws = None
+#         self.lock = asyncio.Lock()
+#         self.connected = asyncio.Event()
+#
+#     async def connect(self):
+#         async with self.lock:
+#             self.ws = await aiohttp.ClientSession().ws_connect(self.url)
+#             self.connected.set()
+#
+#     async def disconnect(self):
+#         async with self.lock:
+#             if self.ws:
+#                 await self.ws.close()
+#                 self.connected.clear()
+#
+#     async def send_message(self, message):
+#         async with self.lock:
+#             if not self.connected.is_set():
+#                 await self.connect()
+#             await self.ws.send_str(message)
+#
+#     async def receive_messages(self):
+#         while True:
+#             try:
+#                 async with self.lock:
+#                     if not self.connected.is_set():
+#                         await self.connect()
+#                     msg = await self.ws.receive()
+#                     if msg.type == aiohttp.WSMsgType.TEXT:
+#                         print(f"Received: {msg.data}")
+#                     elif msg.type == aiohttp.WSMsgType.CLOSED:
+#                         print("WebSocket closed by the server.")
+#                         await self.disconnect()
+#                         break
+#                     elif msg.type == aiohttp.WSMsgType.ERROR:
+#                         print("WebSocket error occurred.")
+#                         await self.disconnect()
+#                         break
+#             except Exception as e:
+#                 print(f"WebSocket error: {e}")
+#                 await self.disconnect()
+#
+# async def main():
+#     url = "wss://example.com/ws"  # Replace with your WebSocket URL
+#     client = WebSocketClient(url)
+#
+#     while True:
+#         try:
+#             await client.receive_messages()
+#         except KeyboardInterrupt:
+#             break
+#         except Exception as e:
+#             print(f"Error in main loop: {e}")
+#
+# if __name__ == "__main__":
+#     asyncio.run(main())
