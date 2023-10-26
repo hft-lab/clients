@@ -65,7 +65,7 @@ class DydxClient(BaseClient):
 
         self.requestLimit = 1050  # 175 за 10 секунд https://dydxprotocol.github.io/v3-teacher/#rate-limit-api
         self.markets = {}
-        self.balance = {'free': 0, 'total': 0, 'timestamp': time.time()}
+        self.balance = {'free': 0, 'total': 0, 'timestamp': 0}
         self.orderbook = {}
         self.amount = 0
         self.price = 0

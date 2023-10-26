@@ -28,9 +28,11 @@ class OkxClient(BaseClient):
     def __init__(self, keys, leverage, alert_id, alert_token, markets_list=[], max_pos_part=20):
         self.max_pos_part = max_pos_part
         self.markets_list = markets_list
+        self.requestLimit = 1200
         self.chat_id = int(alert_id)
         self.telegram_bot = telebot.TeleBot(alert_token)
         self.create_order_response = False
+        self.taker_fee = 0.0005
         self.symbol = keys['symbol']
         self.leverage = leverage
         self.public_key = keys['API_KEY']
@@ -200,6 +202,11 @@ class OkxClient(BaseClient):
             await ws.ping(b'PING')
             self.start_time -= 1
 
+    def get_balance(self):
+        if int(round(datetime.utcnow().timestamp() * 1000)) - self.balance['timestamp'] > 60:
+            self.get_real_balance()
+        return self.balance['total']
+
     def get_position(self):
         way = 'https://www.okx.com/api/v5/account/positions'
         headers = self.get_private_headers('GET', '/api/v5/account/positions')
@@ -251,9 +258,10 @@ class OkxClient(BaseClient):
 
     def _update_orderbook(self, obj):
         symbol = obj['arg']['instId']
+        contract = self.get_contract_value(symbol)
         orderbook = obj['data'][0]
-        self.orderbook.update({symbol: {'asks': [[float(x[0]), float(x[1]), int(x[3])] for x in orderbook['asks']],
-                                        'bids': [[float(x[0]), float(x[1]), int(x[3])] for x in orderbook['bids']],
+        self.orderbook.update({symbol: {'asks': [[float(x[0]), float(x[1]) * contract] for x in orderbook['asks']],
+                                        'bids': [[float(x[0]), float(x[1]) * contract] for x in orderbook['bids']],
                                         'timestamp': int(orderbook['ts'])}})
 
     def _update_account(self, obj):
@@ -471,7 +479,7 @@ class OkxClient(BaseClient):
         if resp.get('code') == '0':
             self.balance = {'free': float(resp['data'][0]['details'][0]['availEq']),
                             'total': float(resp['data'][0]['details'][0]['eq']),
-                            'timestamp': datetime.utcnow().timestamp()}
+                            'timestamp': datetime.utcnow().timestamp() * 1000}
         # {'code': '0', 'data': [{'adjEq': '', 'borrowFroz': '', 'details': [
         #     {'availBal': '466.6748538968118', 'availEq': '466.6748538968118', 'borrowFroz': '',
         #      'cashBal': '500.0581872301451', 'ccy': 'USDT', 'crossLiab': '', 'disEq': '500.25821050503714',
@@ -573,6 +581,7 @@ class OkxClient(BaseClient):
             if order['avgPx']:
                 usd_size = float(order['fillSz']) * float(order['avgPx'])
                 real_fee = abs(float(order['fee'])) / usd_size
+            contract_value = self.get_contract_value(order['instId'])
             order.update({
                     'id': uuid.uuid4(),
                     'datetime': datetime.utcfromtimestamp(int(order['uTime']) / 1000),
@@ -586,11 +595,11 @@ class OkxClient(BaseClient):
                     'side': order['side'].lower(),
                     'symbol': symbol,
                     'expect_price': float(order['px']),
-                    'expect_amount_coin': float(order['sz']),
-                    'expect_amount_usd': float(order['px']) * float(order['sz']),
+                    'expect_amount_coin': float(order['sz']) * contract_value,
+                    'expect_amount_usd': float(order['px']) * float(order['sz']) * contract_value,
                     'expect_fee': self.taker_fee,
                     'factual_price': float(order['avgPx']) if order['avgPx'] else 0,
-                    'factual_amount_coin': float(order['fillSz']) if order['fillSz'] else 0,
+                    'factual_amount_coin': float(order['fillSz']) * contract_value if order['fillSz'] else 0,
                     'factual_amount_usd': usd_size,
                     'factual_fee': real_fee,
                     'order_place_time': 0,
@@ -623,6 +632,11 @@ class OkxClient(BaseClient):
         way = f'https://www.okx.com/api/v5/market/books?instId={symbol}&sz=10'
         resp = requests.get(url=way, headers=self.headers).json()
         orderbook = resp['data'][0]
+        contract = self.get_contract_value(symbol)
+        new_asks = [[float(ask[0]), float(ask[1]) * contract] for ask in orderbook['asks']]
+        new_bids = [[float(bid[0]), float(bid[1]) * contract] for bid in orderbook['bids']]
+        orderbook['asks'] = new_asks
+        orderbook['bids'] = new_bids
         orderbook['timestamp'] = int(orderbook['ts'])
         return orderbook
 
@@ -681,44 +695,45 @@ if __name__ == '__main__':
                        config['TELEGRAM']['ALERT_BOT_TOKEN'],
                        max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
                        markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
-    # client.run_updater()
+    client.run_updater()
 
-    # time.sleep(5)
+    time.sleep(1)
+    print(client.get_orderbook('XRP-USDT-SWAP'))
     # print(client.get_available_balance())
     # price = client.get_orderbook('SOL-USDT-SWAP')['bids'][5][0]
-    price = 1
-    client.fit_sizes(2, price, 'SOL-USDT-SWAP')
+    # price = 1
+    # client.fit_sizes(2, price, 'SOL-USDT-SWAP')
     # client.get_position()
     # print(client.positions)
     # client.get_real_balance()
     # print(client.balance)
-    print(client.get_orderbook_by_symbol('SOL-USDT-SWAP'))
-    client.create_http_order('SOL-USDT-SWAP', 'buy')
-
-    # print(client.get_available_balance())
-
-    async def test_order():
-        async with aiohttp.ClientSession() as session:
-            # data = await client.create_order('SOL-USDT-SWAP',
-            #                                  'buy',
-            #                                  session=session,
-            #                                  client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-            await client.get_all_orders()
-            await client.get_order_by_id(order_id='637752702231269376', symbol='SOL-USDT-SWAP', session=session)
-            # print(data)
+    print(client.get_orderbook_by_symbol('XRP-USDT-SWAP'))
+    # client.create_http_order('SOL-USDT-SWAP', 'buy')
     #
+    # # print(client.get_available_balance())
     #
-    time.sleep(1)
-    asyncio.run(test_order())
-    time.sleep(1)
-    client.cancel_all_orders()
-    time.sleep(1)
-
-    print(client.get_all_tops())
-
-    # client.get_position()
-    while True:
-        time.sleep(5)
+    # async def test_order():
+    #     async with aiohttp.ClientSession() as session:
+    #         # data = await client.create_order('SOL-USDT-SWAP',
+    #         #                                  'buy',
+    #         #                                  session=session,
+    #         #                                  client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+    #         await client.get_all_orders()
+    #         await client.get_order_by_id(order_id='637752702231269376', symbol='SOL-USDT-SWAP', session=session)
+    #         # print(data)
+    # #
+    # #
+    # time.sleep(1)
+    # asyncio.run(test_order())
+    # time.sleep(1)
+    # client.cancel_all_orders()
+    # time.sleep(1)
+    #
+    # print(client.get_all_tops())
+    #
+    # # client.get_position()
+    # while True:
+    #     time.sleep(5)
     # client.get_markets()
 
 # import asyncio
