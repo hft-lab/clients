@@ -541,7 +541,7 @@ class BinanceClient(BaseClient):
                             'status': status,
                             'exchange': self.EXCHANGE_NAME,
                             'side': order['side'].lower(),
-                            'symbol': self.symbol,
+                            'symbol': symbol,
                             'expect_price': float(order['price']),
                             'expect_amount_coin': float(order['origQty']),
                             'expect_amount_usd': float(order['price']) * float(order['origQty']),

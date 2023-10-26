@@ -90,6 +90,7 @@ class DydxClient(BaseClient):
         self.pings = []
 
     def get_position(self):
+        # NECESSARY
         for pos in self.client.private.get_positions().data.get('positions', []):
             if pos['status'] != 'CLOSED':
                 self.positions.update({pos['market']: {
@@ -103,11 +104,13 @@ class DydxClient(BaseClient):
                 }})
 
     def cancel_all_orders(self, order_id=None):
+        # NECESSARY
         for coin in self.markets_list:
             market = self.markets[coin]
             self.client.private.cancel_active_orders(market=market)
 
     def get_real_balance(self):
+        # NECESSARY
         try:
             res = self.client.private.get_account().data
             self.balance = {'free': float(res['account']['freeCollateral']),
@@ -132,6 +135,7 @@ class DydxClient(BaseClient):
     #        await self.create_order(amount, price, side, session, type)
 
     def get_markets(self):
+        # NECESSARY
         # markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
         for market, value in self.instruments['markets'].items():
             if value['quoteAsset'] == 'USD' and value['status'] == 'ONLINE':
@@ -157,6 +161,7 @@ class DydxClient(BaseClient):
                     print(f"Error from DyDx Module, symbol: {symbol}, error: {error}")
 
     def get_all_tops(self):
+        # NECESSARY
         tops = {}
         for symbol, orderbook in self.orderbook.items():
             coin = symbol.upper().split('-')[0]
@@ -230,13 +235,14 @@ class DydxClient(BaseClient):
                     'factual_amount_coin': float(res['size']),
                     'factual_amount_usd': float(res['size']) * float(res['price']),
                     'datetime_update': datetime.utcnow(),
-                    'ts_update': int(time.time() * 1000)
+                    'ts_update': int(datetime.utcnow().timestamp() * 1000)
                 }
             # else:
 
                 # print(f"DYDX get_order_by_id {res=}")
 
     async def get_all_orders(self, symbol, session) -> list:
+        # NECESSARY
         data = {}
         now_iso_string = generate_now_iso()
         request_path = f'/v3/orders?market={symbol}'
@@ -309,6 +315,7 @@ class DydxClient(BaseClient):
         return tick_size, step_size, quantity_precision
 
     def fit_sizes(self, amount, price, symbol) -> None:
+        # NECESSARY
         tick_size, step_size, quantity_precision = self.get_sizes_for_symbol(symbol)
         rounded_amount = round(amount / step_size) * step_size
         self.amount = round(rounded_amount, quantity_precision)
@@ -323,6 +330,7 @@ class DydxClient(BaseClient):
 
     async def create_order(self, symbol, side: str, session: aiohttp.ClientSession,
                            type: str = 'LIMIT', expire: int = 10000, client_id: str = None, expiration=None) -> dict:
+        # NECESSARY
         time_sent = datetime.utcnow().timestamp()
         expire_date = int(round(time.time()) + expire)
         now_iso_string = generate_now_iso()
@@ -426,6 +434,7 @@ class DydxClient(BaseClient):
     #     return self.client.private.get_funding_payments(market=self.symbol, limit=300).data
 
     def run_updater(self):
+        # NECESSARY
         self.wst.start()
         # except Exception as e:
         #     print(f"Error line 33: {e}")
@@ -596,6 +605,7 @@ class DydxClient(BaseClient):
         return unrealized_pnl + realized_pnl
 
     def get_positions(self):
+        # NECESSARY
         return self.positions
 
     def _update_orders(self, orders):
@@ -667,6 +677,7 @@ class DydxClient(BaseClient):
         return time.mktime(datetime.strptime(date, "%Y-%m-%dT%H:%M:%S.%fZ").timetuple()) + ms
 
     def get_orders(self):
+        # NECESSARY
         return self.orders
 
     @staticmethod
@@ -710,6 +721,7 @@ class DydxClient(BaseClient):
         return self.fills
 
     def get_balance(self):
+        # NECESSARY
         if time.time() - self.balance['timestamp'] > 60:
             self.get_real_balance()
         return self.balance['total']
@@ -750,6 +762,7 @@ class DydxClient(BaseClient):
     #    'createdAt': '2022-08-16T18:52:16.881Z'}
 
     def get_available_balance(self):
+        # NECESSARY
         available_balances = {}
         position_value = 0
         position_value_abs = 0
@@ -830,6 +843,7 @@ class DydxClient(BaseClient):
                             self._update_account(obj['contents']['account'])
 
     async def get_orderbook_by_symbol(self, symbol=None):
+        # NECESSARY
         async with aiohttp.ClientSession() as session:
             data = {}
             now_iso_string = generate_now_iso()
@@ -860,6 +874,7 @@ class DydxClient(BaseClient):
                 return orderbook
 
     def get_orderbook(self, symbol):
+        # NECESSARY
         while not self.orderbook.get(symbol):
             print(f"{self.EXCHANGE_NAME}: CAN'T GET OB {symbol}")
             time.sleep(0.01)

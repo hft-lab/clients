@@ -43,13 +43,16 @@ class OkxClient(BaseClient):
         self._connected = asyncio.Event()
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=['public', self._loop_public])
         self.wst_private = threading.Thread(target=self._run_ws_forever, args=['private', self._loop_private])
+        self._ws_private = None
         self.instruments = self.get_instruments()
         self.markets = self.get_markets()
+        self.error_info = None
 
         self.price = 0
         self.amount = 0
         self.orderbook = {}
         self.orders = {}
+        self.all_orders = []
         self.last_price = {}
         self.balance = {'free': 0, 'total': 0}
         self.taker_fee = 0
@@ -269,23 +272,9 @@ class OkxClient(BaseClient):
         if obj.get('data') and obj.get('arg'):
             for order in obj.get('data'):
                 print(f"OKEX RESPONSE: {order}\n")
-                status = None
-                if order['state'] == 'live':
-                    if float(order['px']) == self.price and float(order['sz']) == self.amount:
-                        self.create_order_response = True
-                    print(f"OKEX ORDER PLACE TIME: {float(order['uTime']) - self.time_sent} ms\n")
-                    if self.orders.get(order['ordId']):
-                        continue
-                    else:
-                        status = OrderStatus.PROCESSING
-                if order['state'] == 'filled':
-                    status = OrderStatus.FULLY_EXECUTED
-                elif order['state'] == 'canceled' and order['fillSz'] != '0' and order['fillSz'] != order['sz']:
-                    status = OrderStatus.PARTIALLY_EXECUTED
-                elif order['state'] == 'partially_filled':
-                    status = OrderStatus.PARTIALLY_EXECUTED
-                elif order['state'] == 'canceled' and order['fillSz'] == '0':
-                    status = OrderStatus.NOT_EXECUTED
+                status, flag = self.get_order_status(order, 'WS')
+                if flag:
+                    continue
                 self.get_taker_fee(order)
                 contract_value = self.get_contract_value(order['instId'])
                 result = {
@@ -354,6 +343,8 @@ class OkxClient(BaseClient):
 
     async def create_order(self, symbol, side, session: aiohttp.ClientSession, expire=100, client_id=None) -> dict:
         self.time_sent = int(round((datetime.utcnow().timestamp()) * 1000))
+        if not self._ws_private:
+            return self.create_http_order(symbol, side, expire=expire, client_id=client_id)
         self.queue.put_nowait({'symbol': symbol,
                                'amount': self.amount,
                                'price': self.price,
@@ -361,12 +352,23 @@ class OkxClient(BaseClient):
                                'expire': expire})
         while not self.create_order_response or datetime.utcnow().timestamp() - (self.time_sent / 1000) < 5:
             time.sleep(0.01)
-        response = {
-            'exchange_name': self.EXCHANGE_NAME,
-            'timestamp': int(round((datetime.utcnow().timestamp()) * 1000)),
-            'status': ResponseStatus.SUCCESS if self.create_order_response else ResponseStatus.ERROR
-        }
-        self.create_order_response = False
+        return self.get_order_response()
+
+    def get_order_response(self):
+        if self.create_order_response:
+            response = {
+                'exchange_name': self.EXCHANGE_NAME,
+                'timestamp': int(round((datetime.utcnow().timestamp()) * 1000)),
+                'status': ResponseStatus.SUCCESS
+            }
+            self.create_order_response = False
+        else:
+            response = {
+                'exchange_name': self.EXCHANGE_NAME,
+                'timestamp': int(round((datetime.utcnow().timestamp()) * 1000)),
+                'status': ResponseStatus.ERROR
+            }
+            self.error_info = "WS DOESN'T GIVE ANY DATA ABOUT ERROR"
         return response
 
     async def _send_order(self, symbol, amount, price, side, expire=100):
@@ -452,14 +454,13 @@ class OkxClient(BaseClient):
         return self.positions
 
     def get_private_headers(self, method, way, body=None):
-        dt = datetime.utcnow()
-        formatted_datetime = dt.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
-        timestamp = str(formatted_datetime)[:-4] + 'Z'
+        timestamp = self.get_timestamp()
         signature = self.signature(timestamp, method, way, body)
         headers = {'OK-ACCESS-KEY': self.public_key,
                    'OK-ACCESS-SIGN': signature,
                    'OK-ACCESS-TIMESTAMP': timestamp,
                    'OK-ACCESS-PASSPHRASE': self.passphrase}
+        headers.update(self.headers)
         return headers
 
     def get_real_balance(self):
@@ -493,11 +494,180 @@ class OkxClient(BaseClient):
     def get_orders(self):
         return self.orders
 
-    def cancel_all_orders(self, orderID=None):
-        pass
+    async def get_all_orders(self, symbol=None, session=None):
+        base_way = 'https://www.okx.com'
+        way = '/api/v5/trade/orders-pending?'
+        for coin in self.markets_list:
+            way += self.markets[coin] + '&'
+        way = way[:-1]
+        headers = self.get_private_headers('GET', way)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url=base_way + way, headers=headers) as resp:
+                data = await resp.json()
+                self.all_orders = self.reformat_orders(data)
+                return self.all_orders
+
+    async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession):
+        base_way = 'https://www.okx.com'
+        way = '/api/v5/trade/order' + '?' + 'ordId=' + order_id + '&' + 'instId=' + symbol
+        headers = self.get_private_headers('GET', way)
+        headers.update({'instId': symbol})
+        async with session.get(url=base_way + way, headers=headers) as resp:
+            res = await resp.json()
+            if len(res['data']):
+                order = res['data'][0]
+                return {
+                    'exchange_order_id': order_id,
+                    'exchange': self.EXCHANGE_NAME,
+                    'status': OrderStatus.FULLY_EXECUTED if order.get('state') == 'filled' else OrderStatus.NOT_EXECUTED,
+                    'factual_price': float(order['avgPx']) if order['avgPx'] else 0,
+                    'factual_amount_coin': float(order['fillSz']) if order['avgPx'] else 0,
+                    'factual_amount_usd': float(order['fillSz']) * float(order['avgPx']) if order['avgPx'] else 0,
+                    'datetime_update': datetime.utcnow(),
+                    'ts_update': int(datetime.utcnow().timestamp() * 1000)
+                }
+            else:
+                print(f"ERROR>GET ORDER BY ID RES: {res}")
+                return {
+                    'exchange_order_id': order_id,
+                    'exchange': self.EXCHANGE_NAME,
+                    'status': OrderStatus.NOT_EXECUTED,
+                    'factual_price': 0,
+                    'factual_amount_coin': 0,
+                    'factual_amount_usd': 0,
+                    'datetime_update': datetime.utcnow(),
+                    'ts_update': int(datetime.utcnow().timestamp() * 1000)
+                }
+
+    def get_order_status(self, order, req_type):
+        status = None
+        flag = False
+        if order['state'] == 'live':
+            if req_type == 'HTTP':
+                status = OrderStatus.PROCESSING
+            else:
+                if float(order['px']) == self.price and float(order['sz']) == self.amount:
+                    self.create_order_response = True
+                print(f"OKEX ORDER PLACE TIME: {float(order['uTime']) - self.time_sent} ms\n")
+                if self.orders.get(order['ordId']):
+                    flag = True
+                else:
+                    status = OrderStatus.PROCESSING
+        if order['state'] == 'filled':
+            status = OrderStatus.FULLY_EXECUTED
+        elif order['state'] == 'canceled' and order['fillSz'] != '0' and order['fillSz'] != order['sz']:
+            status = OrderStatus.PARTIALLY_EXECUTED
+        elif order['state'] == 'partially_filled':
+            status = OrderStatus.PARTIALLY_EXECUTED
+        elif order['state'] == 'canceled' and order['fillSz'] == '0':
+            status = OrderStatus.NOT_EXECUTED
+        return status, flag
+
+    def reformat_orders(self, response):
+        orders = []
+        for order in response['data']:
+            symbol = order['instId']
+            status, flag = self.get_order_status(order, 'HTTP')
+            real_fee = 0
+            usd_size = 0
+            if order['avgPx']:
+                usd_size = float(order['fillSz']) * float(order['avgPx'])
+                real_fee = abs(float(order['fee'])) / usd_size
+            order.update({
+                    'id': uuid.uuid4(),
+                    'datetime': datetime.utcfromtimestamp(int(order['uTime']) / 1000),
+                    'ts': int(time.time()),
+                    'context': 'web-interface' if 'api_' not in order['clOrdId'] else order['clOrdId'].split('_')[1],
+                    'parent_id': uuid.uuid4(),
+                    'exchange_order_id': order['ordId'],
+                    'type': order['category'],
+                    'status': status,
+                    'exchange': self.EXCHANGE_NAME,
+                    'side': order['side'].lower(),
+                    'symbol': symbol,
+                    'expect_price': float(order['px']),
+                    'expect_amount_coin': float(order['sz']),
+                    'expect_amount_usd': float(order['px']) * float(order['sz']),
+                    'expect_fee': self.taker_fee,
+                    'factual_price': float(order['avgPx']) if order['avgPx'] else 0,
+                    'factual_amount_coin': float(order['fillSz']) if order['fillSz'] else 0,
+                    'factual_amount_usd': usd_size,
+                    'factual_fee': real_fee,
+                    'order_place_time': 0,
+                    'env': config['SETTINGS']['ENV'],
+                    'datetime_update': datetime.utcnow(),
+                    'ts_update': int(datetime.utcnow().timestamp()),
+                    'client_id': order['clOrdId']
+                })
+            orders.append(order)
+        return orders
+
+    def cancel_all_orders(self):
+        base_way = 'https://www.okx.com'
+        way = '/api/v5/trade/cancel-batch-orders'
+        asyncio.run(self.get_all_orders())
+        time.sleep(0.1)
+        body = []
+        for order in self.all_orders:
+            body.append({'instId': order['instId'], 'ordId': order['ordId']})
+        body_json = json.dumps(body)
+        headers = self.get_private_headers('POST', way, body_json)
+        resp = requests.post(url=base_way + way, headers=headers, data=body_json).json()
+        for order in resp['data']:
+            if order['sCode'] == '0':
+                print(f"ORDER {order['ordId']} SUCCESSFULLY CANCELED")
+            else:
+                print(f"ORDER {order['ordId']} ERROR: {order['sMsg']}")
 
     def get_orderbook_by_symbol(self, symbol):
-        pass
+        way = f'https://www.okx.com/api/v5/market/books?instId={symbol}&sz=10'
+        resp = requests.get(url=way, headers=self.headers).json()
+        orderbook = resp['data'][0]
+        orderbook['timestamp'] = int(orderbook['ts'])
+        return orderbook
+
+    def create_http_order(self, symbol, side, expire=100, client_id=None):
+        base_way = 'https://www.okx.com'
+        way = '/api/v5/trade/order'
+        body = {
+            "instId": symbol,
+            "tdMode": "cross",
+            "clOrdId": client_id,
+            "side": side,
+            "ordType": "limit",
+            "px": self.price,
+            "sz": self.amount
+        }
+        json_body = json.dumps(body)
+        headers = self.get_private_headers('POST', way, json_body)
+        resp = requests.post(url=base_way+way, headers=headers, data=json_body).json()
+        print(f"OKEX RESPONSE: {resp}")
+        if resp['code'] == '0':
+            return {
+                'exchange_name': self.EXCHANGE_NAME,
+                'timestamp': resp['inTime'],
+                'status': ResponseStatus.SUCCESS
+            }
+        else:
+            self.error_info = str(resp['data'])
+            return {
+                'exchange_name': self.EXCHANGE_NAME,
+                'timestamp': int(round((datetime.utcnow().timestamp()) * 1000)),
+                'status': ResponseStatus.ERROR
+            }
+
+    def get_all_tops(self):
+        tops = {}
+        for symbol, orderbook in self.orderbook.items():
+            coin = symbol.upper().split('-')[0]
+            if len(orderbook['bids']) and len(orderbook['asks']):
+                tops.update({self.EXCHANGE_NAME + '__' + coin: {
+                    'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
+                    'bid_vol': orderbook['bids'][0][1], 'ask_vol': orderbook['asks'][0][1],
+                    'ts_exchange': orderbook['timestamp']}})
+
+        return tops
+
 
 if __name__ == '__main__':
     import configparser
@@ -513,29 +683,39 @@ if __name__ == '__main__':
                        markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
     # client.run_updater()
 
-    time.sleep(5)
+    # time.sleep(5)
     # print(client.get_available_balance())
-    # price = client.get_orderbook('SOL-USDT-SWAP')['asks'][4][0]
-    # client.fit_sizes(1, price, 'SOL-USDT-SWAP')
-    client.get_position()
-    print(client.positions)
-    client.get_real_balance()
-    print(client.balance)
+    # price = client.get_orderbook('SOL-USDT-SWAP')['bids'][5][0]
+    price = 1
+    client.fit_sizes(2, price, 'SOL-USDT-SWAP')
+    # client.get_position()
+    # print(client.positions)
+    # client.get_real_balance()
+    # print(client.balance)
+    print(client.get_orderbook_by_symbol('SOL-USDT-SWAP'))
+    client.create_http_order('SOL-USDT-SWAP', 'buy')
+
     # print(client.get_available_balance())
-
-
 
     async def test_order():
         async with aiohttp.ClientSession() as session:
-            data = await client.create_order('SOL-USDT-SWAP',
-                                             'buy',
-                                             session=session,
-                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-            print(data)
+            # data = await client.create_order('SOL-USDT-SWAP',
+            #                                  'buy',
+            #                                  session=session,
+            #                                  client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+            await client.get_all_orders()
+            await client.get_order_by_id(order_id='637752702231269376', symbol='SOL-USDT-SWAP', session=session)
+            # print(data)
+    #
+    #
+    time.sleep(1)
+    asyncio.run(test_order())
+    time.sleep(1)
+    client.cancel_all_orders()
+    time.sleep(1)
 
+    print(client.get_all_tops())
 
-    # asyncio.run(test_order())
-    # time.sleep(5)
     # client.get_position()
     while True:
         time.sleep(5)
