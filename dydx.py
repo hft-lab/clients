@@ -91,6 +91,7 @@ class DydxClient(BaseClient):
 
     def get_position(self):
         # NECESSARY
+        self.positions = {}
         for pos in self.client.private.get_positions().data.get('positions', []):
             if pos['status'] != 'CLOSED':
                 self.positions.update({pos['market']: {

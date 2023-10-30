@@ -608,6 +608,7 @@ class KrakenClient(BaseClient):
 
     # NEW FUNCTIONS
     def get_position(self):
+        self.positions = {}
         nonce = str(int(time.time() * 1000))
         url_path = '/derivatives/api/v3/openpositions'
         headers = {

@@ -33,7 +33,7 @@ class OkxClient(BaseClient):
         self.telegram_bot = telebot.TeleBot(alert_token)
         self.create_order_response = False
         self.taker_fee = 0.0005
-        self.symbol = keys['symbol']
+        self.symbol = keys['SYMBOL']
         self.leverage = leverage
         self.public_key = keys['API_KEY']
         self.secret_key = keys['API_SECRET']
@@ -49,14 +49,14 @@ class OkxClient(BaseClient):
         self.instruments = self.get_instruments()
         self.markets = self.get_markets()
         self.error_info = None
+        self.LAST_ORDER_ID = 'default'
 
         self.price = 0
         self.amount = 0
         self.orderbook = {}
         self.orders = {}
-        self.all_orders = []
         self.last_price = {}
-        self.balance = {'free': 0, 'total': 0}
+        self.balance = {'free': 0, 'total': 0, 'timestamp': 0}
         self.taker_fee = 0
         self.start_time = int(datetime.utcnow().timestamp())
         self.time_sent = datetime.utcnow().timestamp()
@@ -208,6 +208,7 @@ class OkxClient(BaseClient):
         return self.balance['total']
 
     def get_position(self):
+        self.positions = {}
         way = 'https://www.okx.com/api/v5/account/positions'
         headers = self.get_private_headers('GET', '/api/v5/account/positions')
         resp = requests.get(url=way, headers=headers).json()
@@ -215,9 +216,8 @@ class OkxClient(BaseClient):
             side = 'LONG' if float(pos['pos']) > 0 else 'SHORT'
             amount_usd = float(pos['notionalUsd'])
             if side == 'SHORT':
-                amount = -amount_usd / float(pos['markPx'])
-            else:
-                amount = amount_usd / float(pos['markPx'])
+                amount_usd = -float(pos['notionalUsd'])
+            amount = amount_usd / float(pos['markPx'])
             self.positions.update({pos['instId']: {'side': side,
                                                    'amount_usd': amount_usd,
                                                    'amount': amount,
@@ -512,8 +512,17 @@ class OkxClient(BaseClient):
         async with aiohttp.ClientSession() as session:
             async with session.get(url=base_way + way, headers=headers) as resp:
                 data = await resp.json()
-                self.all_orders = self.reformat_orders(data)
-                return self.all_orders
+                return self.reformat_orders(data)
+
+    def _get_all_orders(self):
+        base_way = 'https://www.okx.com'
+        way = '/api/v5/trade/orders-pending?'
+        for coin in self.markets_list:
+            way += self.markets[coin] + '&'
+        way = way[:-1]
+        headers = self.get_private_headers('GET', way)
+        data = requests.get(url=base_way + way, headers=headers).json()
+        return self.reformat_orders(data)
 
     async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession):
         base_way = 'https://www.okx.com'
@@ -556,6 +565,7 @@ class OkxClient(BaseClient):
             else:
                 if float(order['px']) == self.price and float(order['sz']) == self.amount:
                     self.create_order_response = True
+                    self.LAST_ORDER_ID = order['ordId']
                 print(f"OKEX ORDER PLACE TIME: {float(order['uTime']) - self.time_sent} ms\n")
                 if self.orders.get(order['ordId']):
                     flag = True
@@ -614,10 +624,10 @@ class OkxClient(BaseClient):
     def cancel_all_orders(self):
         base_way = 'https://www.okx.com'
         way = '/api/v5/trade/cancel-batch-orders'
-        asyncio.run(self.get_all_orders())
+        orders = self._get_all_orders()
         time.sleep(0.1)
         body = []
-        for order in self.all_orders:
+        for order in orders:
             body.append({'instId': order['instId'], 'ordId': order['ordId']})
         body_json = json.dumps(body)
         headers = self.get_private_headers('POST', way, body_json)
@@ -628,17 +638,19 @@ class OkxClient(BaseClient):
             else:
                 print(f"ORDER {order['ordId']} ERROR: {order['sMsg']}")
 
-    def get_orderbook_by_symbol(self, symbol):
+    async def get_orderbook_by_symbol(self, symbol):
         way = f'https://www.okx.com/api/v5/market/books?instId={symbol}&sz=10'
-        resp = requests.get(url=way, headers=self.headers).json()
-        orderbook = resp['data'][0]
-        contract = self.get_contract_value(symbol)
-        new_asks = [[float(ask[0]), float(ask[1]) * contract] for ask in orderbook['asks']]
-        new_bids = [[float(bid[0]), float(bid[1]) * contract] for bid in orderbook['bids']]
-        orderbook['asks'] = new_asks
-        orderbook['bids'] = new_bids
-        orderbook['timestamp'] = int(orderbook['ts'])
-        return orderbook
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url=way, headers=self.headers) as resp:
+                data = await resp.json()
+                orderbook = data['data'][0]
+                contract = self.get_contract_value(symbol)
+                new_asks = [[float(ask[0]), float(ask[1]) * contract] for ask in orderbook['asks']]
+                new_bids = [[float(bid[0]), float(bid[1]) * contract] for bid in orderbook['bids']]
+                orderbook['asks'] = new_asks
+                orderbook['bids'] = new_bids
+                orderbook['timestamp'] = int(orderbook['ts'])
+                return orderbook
 
     def create_http_order(self, symbol, side, expire=100, client_id=None):
         base_way = 'https://www.okx.com'
@@ -646,7 +658,6 @@ class OkxClient(BaseClient):
         body = {
             "instId": symbol,
             "tdMode": "cross",
-            "clOrdId": client_id,
             "side": side,
             "ordType": "limit",
             "px": self.price,
@@ -657,9 +668,10 @@ class OkxClient(BaseClient):
         resp = requests.post(url=base_way+way, headers=headers, data=json_body).json()
         print(f"OKEX RESPONSE: {resp}")
         if resp['code'] == '0':
+            self.LAST_ORDER_ID = resp['data'][0]['ordId']
             return {
                 'exchange_name': self.EXCHANGE_NAME,
-                'timestamp': resp['inTime'],
+                'timestamp': int(resp['inTime']),
                 'status': ResponseStatus.SUCCESS
             }
         else:
@@ -703,11 +715,11 @@ if __name__ == '__main__':
     # price = client.get_orderbook('SOL-USDT-SWAP')['bids'][5][0]
     # price = 1
     # client.fit_sizes(2, price, 'SOL-USDT-SWAP')
-    # client.get_position()
+    client.get_position()
     # print(client.positions)
     # client.get_real_balance()
     # print(client.balance)
-    print(client.get_orderbook_by_symbol('XRP-USDT-SWAP'))
+    # print(client.get_orderbook_by_symbol('XRP-USDT-SWAP'))
     # client.create_http_order('SOL-USDT-SWAP', 'buy')
     #
     # # print(client.get_available_balance())
@@ -798,3 +810,4 @@ if __name__ == '__main__':
 #
 # if __name__ == "__main__":
 #     asyncio.run(main())
+

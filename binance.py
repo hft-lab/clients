@@ -305,6 +305,7 @@ class BinanceClient(BaseClient):
             time.sleep(59)
 
     def get_position(self):
+        self.positions = {}
         url_path = "/fapi/v2/account"
         payload = {"timestamp": int(time.time() * 1000)}
 
