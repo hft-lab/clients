@@ -32,7 +32,8 @@ class OkxClient(BaseClient):
         self.chat_id = int(alert_id)
         self.telegram_bot = telebot.TeleBot(alert_token)
         self.create_order_response = False
-        self.taker_fee = 0.0005
+        # self.taker_fee = 0.0005
+        self.taker_fee = 0
         self.symbol = keys['SYMBOL']
         self.leverage = leverage
         self.public_key = keys['API_KEY']
@@ -52,12 +53,12 @@ class OkxClient(BaseClient):
         self.LAST_ORDER_ID = 'default'
 
         self.price = 0
+        self.amount_contracts = 0
         self.amount = 0
         self.orderbook = {}
         self.orders = {}
         self.last_price = {}
         self.balance = {'free': 0, 'total': 0, 'timestamp': 0}
-        self.taker_fee = 0
         self.start_time = int(datetime.utcnow().timestamp())
         self.time_sent = datetime.utcnow().timestamp()
 
@@ -339,7 +340,8 @@ class OkxClient(BaseClient):
         if min_size > amount:
             print(f"\n\nOKEX {symbol} ORDER LESS THAN MIN SIZE: {min_size}\n\n")
         rounded_amount = round(amount / step_size) * step_size
-        self.amount = round(rounded_amount, quantity_precision)
+        self.amount_contracts = round(rounded_amount, quantity_precision)
+        self.amount = self.amount_contracts * contract_value
         if '.' in str(tick_size):
             round_price_len = len(str(tick_size).split('.')[1])
         elif '-' in str(tick_size):
@@ -354,11 +356,13 @@ class OkxClient(BaseClient):
         if not self._ws_private:
             return self.create_http_order(symbol, side, expire=expire, client_id=client_id)
         self.queue.put_nowait({'symbol': symbol,
-                               'amount': self.amount,
+                               'amount': self.amount_contracts,
                                'price': self.price,
                                'side': side,
                                'expire': expire})
-        while not self.create_order_response or datetime.utcnow().timestamp() - (self.time_sent / 1000) < 5:
+        while not self.create_order_response:
+            if datetime.utcnow().timestamp() - (self.time_sent / 1000) > 5:
+                break
             time.sleep(0.01)
         return self.get_order_response()
 
@@ -563,7 +567,7 @@ class OkxClient(BaseClient):
             if req_type == 'HTTP':
                 status = OrderStatus.PROCESSING
             else:
-                if float(order['px']) == self.price and float(order['sz']) == self.amount:
+                if float(order['px']) == self.price and float(order['sz']) == self.amount_contracts:
                     self.create_order_response = True
                     self.LAST_ORDER_ID = order['ordId']
                 print(f"OKEX ORDER PLACE TIME: {float(order['uTime']) - self.time_sent} ms\n")
@@ -661,7 +665,7 @@ class OkxClient(BaseClient):
             "side": side,
             "ordType": "limit",
             "px": self.price,
-            "sz": self.amount
+            "sz": self.amount_contracts
         }
         json_body = json.dumps(body)
         headers = self.get_private_headers('POST', way, json_body)
