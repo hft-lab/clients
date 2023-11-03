@@ -86,7 +86,7 @@ class KrakenClient(BaseClient):
     def get_sizes(self, symbol):
         for ticker in self.tickers:
             if ticker.get('symbol'):
-                if ticker['symbol'] == symbol:
+                if ticker['symbol'].upper() == symbol.upper():
                     values = [ticker.get('askSize', None),
                               ticker.get('vol24h', None),
                               ticker.get('lastSize', None),
@@ -104,7 +104,7 @@ class KrakenClient(BaseClient):
         else:
             step_size = 1
         for instrument in self.instruments:
-            if symbol == instrument['symbol']:
+            if symbol.upper() == instrument['symbol'].upper():
                 tick_size = instrument['tickSize']
                 break
         if '.' in str(step_size):
@@ -206,8 +206,8 @@ class KrakenClient(BaseClient):
 
     def get_orderbook(self, symbol) -> dict:
         while True:
-            snap = self.orderbook[symbol]
-            orderbook = {'timestamp': self.orderbook[symbol]['timestamp']}
+            snap = self.orderbook[symbol.upper()]
+            orderbook = {'timestamp': self.orderbook[symbol.upper()]['timestamp']}
             try:
                 orderbook['asks'] = [[x, snap['sell'][x]] for x in sorted(snap['sell'])]
                 orderbook['bids'] = [[x, snap['buy'][x]] for x in sorted(snap['buy'])][::-1]
@@ -697,14 +697,13 @@ class KrakenClient(BaseClient):
                                 }})
                         elif msg_data.get('fills') and msg_data['feed'] != 'fills_snapshot':
                             for fill in msg_data['fills']:
-                                print(fill)
-                                qty_coin = fill['qty'] - fill['remaining_order_qty']
-                                qty_usd = round(qty_coin * fill['price'], 1)
+                                # ex = [{'instrument': 'PF_DASHUSD', 'time': 1699002267263, 'price': 28.438, 'seq': 100, 'buy': True, 'qty': 5.5, 'remaining_order_qty': 24.5, 'order_id': 'ee1e5189-422f-4a5a-9584-acbc2017ef2c', 'cli_ord_id': 'api_deal_59cf2b524ac74fa0b414', 'fill_id': '6dce06eb-2012-4aaf-b52c-8b189bc9fbd0', 'fill_type': 'taker', 'fee_paid': 0.0782045, 'fee_currency': 'USD', 'taker_order_type': 'lmt', 'order_type': 'lmt'}, {'instrument': 'PF_DASHUSD', 'time': 1699002267392, 'price': 28.438, 'seq': 101, 'buy': True, 'qty': 23.7, 'remaining_order_qty': 0.8000000000000007, 'order_id': 'ee1e5189-422f-4a5a-9584-acbc2017ef2c', 'cli_ord_id': 'api_deal_59cf2b524ac74fa0b414', 'fill_id': '937458d8-5e96-4f4c-850d-eaa2af5fbe34', 'fill_type': 'maker', 'fee_paid': 0.13479612, 'fee_currency': 'USD', 'taker_order_type': 'ioc', 'order_type': 'lmt'}, {'instrument': 'PF_DASHUSD', 'time': 1699002267585, 'price': 28.438, 'seq': 102, 'buy': True, 'qty': 0.8, 'remaining_order_qty': 0.0, 'order_id': 'ee1e5189-422f-4a5a-9584-acbc2017ef2c', 'cli_ord_id': 'api_deal_59cf2b524ac74fa0b414', 'fill_id': '4bc83d88-948e-4287-af42-53e93c200d1d', 'fill_type': 'maker','fee_paid': 0.00455008, 'fee_currency': 'USD', 'taker_order_type': 'ioc','order_type': 'lmt'}]
                                 status = OrderStatus.PARTIALLY_EXECUTED
                                 if fill['remaining_order_qty'] == 0:
                                     status = OrderStatus.FULLY_EXECUTED
                                 if order := self.orders.get(fill['order_id']):
-                                    qty_usd = order['factual_amount_usd'] + qty_usd
+                                    qty_coin = order['factual_amount_coin'] + fill['qty']
+                                    qty_usd = order['factual_amount_usd'] + (fill['qty'] * fill['price'])
                                     factual_price = qty_usd / qty_coin
                                     self.last_price['buy' if fill['buy'] else 'sell'] = factual_price
                                     self.orders.update({fill['order_id']: {
@@ -725,8 +724,8 @@ class KrakenClient(BaseClient):
                                         'exchange_order_id': fill['order_id'],
                                         'exchange': self.EXCHANGE_NAME,
                                         'status': status,
-                                        'factual_amount_coin': qty_coin,
-                                        'factual_amount_usd': qty_usd,
+                                        'factual_amount_coin': fill['qty'],
+                                        'factual_amount_usd': fill['qty'] * fill['price'],
                                         'datetime_update': datetime.utcnow(),
                                         'ts_update': int(time.time() * 1000)
                                     }})
@@ -776,8 +775,9 @@ if __name__ == '__main__':
                           int(config['TELEGRAM']['ALERT_CHAT_ID']),
                           config['TELEGRAM']['ALERT_BOT_TOKEN'],
                           max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']))
+    client.markets_list = ['ETH', 'RUNE', 'SNX', 'ENJ', 'DOT', 'LINK', 'ETC', 'DASH', 'XLM', 'WAVES']
     client.run_updater()
-    # time.sleep(3)
+    time.sleep(3)
     # print(client.get_balance())
     # print()
     # print(client.positions)
@@ -786,26 +786,28 @@ if __name__ == '__main__':
     # print(client.get_markets())
     # time.sleep(5)
 
-    # async def test_order():
-    #     async with aiohttp.ClientSession() as session:
-    #         ob = await client.get_multi_orderbook('pf_runeusd')
-    #         price = ob['top_ask']
-    #         client.get_markets()
-    #         client.fit_sizes(30, price, 'pf_runeusd')
-    #         data = await client.create_order('pf_runeusd',
-    #                                          'buy',
-    #                                          session,
-    #                                          client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-    #         # data = client.get_balance()
-    #         print(data)
-    #         print()
-    #         print()
-    #         print()
-    #         # client.cancel_all_orders()
+    async def test_order():
+        async with aiohttp.ClientSession() as session:
+            # print(client.orderbook)
+            ob = client.get_orderbook('pf_dashusd')
+            price = ob['bids'][0][0]
+            client.get_markets()
+            client.fit_sizes(28.9, price, 'pf_dashusd')
+            data = await client.create_order('pf_dashusd',
+                                             'sell',
+                                             session,
+                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+            # data = client.get_balance()
+            print(data)
+            print()
+
+            # client.cancel_all_orders()
     # #
     # #
     # time.sleep(5)
-    # asyncio.run(test_order())
-    while True:
-        time.sleep(5)
-        print(client.get_all_tops())
+    # while True:
+    #     time.sleep(5)
+    asyncio.run(test_order())
+    time.sleep(5)
+
+        # print(client.get_all_tops())
