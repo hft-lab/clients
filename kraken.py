@@ -16,7 +16,7 @@ import orjson
 import requests
 
 from core.base_client import BaseClient
-from clients.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, PositionSideEnum
+from core.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, PositionSideEnum
 import telebot
 
 

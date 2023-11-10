@@ -13,7 +13,7 @@ import orjson
 import requests
 # from config import Config
 from core.base_client import BaseClient
-from clients.enums import ConnectMethodEnum, EventTypeEnum, PositionSideEnum, ResponseStatus, OrderStatus, \
+from core.enums import ConnectMethodEnum, EventTypeEnum, PositionSideEnum, ResponseStatus, OrderStatus, \
     ClientsOrderStatuses
 import telebot
 
