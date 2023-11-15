@@ -33,7 +33,6 @@ class OkxClient(BaseClient):
         self.telegram_bot = telebot.TeleBot(alert_token)
         self.create_order_response = False
         self.taker_fee = 0.0005
-        self.symbol = keys['SYMBOL']
         self.leverage = leverage
         self.public_key = keys['API_KEY']
         self.secret_key = keys['API_SECRET']

@@ -32,7 +32,6 @@ class BinanceClient(BaseClient):
         self.telegram_bot = telebot.TeleBot(alert_token)
         self.taker_fee = 0.00036
         self.leverage = leverage
-        self.symbol = keys['SYMBOL']
         self.__api_key = keys['API_KEY']
         self.__secret_key = keys['API_SECRET']
         self.headers = {"Content-Type": "application/json", 'X-MBX-APIKEY': self.__api_key}
@@ -52,16 +51,7 @@ class BinanceClient(BaseClient):
             'buy': 0
         }
         self.orders = {}
-        self.positions = {
-            self.symbol: {
-                'amount': 0,
-                'entry_price': 0,
-                'unrealized_pnl_usd': 0,
-                'side': 'LONG',
-                'amount_usd': 0,
-                'realized_pnl_usd': 0
-            }
-        }
+        self.positions = {}
         self.orderbook = {}
         self._check_symbol_value()
         self.amount = 0
@@ -82,7 +72,6 @@ class BinanceClient(BaseClient):
         self._get_listen_key()
         self.get_position()
         self.pings = []
-
 
     def cancel_all_orders(self, orderID=None) -> dict:
         return self.__cancel_open_orders()
@@ -213,8 +202,8 @@ class BinanceClient(BaseClient):
                 self.count_flag = True
 
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
-        async with session.ws_connect(self.BASE_WS + self.symbol.lower()) as ws:
-            self.markets_list = list(self.markets.keys())[:10]
+        async with session.ws_connect(self.BASE_WS + list(self.markets.keys())[0].lower()) as ws:
+            # self.markets_list = list(self.markets.keys())[:10]
             for symbol in self.markets_list:
                 if market := self.markets.get(symbol):
                     await ws.send_str(orjson.dumps({
@@ -481,20 +470,23 @@ class BinanceClient(BaseClient):
 
     def __cancel_open_orders(self) -> dict:
         url_path = "/fapi/v1/allOpenOrders"
-        payload = {
-            "timestamp": int(time.time() * 1000),
-            'symbol': self.symbol
-        }
-        query_string = self._prepare_query(payload)
-        payload["signature"] = self._create_signature(query_string)
-        query_string = self._prepare_query(payload)
-        res = requests.delete(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers).json()
-        return res
+        reses = []
+        for symbol in self.markets.values():
+            payload = {
+                "timestamp": int(time.time() * 1000),
+                'symbol':symbol
+            }
+            query_string = self._prepare_query(payload)
+            payload["signature"] = self._create_signature(query_string)
+            query_string = self._prepare_query(payload)
+            res = requests.delete(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers).json()
+            reses.append(res)
+        return reses
 
-    async def get_orderbook_by_symbol(self, symbol=None):
+    async def get_orderbook_by_symbol(self, symbol):
         async with aiohttp.ClientSession() as session:
             url_path = "/fapi/v1/depth"
-            payload = {"symbol": symbol if symbol else self.symbol}
+            payload = {"symbol": symbol}
             query_string = self._prepare_query(payload)
             async with session.get(url=self.BASE_URL + url_path + "?" + query_string, headers=self.headers) as resp:
                 res = await resp.json()

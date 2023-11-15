@@ -38,10 +38,8 @@ class KrakenClient(BaseClient):
         self.requestLimit = 1200
         self.headers = {"Content-Type": "application/json"}
         self.tickers = None
-        self.markets = {}
         self.markets = self.get_markets()
         self.leverage = leverage
-        self.symbol = keys['SYMBOL']
         self.__api_key = keys['API_KEY']
         self.__secret_key = keys['API_SECRET']
         self.__last_challenge = None
@@ -59,15 +57,7 @@ class KrakenClient(BaseClient):
         }
         self.max_bid = 0
         self.min_ask = 10000000
-        self.positions = {
-            self.symbol: {
-                'amount': 0,
-                'entry_price': 0,
-                'unrealized_pnl_usd': 0,
-                'side': 'LONG',
-                'amount_usd': 0,
-                'realized_pnl_usd': 0}
-        }
+        self.positions = {}
         self.get_real_balance()
         self.orderbook = {}
         self.pings = []
@@ -263,11 +253,11 @@ class KrakenClient(BaseClient):
                 await self._user_balance_getter(session)
 
     # PUBLIC -----------------------------------------------------------------------------------------------------------
-    async def get_orderbook_by_symbol(self, symbol=None):
+    async def get_orderbook_by_symbol(self, symbol):
         async with aiohttp.ClientSession() as session:
             url_path = "/derivatives/api/v3/orderbook"
             async with session.get(
-                    url=self.BASE_URL + url_path + f'?symbol={symbol if symbol else self.symbol}') as resp:
+                    url=self.BASE_URL + url_path + f'?symbol={symbol}') as resp:
                 res = await resp.json()
                 orderbook = {}
                 orderbook.update({'bids': res['orderBook']['bids']})
@@ -276,9 +266,9 @@ class KrakenClient(BaseClient):
             await session.close()
         return orderbook
 
-    def get_orderbook_by_symbol_non_async(self, symbol=None):
+    def get_orderbook_by_symbol_non_async(self, symbol):
         url_path = "/derivatives/api/v3/orderbook"
-        resp = requests.get(url=self.BASE_URL + url_path + f'?symbol={symbol if symbol else self.symbol}').json()
+        resp = requests.get(url=self.BASE_URL + url_path + f'?symbol={symbol}').json()
         orderbook = {}
         orderbook.update({'bids': resp['orderBook']['bids']})
         orderbook.update({'asks': resp['orderBook']['asks']})
@@ -516,17 +506,14 @@ class KrakenClient(BaseClient):
     def __cancel_open_orders(self):
         url_path = "/derivatives/api/v3/cancelallorders"
         nonce = str(int(time.time() * 1000))
-        params = {'symbol': self.symbol}
-        post_string = "&".join([f"{key}={params[key]}" for key in sorted(params)])
         headers = {
             "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
             "Nonce": nonce,
             "APIKey": self.__api_key,
             "Authent": self.get_kraken_futures_signature(
-                url_path, post_string, nonce
-            ),
+                url_path, '', nonce),
         }
-        return requests.post(headers=headers, url=self.BASE_URL + url_path, data=post_string).json()
+        return requests.post(headers=headers, url=self.BASE_URL + url_path).json()
 
     def get_real_balance(self):
         url_path = "/derivatives/api/v3/accounts"
