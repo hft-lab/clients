@@ -40,7 +40,6 @@ class DydxClient(BaseClient):
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         self._connected = asyncio.Event()
-        self.symbol = keys['SYMBOL']
         self.headers = {"Content-Type": "application/json"}
         self.API_KEYS = {"secret": keys['API_SECRET'],
                          "key": keys['API_KEY'],
@@ -430,8 +429,8 @@ class DydxClient(BaseClient):
                 'status': ResponseStatus.ERROR
             }
 
-    def get_funding_history(self):
-        return self.client.public.get_historical_funding(market=self.symbol).data
+    # def get_funding_history(self):
+    #     return self.client.public.get_historical_funding(market='ETH').data
 
     # def get_funding_payments(self):
     #     return self.client.private.get_funding_payments(market=self.symbol, limit=300).data
@@ -594,18 +593,18 @@ class DydxClient(BaseClient):
             # 'sumOpen': '219717.4', 'sumClose': '206588.3', 'netFunding': '706.266653',
             # 'realizedPnl': '7771.372704'}]
 
-    def get_pnl(self):
-        try:
-            position = self.get_positions()[self.symbol]
-        except:
-            return 0
-        realized_pnl = float(position['realizedPnl'])
-        entry_price = float(position['entryPrice'])
-        size = float(position['size'])
-        ob = self.get_orderbook(self.symbol)
-        index_price = (ob['asks'][0][0] + ob['bids'][0][0]) / 2
-        unrealized_pnl = size * (index_price - entry_price)
-        return unrealized_pnl + realized_pnl
+    # def get_pnl(self):
+    #     try:
+    #         position = self.get_positions()
+    #     except:
+    #         return 0
+    #     realized_pnl = float(position['realizedPnl'])
+    #     entry_price = float(position['entryPrice'])
+    #     size = float(position['size'])
+    #     ob = self.get_orderbook()
+    #     index_price = (ob['asks'][0][0] + ob['bids'][0][0]) / 2
+    #     unrealized_pnl = size * (index_price - entry_price)
+    #     return unrealized_pnl + realized_pnl
 
     def get_positions(self):
         # NECESSARY
@@ -845,12 +844,12 @@ class DydxClient(BaseClient):
                         if len(obj['contents']['account']):
                             self._update_account(obj['contents']['account'])
 
-    async def get_orderbook_by_symbol(self, symbol=None):
+    async def get_orderbook_by_symbol(self, symbol):
         # NECESSARY
         async with aiohttp.ClientSession() as session:
             data = {}
             now_iso_string = generate_now_iso()
-            request_path = f'/v3/orderbook/{symbol if symbol else self.symbol}'
+            request_path = f'/v3/orderbook/{symbol}'
             signature = self.client.private.sign(
                 request_path=request_path,
                 method='GET',
