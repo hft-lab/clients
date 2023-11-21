@@ -369,6 +369,7 @@ class OkxClient(BaseClient):
         if self.create_order_response:
             response = {
                 'exchange_name': self.EXCHANGE_NAME,
+                'exchange_order_id': self.LAST_ORDER_ID,
                 'timestamp': int(round((datetime.utcnow().timestamp()) * 1000)),
                 'status': ResponseStatus.SUCCESS
             }
@@ -376,6 +377,7 @@ class OkxClient(BaseClient):
         else:
             response = {
                 'exchange_name': self.EXCHANGE_NAME,
+                'exchange_order_id': None,
                 'timestamp': int(round((datetime.utcnow().timestamp()) * 1000)),
                 'status': ResponseStatus.ERROR
             }
@@ -423,7 +425,7 @@ class OkxClient(BaseClient):
             else:
                 message = f"{self.EXCHANGE_NAME}:\n{market} has status {instrument['state']}"
                 try:
-                    self.telegram_bot.send_message(self.chat_id, '<pre>' + message + '</pre>', parse_mode='HTML')
+                    self.telegram_bot.send_message(self.chat_id, '<pre>' + 'OKX: get_markets' + message + '</pre>', parse_mode='HTML')
                 except:
                     pass
             # print(inst['instId'], inst, '\n')
@@ -672,8 +674,10 @@ class OkxClient(BaseClient):
         print(f"OKEX RESPONSE: {resp}")
         if resp['code'] == '0':
             self.LAST_ORDER_ID = resp['data'][0]['ordId']
+            exchange_order_id = resp['data'][0]['ordId']
             return {
                 'exchange_name': self.EXCHANGE_NAME,
+                'exchange_order_id': exchange_order_id,
                 'timestamp': int(resp['inTime']),
                 'status': ResponseStatus.SUCCESS
             }
@@ -681,6 +685,7 @@ class OkxClient(BaseClient):
             self.error_info = str(resp['data'])
             return {
                 'exchange_name': self.EXCHANGE_NAME,
+                'exchange_order_id': None,
                 'timestamp': int(round((datetime.utcnow().timestamp()) * 1000)),
                 'status': ResponseStatus.ERROR
             }

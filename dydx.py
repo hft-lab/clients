@@ -397,8 +397,8 @@ class DydxClient(BaseClient):
             async with session.post(url=self.BASE_URL + request_path, headers=headers,
                                     data=json.dumps(remove_nones(data))) as resp:
                 res = await resp.json()
-                print(f'DYDX RESPONSE: {res}')
                 self.LAST_ORDER_ID = res.get('order', {'id': 'default'})['id']
+                exchange_order_id = res.get('order', {'id': 'default'})['id']
                 timestamp = 0000000000000
                 if res.get('errors'):
                     status = ResponseStatus.ERROR
@@ -417,6 +417,7 @@ class DydxClient(BaseClient):
                 print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
                 return {
                     'exchange_name': self.EXCHANGE_NAME,
+                    'exchange_order_id': exchange_order_id,
                     'timestamp': timestamp,
                     'status': status
                 }
@@ -424,6 +425,7 @@ class DydxClient(BaseClient):
             self.error_info = e
             return {
                 'exchange_name': self.EXCHANGE_NAME,
+                'exchange_order_id': None,
                 'timestamp': int(round(datetime.utcnow().timestamp() * 1000)),
                 'status': ResponseStatus.ERROR
             }

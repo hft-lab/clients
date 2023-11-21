@@ -245,6 +245,7 @@ class BitmexClient(BaseClient):
         res = await self._post("/api/v1/order", body, session)
 
         timestamp = 0000000000000
+        exchange_order_id = None
         if res.get('errors'):
             status = ResponseStatus.ERROR
         elif res.get('order') and res['order'].get('status'):
@@ -252,11 +253,13 @@ class BitmexClient(BaseClient):
                 datetime.timestamp(datetime.strptime(res['order']['createdAt'], '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
             status = ResponseStatus.SUCCESS
             self.LAST_ORDER_ID = res['orderID']
+            exchange_order_id = res['orderID']
         else:
             status = ResponseStatus.NO_CONNECTION
 
         return {
             'exchange_name': self.EXCHANGE_NAME,
+            'exchange_order_id': exchange_order_id,
             'timestamp': timestamp,
             'status': status
         }

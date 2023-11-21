@@ -449,6 +449,7 @@ class BinanceClient(BaseClient):
                 res = await resp.json()
                 print(f'{self.EXCHANGE_NAME} RESPONSE: {res}')
                 self.LAST_ORDER_ID = res.get('orderId', 'default')
+                exchange_order_id = res.get('orderId', 'default')
                 timestamp = 0000000000000
                 if res.get('code'):
                     status = ResponseStatus.ERROR
@@ -468,6 +469,7 @@ class BinanceClient(BaseClient):
                 print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
                 return {
                     'exchange_name': self.EXCHANGE_NAME,
+                    'exchange_order_id': exchange_order_id,
                     'timestamp': timestamp,
                     'status': status
                 }
@@ -475,6 +477,7 @@ class BinanceClient(BaseClient):
             self.error_info = e
             return {
                 'exchange_name': self.EXCHANGE_NAME,
+                'exchange_order_id': None,
                 'timestamp': int(round(datetime.datetime.utcnow().timestamp() * 1000)),
                 'status': ResponseStatus.ERROR
             }

@@ -579,6 +579,7 @@ class KrakenClient(BaseClient):
                 response = await resp.json()
                 print(f'KRAKEN RESPONSE: {response}')
                 self.LAST_ORDER_ID = response.get('sendStatus', {}).get('order_id', 'default')
+                exchange_order_id = response.get('sendStatus', {}).get('order_id', 'default')
                 if response['sendStatus'].get('receivedTime'):
                     timestamp = response['sendStatus']['receivedTime']
                     timestamp = int(datetime.timestamp(datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
@@ -595,6 +596,7 @@ class KrakenClient(BaseClient):
                 print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
                 return {
                     'exchange_name': self.EXCHANGE_NAME,
+                    'exchange_order_id': exchange_order_id,
                     'timestamp': timestamp,
                     'status': status
                 }
@@ -602,6 +604,7 @@ class KrakenClient(BaseClient):
             self.error_info = e
             return {
                 'exchange_name': self.EXCHANGE_NAME,
+                'exchange_order_id': None,
                 'timestamp': int(round(datetime.utcnow().timestamp() * 1000)),
                 'status': ResponseStatus.ERROR
             }
