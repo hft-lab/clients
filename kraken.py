@@ -38,6 +38,7 @@ class KrakenClient(BaseClient):
         self.requestLimit = 1200
         self.headers = {"Content-Type": "application/json"}
         self.tickers = None
+        self.markets = {}
         self.markets = self.get_markets()
         self.leverage = leverage
         self.__api_key = keys['API_KEY']
