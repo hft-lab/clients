@@ -33,10 +33,10 @@ class DydxClient(BaseClient):
     urlOrderbooks = "https://api.dydx.exchange/v3/orderbook/"
 
     def __init__(self, keys, leverage, alert_id, alert_token, markets_list=[], max_pos_part=20):
+        super().__init__()
         self.markets_list = markets_list
         self.max_pos_part = max_pos_part
-        self.chat_id = int(alert_id)
-        self.telegram_bot = telebot.TeleBot(alert_token)
+        self.telegram_bot = telebot.TeleBot(self.alert_token)
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         self._connected = asyncio.Event()
@@ -144,7 +144,7 @@ class DydxClient(BaseClient):
             else:
                 message = f"{self.EXCHANGE_NAME}:\n{market} has status {value['status']}"
                 try:
-                    self.telegram_bot.send_message(self.chat_id, '<pre>' + message + '</pre>', parse_mode='HTML')
+                    self.telegram_bot.send_message(self.alert_id, '<pre>' + message + '</pre>', parse_mode='HTML')
                 except:
                     pass
         return self.markets
