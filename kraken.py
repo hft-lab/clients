@@ -15,8 +15,8 @@ import aiohttp
 import orjson
 import requests
 
-from base_client import BaseClient
-from enums import ConnectMethodEnum, ResponseStatus, OrderStatus, PositionSideEnum
+from clients.base_client import BaseClient
+from clients.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, PositionSideEnum
 import telebot
 
 

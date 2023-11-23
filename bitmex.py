@@ -10,8 +10,8 @@ from bravado.client import SwaggerClient
 from bravado.requests_client import RequestsClient
 
 # from config import Config
-from base_client import BaseClient
-from enums import ResponseStatus
+from clients.base_client import BaseClient
+from clients.enums import ResponseStatus
 from tools.APIKeyAuthenticator import APIKeyAuthenticator as auth
 
 

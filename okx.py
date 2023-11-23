@@ -15,8 +15,8 @@ import queue
 import telebot
 import uuid
 
-from base_client import BaseClient
-from enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
+from clients.base_client import BaseClient
+from clients.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
 
 
 class OkxClient(BaseClient):
