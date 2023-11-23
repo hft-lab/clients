@@ -3,5 +3,6 @@
 venv
 .env
 .ini
+__init__.py
 __pycache__
 

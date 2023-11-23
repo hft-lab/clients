@@ -20,8 +20,8 @@ from dydx3.starkex.order import SignableOrder
 from web3 import Web3
 
 # from config import Config
-from core.base_client import BaseClient
-from core.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
+from base_client import BaseClient
+from enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
 import telebot
 
 
