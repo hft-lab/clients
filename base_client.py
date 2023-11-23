@@ -19,7 +19,7 @@ class BaseClient(ABC):
         self.chat_token = config['TELEGRAM']['TOKEN']
         self.alert_id = config['TELEGRAM']['ALERT_CHAT_ID']
         self.alert_token = config['TELEGRAM']['ALERT_BOT_TOKEN']
-        self.debug_id = config['TELEGRAM']['DEBUG_BOT_ID']
+        self.debug_id = config['TELEGRAM']['DEBUG_CHAT_ID']
         self.debug_token = config['TELEGRAM']['DEBUG_BOT_TOKEN']
 
     @abstractmethod
