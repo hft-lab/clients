@@ -18,11 +18,9 @@ if __name__ == '__main__':
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
 
-    client = ApolloxClient(config['APOLLOX'],
-                           float(config['SETTINGS']['LEVERAGE']),
-                           int(config['SETTINGS']['PERCENT_PER_MARKET']),
-                           int(config['TELEGRAM']['ALERT_CHAT_ID']),
-                           config['TELEGRAM']['ALERT_BOT_TOKEN'])
+    client = ApolloxClient(config['APOLLOX'],float(config['SETTINGS']['LEVERAGE']),
+                           int(config['TELEGRAM']['ALERT_CHAT_ID']),config['TELEGRAM']['ALERT_BOT_TOKEN'],
+                           [],int(config['SETTINGS']['PERCENT_PER_MARKET']))
     client.run_updater()
     time.sleep(3)
     print(client.get_balance())

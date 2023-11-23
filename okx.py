@@ -25,12 +25,12 @@ class OkxClient(BaseClient):
     headers = {'Content-Type': 'application/json'}
     EXCHANGE_NAME = 'OKX'
 
-    def __init__(self, keys, leverage, alert_id, alert_token, markets_list=[], max_pos_part=20):
+    def __init__(self, keys, leverage, alert_id = None, alert_token = None, markets_list=[], max_pos_part=20):
+        super().__init__()
         self.max_pos_part = max_pos_part
         self.markets_list = markets_list
         self.requestLimit = 1200
-        self.chat_id = int(alert_id)
-        self.telegram_bot = telebot.TeleBot(alert_token)
+        self.telegram_bot = telebot.TeleBot(self.alert_token)
         self.create_order_response = False
         self.taker_fee = 0.0005
         self.leverage = leverage
@@ -424,7 +424,7 @@ class OkxClient(BaseClient):
             else:
                 message = f"{self.EXCHANGE_NAME}:\n{market} has status {instrument['state']}"
                 try:
-                    self.telegram_bot.send_message(self.chat_id, '<pre>' + 'OKX: get_markets' + message + '</pre>', parse_mode='HTML')
+                    self.telegram_bot.send_message(self.alert_id, '<pre>' + 'OKX: get_markets' + message + '</pre>', parse_mode='HTML')
                 except:
                     pass
             # print(inst['instId'], inst, '\n')

@@ -28,11 +28,11 @@ class KrakenClient(BaseClient):
     urlOrderbooks = "https://futures.kraken.com/derivatives/api/v3/orderbook?symbol="
     urlMarkets = "https://futures.kraken.com/derivatives/api/v3/tickers"
 
-    def __init__(self, keys, leverage, alert_id, alert_token, markets_list=[], max_pos_part=20):
+    def __init__(self, keys, leverage,  alert_id = None, alert_token = None, markets_list=[], max_pos_part=20):
+        super().__init__()
         self.markets_list = markets_list
         self.max_pos_part = max_pos_part
-        self.chat_id = int(alert_id)
-        self.telegram_bot = telebot.TeleBot(alert_token)
+        self.telegram_bot = telebot.TeleBot(self.alert_token)
         self.amount = None
         self.taker_fee = 0.0005
         self.requestLimit = 1200
@@ -181,7 +181,7 @@ class KrakenClient(BaseClient):
                     if market['postOnly']:
                         message = f"{self.EXCHANGE_NAME}:\n{market['symbol']} has status PostOnly"
                         try:
-                            self.telegram_bot.send_message(self.chat_id, '<pre>' + message + '</pre>',
+                            self.telegram_bot.send_message(self.alert_id, '<pre>' + message + '</pre>',
                                                            parse_mode='HTML')
                         except:
                             pass

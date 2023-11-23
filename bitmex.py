@@ -31,6 +31,7 @@ class BitmexClient(BaseClient):
     MAX_TABLE_LEN = 200
 
     def __init__(self, keys, leverage=2):
+        super().__init__()
         self._loop = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self.leverage = leverage
