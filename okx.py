@@ -480,8 +480,9 @@ class OkxClient(BaseClient):
         headers = self.get_private_headers('GET', '/api/v5/account/balance?ccy=USDT')
         headers.update(self.headers)
         resp = requests.get(url=way, headers=headers).json()
+        # print(resp)
         if resp.get('code') == '0':
-            self.balance = {'free': float(resp['data'][0]['details'][0]['availEq']),
+            self.balance = {'free': float(resp['data'][0]['details'][0]['availBal']),
                             'total': float(resp['data'][0]['details'][0]['eq']),
                             'timestamp': datetime.utcnow().timestamp() * 1000}
         # {'code': '0', 'data': [{'adjEq': '', 'borrowFroz': '', 'details': [
@@ -714,15 +715,15 @@ if __name__ == '__main__':
                        config['TELEGRAM']['ALERT_BOT_TOKEN'],
                        max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
                        markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
-    client.run_updater()
-
+    # client.run_updater()
+    client.get_real_balance()
     time.sleep(1)
-    print(client.get_orderbook('XRP-USDT-SWAP'))
+    # print(client.get_orderbook('XRP-USDT-SWAP'))
     # print(client.get_available_balance())
     # price = client.get_orderbook('SOL-USDT-SWAP')['bids'][5][0]
     # price = 1
     # client.fit_sizes(2, price, 'SOL-USDT-SWAP')
-    client.get_position()
+    # client.get_position()
     # print(client.positions)
     # client.get_real_balance()
     # print(client.balance)
