@@ -339,7 +339,7 @@ class OkxClient(BaseClient):
             print(f"\n\nOKEX {symbol} ORDER LESS THAN MIN SIZE: {min_size}\n\n")
         rounded_amount = round(amount / step_size) * step_size
         self.amount_contracts = round(rounded_amount, quantity_precision)
-        self.amount = self.amount_contracts * contract_value
+        self.amount = round(self.amount_contracts * contract_value, 8)
         if '.' in str(tick_size):
             round_price_len = len(str(tick_size).split('.')[1])
         elif '-' in str(tick_size):
@@ -715,20 +715,21 @@ if __name__ == '__main__':
                        config['TELEGRAM']['ALERT_BOT_TOKEN'],
                        max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
                        markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
-    # client.run_updater()
+    client.run_updater()
     client.get_real_balance()
-    time.sleep(1)
+    time.sleep(3)
     # print(client.get_orderbook('XRP-USDT-SWAP'))
     # print(client.get_available_balance())
-    # price = client.get_orderbook('SOL-USDT-SWAP')['bids'][5][0]
+    print(client.get_orderbook('SOL-USDT-SWAP'))
+    price = client.get_orderbook('SOL-USDT-SWAP')['bids'][4][0]
     # price = 1
-    # client.fit_sizes(2, price, 'SOL-USDT-SWAP')
+    client.fit_sizes(2, price, 'SOL-USDT-SWAP')
     # client.get_position()
-    # print(client.positions)
+    print(client.positions)
     # client.get_real_balance()
-    # print(client.balance)
+    print(client.balance)
     # print(client.get_orderbook_by_symbol('XRP-USDT-SWAP'))
-    # client.create_http_order('SOL-USDT-SWAP', 'buy')
+    client.create_http_order('SOL-USDT-SWAP', 'buy')
     #
     # # print(client.get_available_balance())
     #
@@ -746,7 +747,7 @@ if __name__ == '__main__':
     # time.sleep(1)
     # asyncio.run(test_order())
     # time.sleep(1)
-    # client.cancel_all_orders()
+    client.cancel_all_orders()
     # time.sleep(1)
     #
     # print(client.get_all_tops())

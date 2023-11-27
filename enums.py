@@ -8,7 +8,6 @@ class PositionSideEnum:
         return [cls.LONG, cls.SHORT, cls.BOTH]
 
 
-
 class ConnectMethodEnum:
     PUBLIC = 'public'
     PRIVATE = 'private'
@@ -23,7 +22,6 @@ class BotState:
     PARSER = 'PARSER'
     BOT = 'BOT'
     SLIPPAGE = 'SLIPPAGE'
-
 
 
 class ResponseStatus:

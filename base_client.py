@@ -13,14 +13,13 @@ class BaseClient(ABC):
     EXCHANGE_NAME = None
     LAST_ORDER_ID = 'default'
 
-
     def __init__(self):
         self.chat_id = config['TELEGRAM']['CHAT_ID']
         self.chat_token = config['TELEGRAM']['TOKEN']
         self.alert_id = config['TELEGRAM']['ALERT_CHAT_ID']
         self.alert_token = config['TELEGRAM']['ALERT_BOT_TOKEN']
-        self.debug_id = config['TELEGRAM']['DEBUG_CHAT_ID']
-        self.debug_token = config['TELEGRAM']['DEBUG_BOT_TOKEN']
+        self.debug_id = config['TELEGRAM']['DIMA_DEBUG_CHAT_ID']
+        self.debug_token = config['TELEGRAM']['DIMA_DEBUG_BOT_TOKEN']
 
     @abstractmethod
     def get_available_balance(self):
