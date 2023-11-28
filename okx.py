@@ -618,7 +618,7 @@ class OkxClient(BaseClient):
                     'factual_amount_usd': usd_size,
                     'factual_fee': real_fee,
                     'order_place_time': 0,
-                    'env': config['SETTINGS']['ENV'],
+                    'env': '-',
                     'datetime_update': datetime.utcnow(),
                     'ts_update': int(datetime.utcnow().timestamp()),
                     'client_id': order['clOrdId']
