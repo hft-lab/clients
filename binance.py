@@ -175,7 +175,7 @@ class BinanceClient(BaseClient):
                                     tick_size = float(fltr['tickSize'])
                                 elif fltr['filterType'] == 'LOT_SIZE':
                                     step_size = float(fltr['stepSize'])
-                            return quantity_precision, price_precision, tick_size, step_size
+                            return tick_size, step_size, quantity_precision, price_precision
 
     def __check_ob(self, ob: dict, side: str, symbol) -> None:
         reformat_ob = [[float(x[0]), float(x[1])] for x in ob[side]]
@@ -419,7 +419,7 @@ class BinanceClient(BaseClient):
         return funding_payments
 
     def fit_sizes(self, amount, price, symbol) -> None:
-        quantity_precision, price_precision, tick_size, step_size = self.get_sizes_for_symbol(symbol)
+        tick_size, step_size, quantity_precision, price_precision = self.get_sizes_for_symbol(symbol)
         rounded_amount = round(amount / step_size) * step_size
         self.amount = round(rounded_amount, quantity_precision)
         rounded_price = round(price / tick_size) * tick_size

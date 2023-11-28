@@ -74,7 +74,7 @@ class KrakenClient(BaseClient):
         #         print(instrument)
         return res['instruments']
 
-    def get_sizes(self, symbol):
+    def get_sizes_for_symbol(self, symbol):
         for ticker in self.tickers:
             if ticker.get('symbol'):
                 if ticker['symbol'].upper() == symbol.upper():
@@ -108,7 +108,7 @@ class KrakenClient(BaseClient):
             price_precision = int((str(tick_size).split('-')[1])) - 1
         else:
             price_precision = 0
-        return price_precision, quantity_precision, tick_size, step_size
+        return tick_size, step_size, price_precision, quantity_precision,
 
     def get_available_balance(self):
         available_balances = {}
@@ -535,7 +535,7 @@ class KrakenClient(BaseClient):
         self.balance['timestamp'] = time.time()
 
     def fit_sizes(self, amount, price, symbol) -> None:
-        price_precision, quantity_precision, tick_size, step_size = self.get_sizes(symbol)
+        tick_size, step_size, price_precision, quantity_precision = self.get_sizes_for_symbol(symbol)
         rounded_amount = round(amount / step_size) * step_size
         self.amount = round(rounded_amount, quantity_precision)
         rounded_price = round(price / tick_size) * tick_size

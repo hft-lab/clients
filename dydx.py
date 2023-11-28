@@ -965,7 +965,15 @@ if __name__ == '__main__':
     # client.run_updater()
     # client.get_real_balance()
     # print(client.get_balance())
-    client.run_updater()
+    # client.run_updater()
+    fills = client.client.private.get_fills().data#market='1INCH-USD')
+    for fill in fills['fills'][::-1]:
+        print(f"MARKET: {fill['market']}")
+        print(f"TIME: {fill['createdAt']}")
+        print(f"SIDE: {fill['side']}")
+        print(f"PRICE: {fill['price']}")
+        print(f"SIZE: {fill['size']}")
+        print(f"LIQUIDITY: {fill['liquidity']}\n")
     # time.sleep(3)
     # print(client.get_balance())
     # print()
@@ -974,24 +982,24 @@ if __name__ == '__main__':
     # print(client.new_get_available_balance())
 
 
-    async def test_order():
-        async with aiohttp.ClientSession() as session:
-            ob = client.get_orderbook('RUNE-USD')
-            price = ob['asks'][5][0]
-            # client.get_markets()
-            client.fit_sizes(10, price, 'RUNE-USD')
-            data = await client.create_order('RUNE-USD',
-                                             'buy',
-                                             session=session,
-                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-            # print(data)
-    #         print(data)
-    #         client.cancel_all_orders()
-    #
-    time.sleep(5)
-    asyncio.run(test_order())
-    while True:
-        time.sleep(5)
+    # async def test_order():
+    #     async with aiohttp.ClientSession() as session:
+    #         ob = client.get_orderbook('RUNE-USD')
+    #         price = ob['asks'][5][0]
+    #         # client.get_markets()
+    #         client.fit_sizes(10, price, 'RUNE-USD')
+    #         data = await client.create_order('RUNE-USD',
+    #                                          'buy',
+    #                                          session=session,
+    #                                          client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+    #         # print(data)
+    # #         print(data)
+    # #         client.cancel_all_orders()
+    # #
+    # time.sleep(5)
+    # asyncio.run(test_order())
+    # while True:
+    #     time.sleep(5)
     #     print(client.get_all_tops())
     #     print(client.get_balance())
     # while True:
