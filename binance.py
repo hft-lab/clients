@@ -680,7 +680,8 @@ if __name__ == '__main__':
                            float(config['SETTINGS']['LEVERAGE']),
                            int(config['TELEGRAM']['ALERT_CHAT_ID']),
                            config['TELEGRAM']['ALERT_BOT_TOKEN'],
-                           max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']))
+                           max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
+                           markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
     client.run_updater()
     # time.sleep(3)
     # print(client.get_balance())
@@ -709,9 +710,8 @@ if __name__ == '__main__':
 
     while True:
         time.sleep(5)
-        print(client.get_all_tops())
-        # asyncio.run(test_order())
-        # print(client.get_orderbook())
+        for ob in client.orderbook.values():
+            print(ob)
 
 # {'symbol': 'ETHUSDT', 'pair': 'ETHUSDT', 'contractType': 'PERPETUAL', 'deliveryDate': 4133404800000,
 #  'onboardDate': 1630911600000, 'status': 'TRADING', 'maintMarginPercent': '2.5000', 'requiredMarginPercent': '5.0000',

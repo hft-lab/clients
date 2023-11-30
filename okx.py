@@ -715,17 +715,18 @@ if __name__ == '__main__':
                        config['TELEGRAM']['ALERT_BOT_TOKEN'],
                        max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
                        markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
-    client.run_updater()
+
+    # client.run_updater()
     client.get_real_balance()
-    time.sleep(3)
+    time.sleep(1)
     # print(client.get_orderbook('XRP-USDT-SWAP'))
     # print(client.get_available_balance())
     print(client.get_orderbook('SOL-USDT-SWAP'))
     price = client.get_orderbook('SOL-USDT-SWAP')['bids'][4][0]
     # price = 1
-    client.fit_sizes(2, price, 'SOL-USDT-SWAP')
+    # client.fit_sizes(2, price, 'SOL-USDT-SWAP')
     # client.get_position()
-    print(client.positions)
+    # print(client.positions)
     # client.get_real_balance()
     print(client.balance)
     # print(client.get_orderbook_by_symbol('XRP-USDT-SWAP'))

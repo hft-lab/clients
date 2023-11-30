@@ -1,17 +1,18 @@
 import asyncio
+import traceback
 from datetime import datetime
 import json
 import threading
 import time
 import urllib.parse
-
+import telebot
 import aiohttp
 from bravado.client import SwaggerClient
 from bravado.requests_client import RequestsClient
 
 # from config import Config
 from clients.base_client import BaseClient
-from clients.enums import ResponseStatus
+from clients.enums import ResponseStatus, OrderStatus
 from tools.APIKeyAuthenticator import APIKeyAuthenticator as auth
 
 
@@ -30,42 +31,73 @@ class BitmexClient(BaseClient):
     EXCHANGE_NAME = 'BITMEX'
     MAX_TABLE_LEN = 200
 
-    def __init__(self, keys, leverage=2):
+    def __init__(self, keys, leverage, alert_id=None, alert_token=None, markets_list=[], max_pos_part=20):
         super().__init__()
+        self.max_pos_part = max_pos_part
+        self.markets_list = markets_list
+        self.telegram_bot = telebot.TeleBot(self.alert_token)
         self._loop = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self.leverage = leverage
-        self.symbol = keys['symbol']
-        self.api_key = keys['api_key']
-        self.api_secret = keys['api_secret']
-        self.pos_power = 6 if 'USDT' in self.symbol else 8
-        self.currency = 'USDt' if 'USDT' in self.symbol else 'XBt'
+        self.api_key = keys['API_KEY']
+        self.api_secret = keys['API_SECRET']
+        self.subscriptions = ['margin', 'position', 'orderBook10', 'execution']
 
         self.auth = auth(self.BASE_URL, self.api_key, self.api_secret)
         self.data = {}
+        self.orders = {}
+        self.positions = {}
+        self.orderbook = {}
+        self.balance = {}
         self.keys = {}
         self.exited = False
         self.swagger_client = self.swagger_client_init()
-
-        commission = self.swagger_client.User.User_getCommission().result()[0]
-        self.taker_fee = commission[self.symbol]['takerFee']
-        self.maker_fee = commission[self.symbol]['makerFee']
-
+        self.commission = self.swagger_client.User.User_getCommission().result()[0]
+        self.instruments = self.get_all_instruments()
+        self.markets = self.get_markets()
         self.wst = threading.Thread(target=self._run_ws_forever, daemon=True)
-        self.tick_size = None
-        self.step_size = None
-        self.quantity_precision = None
-        self.price_precision = 0
         self.time_sent = time.time()
+
+    def get_all_instruments(self):
+        # first_page = self.swagger_client.Instrument.Instrument_get(count=500).result()
+        # second_page = self.swagger_client.Instrument.Instrument_get(count=500, start=500).result()
+        instr_list = {}
+        instruments = self.swagger_client.Instrument.Instrument_get(
+            filter=json.dumps({'quoteCurrency': 'USDT', 'state': 'Open'})).result()
+        for instr in instruments[0]:
+            if '2' not in instr['symbol']:
+                instr_list.update({instr['symbol']: instr})
+        return instr_list
+        # for instr in second_page[0]:
+        #     if instr['state']:
+        #         print(instr)
+        #         print()
+
+    def get_markets(self):
+        markets = {}
+        for market in self.instruments.values():
+            if market['rootSymbol'] == 'XBT':
+                markets.update({"BTC": market['symbol']})
+                continue
+            markets.update({market['rootSymbol']: market['symbol']})
+        return markets
 
     def run_updater(self):
         self.wst.start()
-        self.__wait_for_account()
-        self.get_contract_price()
+        # self.__wait_for_account()
+        # self.get_contract_price()
 
-        self.tick_size = self.get_instrument()['tick_size']
-        self.step_size = self.get_instrument()['step_size']
-        self.quantity_precision = len(str(self.step_size).split('.')[1]) if '.' in str(self.step_size) else 1
+    def get_fees(self, symbol):
+        taker_fee = self.commission[symbol]['takerFee']
+        maker_fee = self.commission[symbol]['makerFee']
+        return taker_fee, maker_fee
+
+    def get_sizes_for_symbol(self, symbol):
+        instrument = self.get_instrument(symbol)
+        tick_size = instrument['tick_size']
+        step_size = instrument['step_size']
+        quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
+        return tick_size, step_size, quantity_precision
 
     def _run_ws_forever(self):
         while True:
@@ -77,7 +109,7 @@ class BitmexClient(BaseClient):
     def __wait_for_account(self):
         '''On subscribe, this data will come down. Wait for it.'''
         # Wait for the keys to show up from the ws
-        while not {'instrument', 'margin', 'order', 'position', 'orderBook10'} <= set(self.data):
+        while not set(self.subscriptions) <= set(self.data):
             time.sleep(0.1)
 
     async def _run_ws_loop(self):
@@ -90,62 +122,89 @@ class BitmexClient(BaseClient):
                     async for msg in ws:
                         self._process_msg(msg)
                 except Exception as e:
+                    traceback.print_exc()
                     print("Bitmex ws loop exited: ", e)
                 finally:
                     self._connected.clear()
 
+    @staticmethod
+    def get_order_status(order):
+        if order['ordStatus'] == 'New':
+            status = OrderStatus.PROCESSING
+        elif order['ordStatus'] == 'Filled':
+            status = OrderStatus.FULLY_EXECUTED
+        elif order['ordStatus'] == 'Canceled' and order['cumQty']:
+            status = OrderStatus.PARTIALLY_EXECUTED
+        elif order['ordStatus'] == 'Canceled' and not order['cumQty']:
+            status = OrderStatus.NOT_EXECUTED
+        else:
+            status = OrderStatus.PARTIALLY_EXECUTED
+        return status
+
+    def get_order_result(self, order):
+        factual_price = order['avgPx'] if order.get('avgPx') else 0
+        factual_size_coin = abs(order['homeNotional']) if order.get('homeNotional') else 0
+        factual_size_usd = abs(order['foreignNotional']) if order.get('foreignNotional') else 0
+        status = self.get_order_status(order)
+        result = {
+            'exchange_order_id': order['orderID'],
+            'exchange': self.EXCHANGE_NAME,
+            'status': status,
+            'factual_price': factual_price,
+            'factual_amount_coin': factual_size_coin,
+            'factual_amount_usd': factual_size_usd,
+            'datetime_update': datetime.utcnow(),
+            'ts_update': int(round(datetime.utcnow().timestamp() * 1000))
+        }
+        return result
+
+    def update_position(self, position):
+        side = 'SHORT' if position['foreignNotional'] > 0 else 'LONG'
+        amount = -position['currentQty'] if side == 'SHORT' else position['currentQty']
+        price = position['avgEntryPrice'] if position.get('avgEntryPrice') else 0
+        self.positions.update({position['symbol']: {'side': side,
+                                                    'amount_usd': -position['foreignNotional'],
+                                                    'amount': amount / (10 ** 6),
+                                                    'entry_price': price,
+                                                    'unrealized_pnl_usd': position['unrealisedPnl'] / (10 ** 6),
+                                                    'realized_pnl_usd': position['realisedPnl'] / (10 ** 6),
+                                                    'lever': self.leverage}})
+
     def _process_msg(self, msg: aiohttp.WSMessage):
         if msg.type == aiohttp.WSMsgType.TEXT:
             message = json.loads(msg.data)
-            table = message.get("table")
-            action = message.get("action")
-            if action:
-                if table not in self.data and table == 'orderBook10':
-                    self.data[table] = {}
-                elif table not in self.data:
-                    self.data[table] = []
-                if action == 'partial':
-                    self.keys[table] = message['keys']
-                    if table == 'orderBook10':
-                        message['data'][0].update({'timestamp': time.time()})
-                        symbol = message['filter']['symbol']
-                        self.data[table].update({symbol: message['data'][0]})
-                    else:
-                        self.data[table] = message['data']
-                elif action == 'insert':
-                    self.data[table] += message['data']
-                    if table == 'order':
-                        # print(f"BITMEX PROCESS MSG: {message}")
-                        timestamp = self.timestamp_from_date(message['data'][0]['transactTime'])
-                        print(f'BITMEX ORDER PLACE TIME: {timestamp - self.time_sent} sec')
-                    # Limit the max length of the table to avoid excessive memory usage.
-                    # Don't trim orders because we'll lose valuable state if we do.
-                    if table not in ['order', 'orderBook10'] and len(self.data[table]) > self.MAX_TABLE_LEN:
-                        self.data[table] = self.data[table][self.MAX_TABLE_LEN // 2:]
-                elif action == 'update':
-                    # Locate the item in the collection and update it.
-                    for updateData in message['data']:
-                        if table == 'orderBook10':
-                            updateData.update({'timestamp': time.time()})
-                            symbol = updateData['symbol']
-                            self.data[table].update({symbol: updateData})
-                        elif table == 'trade':
-                            self.data[table].insert(0, updateData)
-                        elif table == 'execution':
-                            self.data[table].insert(0, updateData)
-                        else:
-                            item = self.find_by_keys(self.keys[table], self.data[table], updateData)
-                            if not item:
-                                return  # No item found to update. Could happen before push
-                            item.update(updateData)
-                            # Remove cancelled / filled orders
-                            if table == 'order' and not self.order_leaves_quantity(item):
-                                self.data[table].remove(item)
-                elif action == 'delete':
-                    # Locate the item in the collection and remove it.
-                    for deleteData in message['data']:
-                        item = self.find_by_keys(self.keys[table], self.data[table], deleteData)
-                        self.data[table].remove(item)
+            if message.get('subscribe'):
+                print(message)
+            if message.get("action"):
+                if message['table'] == 'execution':
+                    for order in message['data']:
+                        if order['ordStatus'] == 'New':
+                            timestamp = self.timestamp_from_date(order['transactTime'])
+                            print(f'BITMEX ORDER PLACE TIME: {timestamp - self.time_sent} sec')
+                        result = self.get_order_result(order)
+                        self.orders.update({order['orderID']: result})
+                elif message['table'] == 'orderBook10':
+                    for ob in message['data']:
+                        if ob.get('symbol'):
+                            ob.update({'timestamp': int(datetime.utcnow().timestamp() * 1000)})
+                            symbol = ob['symbol']
+                            self.orderbook.update({symbol: ob})
+                elif message['table'] == 'position':
+                    for position in message['data']:
+                        if position.get('currentQty'):
+                            try:
+                                self.update_position(position)
+                            except:
+                                pass
+                elif message['table'] == 'margin':
+                    for balance in message['data']:
+                        if balance['currency'] == 'USDt':
+                            try:
+                                self.balance = {'free': float(balance['availableMargin']) / (10 ** 6),
+                                                'total': float(balance['marginBalance']) / (10 ** 6),
+                                                'timestamp': datetime.utcnow().timestamp()}
+                            except:
+                                pass
 
     @staticmethod
     def timestamp_from_date(date: str):
@@ -164,6 +223,12 @@ class BitmexClient(BaseClient):
         for item in table:
             if all(item[k] == matchData[k] for k in keys):
                 return item
+
+    @staticmethod
+    def get_pos_power(self, symbol):
+        pos_power = 6 if 'USDT' in symbol else 8
+        currency = 'USDt' if 'USDT' in symbol else 'XBt'
+        return pos_power, currency
 
     def swagger_client_init(self, config=None):
         if config is None:
@@ -186,25 +251,21 @@ class BitmexClient(BaseClient):
         self.exited = True
         self.ws.close()
 
-    def get_instrument(self):
+    def get_instrument(self, symbol):
         """Get the raw instrument data for this symbol."""
         # Turn the 'tick_size' into 'tickLog' for use in rounding
-        instrument = self.data['instrument'][0]
+        instrument = self.instruments[symbol]
         instrument['tick_size'] = instrument['tickSize']
         instrument['step_size'] = instrument['lotSize']
         return instrument
 
-    def funds(self):
+    def get_balance(self):
         """Get your margin details."""
-        return self.data['margin']
+        return self.balance['total']
 
     def open_orders(self):
         """Get all your open orders."""
         return self.data['order']
-
-    def recent_trades(self):
-        """Get recent trades."""
-        return self.data['trade']
 
     def fit_price(self, price):
         if not self.price_precision:
@@ -283,14 +344,13 @@ class BitmexClient(BaseClient):
             self.swagger_client.Order.Order_amend(orderID=id, price=price).result()
 
     def cancel_all_orders(self, orderID=None):
-        print('>>>>', self.swagger_client.Order.Order_cancelAll(symbol=self.symbol).result())
-            # print('order', order)
-            # if not order['ordStatus'] in ['Canceled', 'Filled']:
-            #
-            #     print(self.swagger_client.Order.Order_cancel(orderID=order['orderID']).result())
-            #
-            #     print('\n\n\n\n\n')
-
+        print('>>>>', self.swagger_client.Order.Order_cancelAll().result())
+        # print('order', order)
+        # if not order['ordStatus'] in ['Canceled', 'Filled']:
+        #
+        #     print(self.swagger_client.Order.Order_cancel(orderID=order['orderID']).result())
+        #
+        #     print('\n\n\n\n\n')
 
     def __get_auth(self, method, uri, body=''):
         """
@@ -311,61 +371,53 @@ class BitmexClient(BaseClient):
         Most subscription topics are scoped by the symbol we're listening to.
         """
         # Some subscriptions need to xhave the symbol appended.
-        subscriptions_full = map(lambda sub: (
-            sub if sub in ['account', 'affiliate', 'announcement', 'connected', 'chat', 'insurance', 'margin',
-                           'publicNotifications', 'privateNotifications', 'transact', 'wallet']
-            else (sub + ':' + self.symbol)
-        ), ['execution', 'instrument', 'margin', 'order', 'position', 'trade', 'orderBook10'])
-        urlParts = list(urllib.parse.urlparse(self.BASE_WS))
-        urlParts[2] += "?subscribe={}".format(','.join(subscriptions_full))
-        urlParts[2] += ',orderBook10:XBTUSD'
+        url_parts = list(urllib.parse.urlparse(self.BASE_WS))
+        url_parts[2] += "?subscribe={}".format(','.join(self.subscriptions))
+        return urllib.parse.urlunparse(url_parts)
 
-        return urllib.parse.urlunparse(urlParts)
+    # def get_pnl(self):
+    #     positions = self.positions()
+    #     pnl = [x for x in positions if x['symbol'] == self.symbol]
+    #     pnl = None if not len(pnl) else pnl[0]
+    #     if not pnl:
+    #         return [0, 0, 0]
+    #     multiplier_power = 6 if pnl['currency'] == 'USDt' else 8
+    #     change = 1 if pnl['currency'] == 'USDt' else self.get_orderbook()['XBTUSD']['bids'][0][0]
+    #     realized_pnl = pnl['realisedPnl'] / 10 ** multiplier_power * change
+    #     unrealized_pnl = pnl['unrealisedPnl'] / 10 ** multiplier_power * change
+    #     return [realized_pnl + unrealized_pnl, pnl, realized_pnl]
 
-    def get_pnl(self):
-        positions = self.positions()
-        pnl = [x for x in positions if x['symbol'] == self.symbol]
-        pnl = None if not len(pnl) else pnl[0]
-        if not pnl:
-            return [0, 0, 0]
-        multiplier_power = 6 if pnl['currency'] == 'USDt' else 8
-        change = 1 if pnl['currency'] == 'USDt' else self.get_orderbook()['XBTUSD']['bids'][0][0]
-        realized_pnl = pnl['realisedPnl'] / 10 ** multiplier_power * change
-        unrealized_pnl = pnl['unrealisedPnl'] / 10 ** multiplier_power * change
-        return [realized_pnl + unrealized_pnl, pnl, realized_pnl]
-
-    def get_last_price(self, side):
+    def get_last_price(self, side, symbol):
         side = side.capitalize()
         # last_trades = self.recent_trades()
         last_trades = self.data['execution']
         last_price = 0
         for trade in last_trades:
-            if trade['side'] == side and trade['symbol'] == self.symbol and trade.get('avgPx'):
+            if trade['side'] == side and trade['symbol'] == symbol and trade.get('avgPx'):
                 last_price = trade['avgPx']
         return last_price
 
     def get_real_balance(self):
-        currency = 'XBt' if not 'USDT' in self.symbol else 'USDt'
-        orderbook_btc = self.get_orderbook()['XBTUSD']
-        change = 1 if currency == 'USDt' else (orderbook_btc['asks'][0][0] + orderbook_btc['bids'][0][0]) / 2
-        transactions = None
-        while not transactions:
+        transes = None
+        while not transes:
             try:
-                transactions = self.swagger_client.User.User_getWalletHistory(currency=currency).result()
+                transes = self.swagger_client.User.User_getWalletHistory(currency='USDt').result()
             except:
                 pass
-        real = transactions[0][0]['marginBalance'] if transactions[0][0]['marginBalance'] else transactions[0][0][
-            'walletBalance']
-        real = (real / 10 ** self.pos_power) * change
-        return real
+        real = transes[0][0]['marginBalance'] if transes[0][0]['marginBalance'] else transes[0][0]['walletBalance']
+        self.balance['total'] = (real / 10 ** 6)
+        self.balance['timestamp'] = datetime.utcnow().timestamp()
+
+    def get_positions(self) -> dict:
+        return self.positions
 
     def get_available_balance(self, side):
-        if 'USDT' in self.symbol:
-            funds = [x for x in self.funds() if x['currency'] == 'USDt'][0]
-            change = 1
-        else:
-            funds = [x for x in self.funds() if x['currency'] == 'XBt'][0]
-            change = self.get_orderbook()['XBTUSD']['bids'][0][0]
+        # if 'USDT' in self.symbol:
+        funds = [x for x in self.get_balance() if x['currency'] == 'USDt'][0]
+        change = 1
+        # else:
+        #     funds = [x for x in self.funds() if x['currency'] == 'XBt'][0]
+        #     change = self.get_orderbook()['XBTUSD']['bids'][0][0]
         positions = self.get_positions()
         wallet_balance = (funds['walletBalance'] / 10 ** self.pos_power) * change
         available_balance = wallet_balance * self.leverage
@@ -383,8 +435,7 @@ class BitmexClient(BaseClient):
         else:
             return available_balance + position_value + wallet_balance
 
-
-    def get_positions(self):
+    def get_position(self):
         '''Get your positions.'''
         pos_bitmex = {x['symbol']: x for x in self.swagger_client.Position.Position_get().result()[0]}
         for symbol, position in pos_bitmex.items():
@@ -393,38 +444,55 @@ class BitmexClient(BaseClient):
                 'entry_price': float(position['avgEntryPrice']),
                 'unrealized_pnl_usd': 0,
                 'side': 'LONG',
-                'amount_usd': float(position['foreignNotional']),
+                'amount_usd': -float(position['foreignNotional']),
                 'realized_pnl_usd': 0,
-                'leverage': float(position['leverage']),
+                'lever': float(position['leverage']),
             }
+        self.positions = pos_bitmex
+
+    def get_orderbook(self, symbol):
+        return self.orderbook[symbol]
+
+# def get_xbt_pos(self):
+#     bal_bitmex = [x for x in self.funds() if x['currency'] == 'XBt'][0]
+#     xbt_pos = bal_bitmex['walletBalance'] / 10 ** 8
+#     return xbt_pos
+
+# def get_contract_price(self):
+#     # self.__wait_for_account()
+#     instrument = self.get_instrument()
+#     self.contract_price = instrument['foreignNotional24h'] / instrument['volume24h']
 
 
-        #     if position['homeNotional'] >= 0:
-        #         pos_bitmex[symbol].update({'side': 'LONG', 'amount': position['homeNotional']})
-        #     else:
-        #         pos_bitmex[symbol].update({'side': 'SHORT', 'amount': position['homeNotional']})
-        # if self.symbol == 'XBTUSD':
-        #     pos_xbt = pos_bitmex.get('XBTUSD')
-        #     if pos_xbt:
-        #         bal_bitmex = [x for x in self.funds() if x['currency'] == self.currency][0]
-        #         xbt_extra_pos = bal_bitmex['walletBalance'] / 10 ** self.pos_power
-        #         pos_bitmex['XBTUSD']['amount'] += xbt_extra_pos
-        print(pos_bitmex)
+if __name__ == '__main__':
+    import configparser
+    import sys
 
-        return pos_bitmex
+    config = configparser.ConfigParser()
+    config.read(sys.argv[1], "utf-8")
+    client = BitmexClient(config['BITMEX'],
+                          float(config['SETTINGS']['LEVERAGE']),
+                          int(config['TELEGRAM']['ALERT_CHAT_ID']),
+                          config['TELEGRAM']['ALERT_BOT_TOKEN'],
+                          max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
+                          markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
+    client.run_updater()
 
-    def get_orderbook(self):
-        return self.data['orderBook10']
+    time.sleep(3)
 
-    def get_xbt_pos(self):
-        bal_bitmex = [x for x in self.funds() if x['currency'] == 'XBt'][0]
-        xbt_pos = bal_bitmex['walletBalance'] / 10 ** 8
-        return xbt_pos
+    print(client.get_real_balance())
+    # print(client.get_positions())
+    # print(client.get_balance())
+    # print(client.orders)
+    while True:
 
-    def get_contract_price(self):
-        # self.__wait_for_account()
-        instrument = self.get_instrument()
-        self.contract_price = instrument['foreignNotional24h'] / instrument['volume24h']
+        # print(client.funds())
+        # print(client.get_orderbook())
+        # print('CYCLE DONE')
+        # print(f"{client.get_available_balance('sell')=}")
+        # print(f"{client.get_available_balance('buy')=}")
+        # print("\n")
+        time.sleep(1)
 
 # EXAMPLES:
 
@@ -504,7 +572,7 @@ class BitmexClient(BaseClient):
 
 
 # while True:
-#     pos_bitmex = [x for x in bitmex_client.positions() if x['symbol'] == 'XBTUSDT'][0]
+#     pos_bitmex = [x for x in bitmex_client.positions if x['symbol'] == 'XBTUSDT'][0]
 #     side = 'Buy' if pos_bitmex['currentQty'] < 0 else 'Sell'
 #     size = abs(pos_bitmex['currentQty'])
 #     open_orders = bitmex_client.open_orders(clOrdIDPrefix='')
@@ -631,16 +699,3 @@ class BitmexClient(BaseClient):
 #   'trdMatchID': '15cd273d-ded8-e339-b3b1-9a9080b5d10f', 'execID': 'adcc6b75-2d57-a9d2-47c4-8db921d8aae1',
 #   'execType': 'Trade', 'execCost': 16519000, 'homeNotional': 0.001, 'foreignNotional': -16.519,
 #   'commission': 0.00022500045, 'lastMkt': 'XBME', 'execComm': 3716, 'underlyingLastPx': None}]
-
-
-if __name__ == '__main__':
-    client = BitmexClient(Config.BITMEX, Config.LEVERAGE)
-    client.run_updater()
-
-    time.sleep(15)
-
-    while True:
-        print(f"{client.get_available_balance('sell')=}")
-        print(f"{client.get_available_balance('buy')=}")
-        print("\n")
-        time.sleep(1)

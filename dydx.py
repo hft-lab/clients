@@ -556,7 +556,7 @@ class DydxClient(BaseClient):
             self._append_new_order(ob, 'bids')
         if len(ob['contents']['asks']):
             self._append_new_order(ob, 'asks')
-        self.orderbook[symbol]['timestamp'] = int(time.time() * 1000)
+        self.orderbook[symbol]['timestamp'] = int(datetime.utcnow().timestamp() * 1000)
         if last_ob_ask != self.orderbook[symbol]['asks'][0][0] or last_ob_bid != self.orderbook[symbol]['bids'][0][0]:
             self.count_flag = True
         # print(f"\n\nDYDX NEW OB APPEND TIME: {time.time() - time_start} sec\n\n")
