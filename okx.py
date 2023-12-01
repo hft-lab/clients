@@ -330,7 +330,7 @@ class OkxClient(BaseClient):
                 quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
                 return tick_size, step_size, quantity_precision, contract_value, min_size
 
-    def fit_sizes(self, amount, price, symbol) -> None:
+    def fit_sizes(self, amount, price, symbol):
         tick_size, step_size, quantity_precision, contract_value, min_size = self.get_sizes_for_symbol(symbol)
         amount = amount / contract_value
         if min_size > amount:
@@ -346,6 +346,7 @@ class OkxClient(BaseClient):
             round_price_len = 0
         rounded_price = round(price / tick_size) * tick_size
         self.price = round(rounded_price, round_price_len)
+        return self.price, self.amount
 
     async def create_order(self, symbol, side, session: aiohttp.ClientSession, expire=100, client_id=None) -> dict:
         self.time_sent = int(round((datetime.utcnow().timestamp()) * 1000))

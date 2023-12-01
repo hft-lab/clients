@@ -306,7 +306,7 @@ class DydxClient(BaseClient):
         quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
         return tick_size, step_size, quantity_precision
 
-    def fit_sizes(self, amount, price, symbol) -> None:
+    def fit_sizes(self, amount, price, symbol):
         # NECESSARY
         tick_size, step_size, quantity_precision = self.get_sizes_for_symbol(symbol)
         rounded_amount = round(amount / step_size) * step_size
@@ -319,6 +319,7 @@ class DydxClient(BaseClient):
             round_price_len = 0
         rounded_price = round(price / tick_size) * tick_size
         self.price = round(rounded_price, round_price_len)
+        return self.price, self.amount
 
     async def create_order(self, symbol, side: str, session: aiohttp.ClientSession,
                            type: str = 'LIMIT', expire: int = 10000, client_id: str = None, expiration=None) -> dict:
