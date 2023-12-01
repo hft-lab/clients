@@ -1,6 +1,6 @@
 import aiohttp
 from abc import ABC, abstractmethod
-
+import telebot
 import configparser
 import sys
 config = configparser.ConfigParser()
@@ -20,6 +20,7 @@ class BaseClient(ABC):
         self.alert_token = config['TELEGRAM']['ALERT_BOT_TOKEN']
         self.debug_id = config['TELEGRAM']['DIMA_DEBUG_CHAT_ID']
         self.debug_token = config['TELEGRAM']['DIMA_DEBUG_BOT_TOKEN']
+        self.telegram_bot = telebot.TeleBot(self.alert_token)
 
     @abstractmethod
     def get_available_balance(self):

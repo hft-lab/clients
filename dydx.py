@@ -22,7 +22,6 @@ from web3 import Web3
 # from config import Config
 from clients.base_client import BaseClient
 from clients.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
-import telebot
 
 
 class DydxClient(BaseClient):
@@ -32,11 +31,10 @@ class DydxClient(BaseClient):
     urlMarkets = "https://api.dydx.exchange/v3/markets/"
     urlOrderbooks = "https://api.dydx.exchange/v3/orderbook/"
 
-    def __init__(self, keys, leverage,  alert_id = None, alert_token = None, markets_list=[], max_pos_part=20):
+    def __init__(self, keys, leverage, markets_list=[], max_pos_part=20):
         super().__init__()
         self.markets_list = markets_list
         self.max_pos_part = max_pos_part
-        self.telegram_bot = telebot.TeleBot(self.alert_token)
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         self._connected = asyncio.Event()
@@ -141,12 +139,6 @@ class DydxClient(BaseClient):
             if value['quoteAsset'] == 'USD' and value['status'] == 'ONLINE':
                 coin = value['baseAsset']
                 self.markets.update({coin: market})
-            else:
-                message = f"{self.EXCHANGE_NAME}:\n{market} has status {value['status']}"
-                try:
-                    self.telegram_bot.send_message(self.alert_id, '<pre>' + message + '</pre>', parse_mode='HTML')
-                except:
-                    pass
         return self.markets
 
     async def get_multi_orderbook(self, symbol):
@@ -956,10 +948,8 @@ if __name__ == '__main__':
 
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
-    client = DydxClient(config['DYDX'],
-                        float(config['SETTINGS']['LEVERAGE']),
-                        int(config['TELEGRAM']['ALERT_CHAT_ID']),
-                        config['TELEGRAM']['ALERT_BOT_TOKEN'],
+    client = DydxClient(keys=config['DYDX'],
+                        leverage = float(config['SETTINGS']['LEVERAGE']),
                         max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
                         markets_list=['RUNE'])
     # client.run_updater()

@@ -15,7 +15,7 @@ import requests
 from clients.base_client import BaseClient
 from clients.enums import ConnectMethodEnum, EventTypeEnum, PositionSideEnum, ResponseStatus, OrderStatus, \
     ClientsOrderStatuses
-import telebot
+
 import orjson
 
 
@@ -26,11 +26,10 @@ class BinanceClient(BaseClient):
     urlMarkets = "https://fapi.binance.com/fapi/v1/exchangeInfo"
     urlOrderbooks = "https://fapi.binance.com/fapi/v1/depth?limit=5&symbol="
 
-    def __init__(self, keys, leverage,  alert_id = None, alert_token = None, markets_list=[], max_pos_part=20):
+    def __init__(self, keys, leverage, markets_list=[], max_pos_part=20):
         super().__init__()
         self.markets_list = markets_list
         self.max_pos_part = max_pos_part
-        self.telegram_bot = telebot.TeleBot(self.alert_token)
         self.taker_fee = 0.00036
         self.leverage = leverage
         self.__api_key = keys['API_KEY']
@@ -123,16 +122,11 @@ class BinanceClient(BaseClient):
     def get_markets(self):
         markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
         for market in markets['symbols']:
-            if market['marginAsset'] == 'USDT' and market['contractType'] == 'PERPETUAL' and market['underlyingType'] == 'COIN':
+            if market['marginAsset'] == 'USDT' and market['contractType'] == 'PERPETUAL' and market[
+                'underlyingType'] == 'COIN':
                 if market['status'] == 'TRADING':
                     coin = market['baseAsset']
                     self.markets.update({coin: market['symbol']})
-                else:
-                    message = f"{self.EXCHANGE_NAME}:\n{market['symbol']} has status {market['status']}"
-                    try:
-                        self.telegram_bot.send_message(self.alert_id, '<pre>' + message + '</pre>', parse_mode='HTML')
-                    except:
-                        pass
         return self.markets
 
     def run_updater(self) -> None:
@@ -425,7 +419,8 @@ class BinanceClient(BaseClient):
         rounded_price = round(price / tick_size) * tick_size
         self.price = round(rounded_price, price_precision)
 
-    async def create_order(self, symbol, side: str, session: aiohttp.ClientSession, expire=5000, client_id=None) -> dict:
+    async def create_order(self, symbol, side: str, session: aiohttp.ClientSession, expire=5000,
+                           client_id=None) -> dict:
         side = side.upper()
         time_sent = datetime.datetime.utcnow().timestamp()
         url_path = '/fapi/v1/order?'
@@ -478,7 +473,7 @@ class BinanceClient(BaseClient):
         for symbol in self.markets.values():
             payload = {
                 "timestamp": int(time.time() * 1000),
-                'symbol':symbol
+                'symbol': symbol
             }
             query_string = self._prepare_query(payload)
             payload["signature"] = self._create_signature(query_string)
@@ -676,10 +671,8 @@ if __name__ == '__main__':
 
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
-    client = BinanceClient(config['BINANCE'],
-                           float(config['SETTINGS']['LEVERAGE']),
-                           int(config['TELEGRAM']['ALERT_CHAT_ID']),
-                           config['TELEGRAM']['ALERT_BOT_TOKEN'],
+    client = BinanceClient(keys=config['BINANCE'],
+                           leverage=float(config['SETTINGS']['LEVERAGE']),
                            max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
                            markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
     client.run_updater()
@@ -691,7 +684,6 @@ if __name__ == '__main__':
     # print(client.new_get_available_balance())
     # client.get_markets()
     # time.sleep(5)
-
 
     # async def test_order():
     #     async with aiohttp.ClientSession() as session:

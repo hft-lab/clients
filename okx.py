@@ -12,7 +12,6 @@ from datetime import datetime
 import requests
 import random
 import queue
-import telebot
 import uuid
 
 from clients.base_client import BaseClient
@@ -25,12 +24,11 @@ class OkxClient(BaseClient):
     headers = {'Content-Type': 'application/json'}
     EXCHANGE_NAME = 'OKX'
 
-    def __init__(self, keys, leverage, alert_id = None, alert_token = None, markets_list=[], max_pos_part=20):
+    def __init__(self, keys, leverage, markets_list=[], max_pos_part=20):
         super().__init__()
         self.max_pos_part = max_pos_part
         self.markets_list = markets_list
         self.requestLimit = 1200
-        self.telegram_bot = telebot.TeleBot(self.alert_token)
         self.create_order_response = False
         self.taker_fee = 0.0005
         self.leverage = leverage
@@ -421,12 +419,6 @@ class OkxClient(BaseClient):
             if instrument['state'] == 'live':
                 if instrument['settleCcy'] == 'USDT':
                     markets.update({coin: market})
-            else:
-                message = f"{self.EXCHANGE_NAME}:\n{market} has status {instrument['state']}"
-                try:
-                    self.telegram_bot.send_message(self.alert_id, '<pre>' + 'OKX: get_markets' + message + '</pre>', parse_mode='HTML')
-                except:
-                    pass
             # print(inst['instId'], inst, '\n')
         return markets
 
@@ -541,7 +533,8 @@ class OkxClient(BaseClient):
                 return {
                     'exchange_order_id': order_id,
                     'exchange': self.EXCHANGE_NAME,
-                    'status': OrderStatus.FULLY_EXECUTED if order.get('state') == 'filled' else OrderStatus.NOT_EXECUTED,
+                    'status': OrderStatus.FULLY_EXECUTED if order.get(
+                        'state') == 'filled' else OrderStatus.NOT_EXECUTED,
                     'factual_price': float(order['avgPx']) if order['avgPx'] else 0,
                     'factual_amount_coin': float(order['fillSz']) if order['avgPx'] else 0,
                     'factual_amount_usd': float(order['fillSz']) * float(order['avgPx']) if order['avgPx'] else 0,
@@ -598,31 +591,31 @@ class OkxClient(BaseClient):
                 real_fee = abs(float(order['fee'])) / usd_size
             contract_value = self.get_contract_value(order['instId'])
             order.update({
-                    'id': uuid.uuid4(),
-                    'datetime': datetime.utcfromtimestamp(int(order['uTime']) / 1000),
-                    'ts': int(time.time()),
-                    'context': 'web-interface' if 'api_' not in order['clOrdId'] else order['clOrdId'].split('_')[1],
-                    'parent_id': uuid.uuid4(),
-                    'exchange_order_id': order['ordId'],
-                    'type': order['category'],
-                    'status': status,
-                    'exchange': self.EXCHANGE_NAME,
-                    'side': order['side'].lower(),
-                    'symbol': symbol,
-                    'expect_price': float(order['px']),
-                    'expect_amount_coin': float(order['sz']) * contract_value,
-                    'expect_amount_usd': float(order['px']) * float(order['sz']) * contract_value,
-                    'expect_fee': self.taker_fee,
-                    'factual_price': float(order['avgPx']) if order['avgPx'] else 0,
-                    'factual_amount_coin': float(order['fillSz']) * contract_value if order['fillSz'] else 0,
-                    'factual_amount_usd': usd_size,
-                    'factual_fee': real_fee,
-                    'order_place_time': 0,
-                    'env': '-',
-                    'datetime_update': datetime.utcnow(),
-                    'ts_update': int(datetime.utcnow().timestamp()),
-                    'client_id': order['clOrdId']
-                })
+                'id': uuid.uuid4(),
+                'datetime': datetime.utcfromtimestamp(int(order['uTime']) / 1000),
+                'ts': int(time.time()),
+                'context': 'web-interface' if 'api_' not in order['clOrdId'] else order['clOrdId'].split('_')[1],
+                'parent_id': uuid.uuid4(),
+                'exchange_order_id': order['ordId'],
+                'type': order['category'],
+                'status': status,
+                'exchange': self.EXCHANGE_NAME,
+                'side': order['side'].lower(),
+                'symbol': symbol,
+                'expect_price': float(order['px']),
+                'expect_amount_coin': float(order['sz']) * contract_value,
+                'expect_amount_usd': float(order['px']) * float(order['sz']) * contract_value,
+                'expect_fee': self.taker_fee,
+                'factual_price': float(order['avgPx']) if order['avgPx'] else 0,
+                'factual_amount_coin': float(order['fillSz']) * contract_value if order['fillSz'] else 0,
+                'factual_amount_usd': usd_size,
+                'factual_fee': real_fee,
+                'order_place_time': 0,
+                'env': '-',
+                'datetime_update': datetime.utcnow(),
+                'ts_update': int(datetime.utcnow().timestamp()),
+                'client_id': order['clOrdId']
+            })
             orders.append(order)
         return orders
 
@@ -670,7 +663,7 @@ class OkxClient(BaseClient):
         }
         json_body = json.dumps(body)
         headers = self.get_private_headers('POST', way, json_body)
-        resp = requests.post(url=base_way+way, headers=headers, data=json_body).json()
+        resp = requests.post(url=base_way + way, headers=headers, data=json_body).json()
         print(f"OKEX RESPONSE: {resp}")
         if resp['code'] == '0':
             self.LAST_ORDER_ID = resp['data'][0]['ordId']
@@ -709,10 +702,8 @@ if __name__ == '__main__':
 
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
-    client = OkxClient(config['OKX'],
-                       float(config['SETTINGS']['LEVERAGE']),
-                       int(config['TELEGRAM']['ALERT_CHAT_ID']),
-                       config['TELEGRAM']['ALERT_BOT_TOKEN'],
+    client = OkxClient(keys=config['OKX'],
+                       leverage=float(config['SETTINGS']['LEVERAGE']),
                        max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
                        markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
 
@@ -820,4 +811,3 @@ if __name__ == '__main__':
 #
 # if __name__ == "__main__":
 #     asyncio.run(main())
-

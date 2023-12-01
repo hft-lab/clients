@@ -17,7 +17,6 @@ import requests
 
 from clients.base_client import BaseClient
 from clients.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, PositionSideEnum
-import telebot
 
 
 class KrakenClient(BaseClient):
@@ -28,11 +27,10 @@ class KrakenClient(BaseClient):
     urlOrderbooks = "https://futures.kraken.com/derivatives/api/v3/orderbook?symbol="
     urlMarkets = "https://futures.kraken.com/derivatives/api/v3/tickers"
 
-    def __init__(self, keys, leverage,  alert_id = None, alert_token = None, markets_list=[], max_pos_part=20):
+    def __init__(self, keys, leverage, markets_list=[], max_pos_part=20):
         super().__init__()
         self.markets_list = markets_list
         self.max_pos_part = max_pos_part
-        self.telegram_bot = telebot.TeleBot(self.alert_token)
         self.amount = None
         self.taker_fee = 0.0005
         self.requestLimit = 1200
@@ -177,15 +175,7 @@ class KrakenClient(BaseClient):
         self.tickers = markets['tickers']
         for market in markets['tickers']:
             if market.get('tag') is not None:
-                if (market['tag'] == 'perpetual') & (market['pair'].split(":")[1] == 'USD'):
-                    if market['postOnly']:
-                        message = f"{self.EXCHANGE_NAME}:\n{market['symbol']} has status PostOnly"
-                        try:
-                            self.telegram_bot.send_message(self.alert_id, '<pre>' + message + '</pre>',
-                                                           parse_mode='HTML')
-                        except:
-                            pass
-                        continue
+                if (market['tag'] == 'perpetual') & (market['pair'].split(":")[1] == 'USD') & (not market['postOnly']):
                     coin = market['pair'].split(":")[0]
                     self.markets.update({coin: market['symbol']})
         return self.markets
@@ -761,10 +751,8 @@ if __name__ == '__main__':
 
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
-    client = KrakenClient(config['KRAKEN'],
-                          float(config['SETTINGS']['LEVERAGE']),
-                          int(config['TELEGRAM']['ALERT_CHAT_ID']),
-                          config['TELEGRAM']['ALERT_BOT_TOKEN'],
+    client = KrakenClient(keys=config['KRAKEN'],
+                          leverage=float(config['SETTINGS']['LEVERAGE']),
                           max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']))
     client.markets_list = ['ETH', 'RUNE', 'SNX', 'ENJ', 'DOT', 'LINK', 'ETC', 'DASH', 'XLM', 'WAVES']
     client.run_updater()

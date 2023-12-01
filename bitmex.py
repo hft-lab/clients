@@ -5,7 +5,6 @@ import json
 import threading
 import time
 import urllib.parse
-import telebot
 import aiohttp
 from bravado.client import SwaggerClient
 from bravado.requests_client import RequestsClient
@@ -31,11 +30,10 @@ class BitmexClient(BaseClient):
     EXCHANGE_NAME = 'BITMEX'
     MAX_TABLE_LEN = 200
 
-    def __init__(self, keys, leverage, alert_id=None, alert_token=None, markets_list=[], max_pos_part=20):
+    def __init__(self, keys, leverage, markets_list=[], max_pos_part=20):
         super().__init__()
         self.max_pos_part = max_pos_part
         self.markets_list = markets_list
-        self.telegram_bot = telebot.TeleBot(self.alert_token)
         self._loop = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self.leverage = leverage
@@ -470,10 +468,8 @@ if __name__ == '__main__':
 
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
-    client = BitmexClient(config['BITMEX'],
-                          float(config['SETTINGS']['LEVERAGE']),
-                          int(config['TELEGRAM']['ALERT_CHAT_ID']),
-                          config['TELEGRAM']['ALERT_BOT_TOKEN'],
+    client = BitmexClient(keys=config['BITMEX'],
+                          leverage=float(config['SETTINGS']['LEVERAGE']),
                           max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
                           markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
     client.run_updater()
