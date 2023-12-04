@@ -335,8 +335,9 @@ class DydxClient(BaseClient):
         return self.price, self.amount
 
     @try_exc_async
-    async def create_order(self, symbol, side, session, expire=10000, client_id=None, expiration=None) -> dict:
+    async def create_order(self, symbol, side, session, expire=10000, client_id=None, type='LIMIT', expiration=None) -> dict:
         # NECESSARY
+        print(side)
         time_sent = datetime.utcnow().timestamp()
         expire_date = int(round(time.time()) + expire)
         now_iso_string = generate_now_iso()
