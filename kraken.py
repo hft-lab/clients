@@ -17,6 +17,7 @@ import requests
 
 from clients.base_client import BaseClient
 from clients.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, PositionSideEnum
+from core.wrappers import try_exc_regular, try_exc_async
 
 
 class KrakenClient(BaseClient):
@@ -64,6 +65,7 @@ class KrakenClient(BaseClient):
         self.amount = 0
         self.instruments = self.get_instruments()
 
+    @try_exc_regular
     def get_instruments(self):
         url_path = "/derivatives/api/v3/instruments"
         res = requests.get(url=self.BASE_URL + url_path).json()
@@ -72,6 +74,7 @@ class KrakenClient(BaseClient):
         #         print(instrument)
         return res['instruments']
 
+    @try_exc_regular
     def get_sizes_for_symbol(self, symbol):
         for ticker in self.tickers:
             if ticker.get('symbol'):
@@ -108,6 +111,7 @@ class KrakenClient(BaseClient):
             price_precision = 0
         return tick_size, step_size, price_precision, quantity_precision,
 
+    @try_exc_regular
     def get_available_balance(self):
         available_balances = {}
         position_value = 0
@@ -164,12 +168,15 @@ class KrakenClient(BaseClient):
     #     elif side == 'sell':
     #         return available_margin + position_value
 
+    @try_exc_regular
     def cancel_all_orders(self, orderID=None) -> dict:
         return self.__cancel_open_orders()
 
+    @try_exc_regular
     def get_positions(self) -> dict:
         return self.positions
 
+    @try_exc_regular
     def get_markets(self):
         markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
         self.tickers = markets['tickers']
@@ -180,11 +187,13 @@ class KrakenClient(BaseClient):
                     self.markets.update({coin: market['symbol']})
         return self.markets
 
+    @try_exc_regular
     def get_balance(self) -> float:
         if time.time() - self.balance['timestamp'] > 60:
             self.get_real_balance()
         return self.balance['total']
 
+    @try_exc_regular
     def get_orderbook(self, symbol) -> dict:
         while True:
             snap = self.orderbook[symbol.upper()]
@@ -197,6 +206,7 @@ class KrakenClient(BaseClient):
             # print(f"Orderbook fetch time: {time.time() - time_start}")
             return orderbook
 
+    @try_exc_regular
     def get_all_tops(self):
         orderbooks = dict()
         [orderbooks.update({self.markets[x]: self.get_orderbook(self.markets[x])}) for x in self.markets_list if self.markets.get(x)]
@@ -210,6 +220,7 @@ class KrakenClient(BaseClient):
                                   'ts_exchange': orderbook['timestamp']}})
         return tops
 
+    @try_exc_async
     async def get_multi_orderbook(self, symbol):
         async with aiohttp.ClientSession() as session:
             async with session.get(url=self.urlOrderbooks + symbol) as response:
@@ -221,9 +232,11 @@ class KrakenClient(BaseClient):
                         'bid_vol': ob['bids'][0][1], 'ask_vol': ob['asks'][0][1],
                         'ts_exchange': ts_exchange}
 
+    @try_exc_regular
     def get_last_price(self, side: str) -> float:
         return self.last_price[side.lower()]
 
+    @try_exc_regular
     def run_updater(self) -> None:
         _loop_public = asyncio.new_event_loop()
         _loop_private = asyncio.new_event_loop()
@@ -233,9 +246,11 @@ class KrakenClient(BaseClient):
         bal_check.start()
         time.sleep(5)
 
+    @try_exc_regular
     def _run_forever(self, type, loop) -> None:
         loop.run_until_complete(self._run_loop(type))
 
+    @try_exc_async
     async def _run_loop(self, type) -> None:
         async with aiohttp.ClientSession() as session:
             if type == ConnectMethodEnum.PUBLIC:
@@ -244,6 +259,7 @@ class KrakenClient(BaseClient):
                 await self._user_balance_getter(session)
 
     # PUBLIC -----------------------------------------------------------------------------------------------------------
+    @try_exc_async
     async def get_orderbook_by_symbol(self, symbol):
         async with aiohttp.ClientSession() as session:
             url_path = "/derivatives/api/v3/orderbook"
@@ -257,6 +273,7 @@ class KrakenClient(BaseClient):
             await session.close()
         return orderbook
 
+    @try_exc_regular
     def get_orderbook_by_symbol_non_async(self, symbol):
         url_path = "/derivatives/api/v3/orderbook"
         resp = requests.get(url=self.BASE_URL + url_path + f'?symbol={symbol}').json()
@@ -266,6 +283,7 @@ class KrakenClient(BaseClient):
         orderbook.update({'timestamp': int(time.time() * 1000)})
         return orderbook
 
+    @try_exc_async
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
         async with session.ws_connect(self.BASE_WS) as ws:
             # self.markets_list = list(self.markets.keys())[:10]
@@ -313,6 +331,7 @@ class KrakenClient(BaseClient):
 
     # PRIVATE ----------------------------------------------------------------------------------------------------------
 
+    @try_exc_async
     async def get_fills(self, session) -> dict:
         url_path = '/derivatives/api/v3/fills'
         nonce = str(int(time.time() * 1000))
@@ -331,6 +350,7 @@ class KrakenClient(BaseClient):
         async with session.get(headers=headers, url=self.BASE_URL + url_path, data=params) as resp:
             return await resp.json()
 
+    @try_exc_async
     async def get_all_orders(self, symbol, session) -> list:
         all_orders = await self.__get_all_orders(session)
         res_orders = {}
@@ -375,6 +395,7 @@ class KrakenClient(BaseClient):
 
         return [x for x in res_orders.values()]
 
+    @try_exc_async
     async def __get_all_orders(self, session) -> dict:
         url_path = '/api/history/v3/orders'
         nonce = str(int(time.time() * 1000))
@@ -390,6 +411,7 @@ class KrakenClient(BaseClient):
         async with session.get(headers=headers, url=self.BASE_URL + url_path) as resp:
             return await resp.json()
 
+    @try_exc_async
     async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession) -> dict:
         fills_orders = await self.get_fills(session)
         if fills_orders.get('result') == 'success':
@@ -427,6 +449,7 @@ class KrakenClient(BaseClient):
                 }
         return await self.__get_order_by_all_orders(session, order_id)
 
+    @try_exc_async
     async def __get_order_by_all_orders(self, session, order_id):
         all_orders = await self.__get_all_orders(session)
         if orders := all_orders.get('elements'):
@@ -465,6 +488,7 @@ class KrakenClient(BaseClient):
                 'ts_update': int(time.time() * 1000)
             }
 
+    @try_exc_regular
     def _sign_message(self, api_path: str, data: dict) -> str:
         plain_data = []
         for key, value in data.items():
@@ -481,6 +505,7 @@ class KrakenClient(BaseClient):
 
         return sig_digest.decode()
 
+    @try_exc_regular
     def get_kraken_futures_signature(self, endpoint: str, data: str, nonce: str):
         if endpoint.startswith("/derivatives"):
             endpoint = endpoint[len("/derivatives"):]
@@ -494,6 +519,7 @@ class KrakenClient(BaseClient):
             ).digest()
         )
 
+    @try_exc_regular
     def __cancel_open_orders(self):
         url_path = "/derivatives/api/v3/cancelallorders"
         nonce = str(int(time.time() * 1000))
@@ -506,6 +532,7 @@ class KrakenClient(BaseClient):
         }
         return requests.post(headers=headers, url=self.BASE_URL + url_path).json()
 
+    @try_exc_regular
     def get_real_balance(self):
         url_path = "/derivatives/api/v3/accounts"
         nonce = str(int(time.time() * 1000))
@@ -524,6 +551,7 @@ class KrakenClient(BaseClient):
         self.balance['free'] = res['accounts']['flex']['availableMargin']
         self.balance['timestamp'] = time.time()
 
+    @try_exc_regular
     def fit_sizes(self, amount, price, symbol):
         tick_size, step_size, price_precision, quantity_precision = self.get_sizes_for_symbol(symbol)
         rounded_amount = round(amount / step_size) * step_size
@@ -532,6 +560,7 @@ class KrakenClient(BaseClient):
         self.price = round(rounded_price, price_precision)
         return self.price, self.amount
 
+    @try_exc_async
     async def create_order(self, symbol, side, session, expire=5000, client_id=None):
         time_sent = datetime.utcnow().timestamp()
         nonce = str(int(time.time() * 1000))
@@ -589,6 +618,7 @@ class KrakenClient(BaseClient):
             }
 
     # NEW FUNCTIONS
+    @try_exc_regular
     def get_position(self):
         self.positions = {}
         nonce = str(int(time.time() * 1000))
@@ -615,6 +645,7 @@ class KrakenClient(BaseClient):
                         'lever': self.leverage
                     }})
 
+    @try_exc_regular
     def _get_sign_challenge(self, challenge: str) -> str:
         sha256_hash = hashlib.sha256()
         sha256_hash.update(challenge.encode("utf-8"))
@@ -624,6 +655,7 @@ class KrakenClient(BaseClient):
             ).digest()
         ).decode("utf-8")
 
+    @try_exc_async
     async def _user_balance_getter(self, session: aiohttp.ClientSession) -> None:
         async with session.ws_connect(self.BASE_WS) as ws:
             if not self.__last_challenge:

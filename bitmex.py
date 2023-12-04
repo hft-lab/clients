@@ -13,6 +13,7 @@ from bravado.requests_client import RequestsClient
 from clients.base_client import BaseClient
 from clients.enums import ResponseStatus, OrderStatus
 from tools.APIKeyAuthenticator import APIKeyAuthenticator as auth
+from core.wrappers import try_exc_regular, try_exc_async
 
 
 # Naive implementation of connecting to BitMEX websocket for streaming realtime data.
@@ -58,6 +59,7 @@ class BitmexClient(BaseClient):
         self.wst = threading.Thread(target=self._run_ws_forever, daemon=True)
         self.time_sent = time.time()
 
+    @try_exc_regular
     def get_all_instruments(self):
         # first_page = self.swagger_client.Instrument.Instrument_get(count=500).result()
         # second_page = self.swagger_client.Instrument.Instrument_get(count=500, start=500).result()
@@ -73,6 +75,7 @@ class BitmexClient(BaseClient):
         #         print(instr)
         #         print()
 
+    @try_exc_regular
     def get_markets(self):
         markets = {}
         for market in self.instruments.values():
@@ -82,16 +85,19 @@ class BitmexClient(BaseClient):
             markets.update({market['rootSymbol']: market['symbol']})
         return markets
 
+    @try_exc_regular
     def run_updater(self):
         self.wst.start()
         # self.__wait_for_account()
         # self.get_contract_price()
 
+    @try_exc_regular
     def get_fees(self, symbol):
         taker_fee = self.commission[symbol]['takerFee']
         maker_fee = self.commission[symbol]['makerFee']
         return taker_fee, maker_fee
 
+    @try_exc_regular
     def get_sizes_for_symbol(self, symbol):
         instrument = self.get_instrument(symbol)
         tick_size = instrument['tick_size']
@@ -99,6 +105,7 @@ class BitmexClient(BaseClient):
         quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
         return tick_size, step_size, quantity_precision
 
+    @try_exc_regular
     def _run_ws_forever(self):
         while True:
             try:
@@ -106,12 +113,14 @@ class BitmexClient(BaseClient):
             finally:
                 print("WS loop completed. Restarting")
 
+    @try_exc_regular
     def __wait_for_account(self):
         '''On subscribe, this data will come down. Wait for it.'''
         # Wait for the keys to show up from the ws
         while not set(self.subscriptions) <= set(self.data):
             time.sleep(0.1)
 
+    @try_exc_async
     async def _run_ws_loop(self):
         async with aiohttp.ClientSession(headers=self.__get_auth('GET', '/realtime')) as s:
             async with s.ws_connect(self.__get_url()) as ws:
@@ -128,6 +137,7 @@ class BitmexClient(BaseClient):
                     self._connected.clear()
 
     @staticmethod
+    @try_exc_regular
     def get_order_status(order):
         if order['ordStatus'] == 'New':
             status = OrderStatus.PROCESSING
@@ -141,6 +151,7 @@ class BitmexClient(BaseClient):
             status = OrderStatus.PARTIALLY_EXECUTED
         return status
 
+    @try_exc_regular
     def get_order_result(self, order):
         factual_price = order['avgPx'] if order.get('avgPx') else 0
         factual_size_coin = abs(order['homeNotional']) if order.get('homeNotional') else 0
@@ -158,6 +169,7 @@ class BitmexClient(BaseClient):
         }
         return result
 
+    @try_exc_regular
     def update_position(self, position):
         side = 'SHORT' if position['foreignNotional'] > 0 else 'LONG'
         amount = -position['currentQty'] if side == 'SHORT' else position['currentQty']
@@ -170,6 +182,7 @@ class BitmexClient(BaseClient):
                                                     'realized_pnl_usd': position['realisedPnl'] / (10 ** 6),
                                                     'lever': self.leverage}})
 
+    @try_exc_regular
     def _process_msg(self, msg: aiohttp.WSMessage):
         if msg.type == aiohttp.WSMsgType.TEXT:
             message = json.loads(msg.data)
@@ -207,29 +220,34 @@ class BitmexClient(BaseClient):
                                 pass
 
     @staticmethod
+    @try_exc_regular
     def timestamp_from_date(date: str):
         # date = '2023-02-15T02:55:27.640Z'
         ms = int(date.split(".")[1].split('Z')[0]) / 1000
         return time.mktime(datetime.strptime(date, "%Y-%m-%dT%H:%M:%S.%fZ").timetuple()) + ms
 
     @staticmethod
+    @try_exc_regular
     def order_leaves_quantity(o):
         if o['leavesQty'] is None:
             return True
         return o['leavesQty'] > 0
 
     @staticmethod
+    @try_exc_regular
     def find_by_keys(keys, table, matchData):
         for item in table:
             if all(item[k] == matchData[k] for k in keys):
                 return item
 
     @staticmethod
+    @try_exc_regular
     def get_pos_power(self, symbol):
         pos_power = 6 if 'USDT' in symbol else 8
         currency = 'USDt' if 'USDT' in symbol else 'XBt'
         return pos_power, currency
 
+    @try_exc_regular
     def swagger_client_init(self, config=None):
         if config is None:
             # See full config options at http://bravado.readthedocs.io/en/latest/configuration.html
@@ -246,11 +264,13 @@ class BitmexClient(BaseClient):
         request_client.authenticator = self.auth
         return SwaggerClient.from_url(spec_uri, config=config, http_client=request_client)
 
+    @try_exc_regular
     def exit(self):
         '''Call this to exit - will close websocket.'''
         self.exited = True
         self.ws.close()
 
+    @try_exc_regular
     def get_instrument(self, symbol):
         """Get the raw instrument data for this symbol."""
         # Turn the 'tick_size' into 'tickLog' for use in rounding
@@ -259,14 +279,17 @@ class BitmexClient(BaseClient):
         instrument['step_size'] = instrument['lotSize']
         return instrument
 
+    @try_exc_regular
     def get_balance(self):
         """Get your margin details."""
         return self.balance['total']
 
+    @try_exc_regular
     def open_orders(self):
         """Get all your open orders."""
         return self.data['order']
 
+    @try_exc_regular
     def fit_sizes(self, amount, price, symbol) -> None:
         tick_size, step_size, quantity_precision = self.get_sizes_for_symbol(symbol)
         self.amount = round(amount / step_size) * step_size
@@ -279,6 +302,7 @@ class BitmexClient(BaseClient):
         rounded_price = round(price / tick_size) * tick_size
         self.price = round(rounded_price, round_price_len)
 
+    @try_exc_async
     async def create_order(self, symbol, side, session, expire=100, client_id=None):
         self.time_sent = time.time()
         body = {
@@ -313,6 +337,7 @@ class BitmexClient(BaseClient):
             'status': status
         }
 
+    @try_exc_async
     async def _post(self, path, data, session):
         headers_body = f"symbol={data['symbol']}&side={data['side']}&ordType=Limit&orderQty={data['orderQty']}&price={data['price']}"
         headers = self.__get_auth("POST", path, headers_body)
@@ -324,12 +349,14 @@ class BitmexClient(BaseClient):
         async with session.post(url=self.BASE_URL + path, headers=headers, data=headers_body) as resp:
             return await resp.json()
 
+    @try_exc_regular
     def change_order(self, amount, price, id):
         if amount:
             self.swagger_client.Order.Order_amend(orderID=id, orderQty=amount, price=price).result()
         else:
             self.swagger_client.Order.Order_amend(orderID=id, price=price).result()
 
+    @try_exc_regular
     def cancel_all_orders(self):
         print('>>>>', self.swagger_client.Order.Order_cancelAll().result())
         # print('order', order)
@@ -339,6 +366,7 @@ class BitmexClient(BaseClient):
         #
         #     print('\n\n\n\n\n')
 
+    @try_exc_regular
     def __get_auth(self, method, uri, body=''):
         """
         Return auth headers. Will use API Keys if present in settings.
@@ -352,6 +380,7 @@ class BitmexClient(BaseClient):
             "api-key": self.api_key,
         }
 
+    @try_exc_regular
     def __get_url(self):
         """
         Generate a connection URL. We can define subscriptions right in the querystring.
@@ -374,6 +403,7 @@ class BitmexClient(BaseClient):
     #     unrealized_pnl = pnl['unrealisedPnl'] / 10 ** multiplier_power * change
     #     return [realized_pnl + unrealized_pnl, pnl, realized_pnl]
 
+    @try_exc_regular
     def get_last_price(self, side, symbol):
         side = side.capitalize()
         # last_trades = self.recent_trades()
@@ -384,6 +414,7 @@ class BitmexClient(BaseClient):
                 last_price = trade['avgPx']
         return last_price
 
+    @try_exc_regular
     def get_real_balance(self):
         transes = None
         while not transes:
@@ -395,9 +426,11 @@ class BitmexClient(BaseClient):
         self.balance['total'] = (real / 10 ** 6)
         self.balance['timestamp'] = datetime.utcnow().timestamp()
 
+    @try_exc_regular
     def get_positions(self) -> dict:
         return self.positions
 
+    @try_exc_regular
     def get_available_balance(self, side):
         # if 'USDT' in self.symbol:
         funds = [x for x in self.get_balance() if x['currency'] == 'USDt'][0]
@@ -422,6 +455,7 @@ class BitmexClient(BaseClient):
         else:
             return available_balance + position_value + wallet_balance
 
+    @try_exc_regular
     def get_position(self):
         '''Get your positions.'''
         pos_bitmex = {x['symbol']: x for x in self.swagger_client.Position.Position_get().result()[0]}
@@ -437,6 +471,7 @@ class BitmexClient(BaseClient):
             }
         self.positions = pos_bitmex
 
+    @try_exc_regular
     def get_orderbook(self, symbol):
         return self.orderbook[symbol]
 

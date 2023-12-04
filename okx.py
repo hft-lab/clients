@@ -16,6 +16,7 @@ import uuid
 
 from clients.base_client import BaseClient
 from clients.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
+from core.wrappers import try_exc_regular, try_exc_async
 
 
 class OkxClient(BaseClient):
@@ -59,15 +60,18 @@ class OkxClient(BaseClient):
         self.time_sent = datetime.utcnow().timestamp()
 
     @staticmethod
+    @try_exc_regular
     def id_generator(size=12, chars=string.digits):
         return ''.join(random.choice(chars) for _ in range(size))
 
+    @try_exc_regular
     def run_updater(self):
         self.wst_public.daemon = True
         self.wst_public.start()
         self.wst_private.daemon = True
         self.wst_private.start()
 
+    @try_exc_async
     async def _login(self, ws, event):
         request_path = '/users/self/verify'
         timestamp = str(int(round(time.time())))
@@ -82,6 +86,7 @@ class OkxClient(BaseClient):
         await event.wait()
         await ws.send_json(msg)
 
+    @try_exc_regular
     def signature(self, timestamp, method, request_path, body):
         if str(body) == '{}' or str(body) == 'None':
             body = ''
@@ -92,6 +97,7 @@ class OkxClient(BaseClient):
 
         return base64.b64encode(signature).decode('UTF-8')
 
+    @try_exc_async
     async def _subscribe_orderbooks(self):
         # for symbol in list(self.markets.values())[:10]:
         for symbol in self.markets_list:
@@ -105,6 +111,7 @@ class OkxClient(BaseClient):
                 await self._connected.wait()
                 await self._ws_public.send_json(msg)
 
+    @try_exc_async
     async def _subscribe_account(self):
         msg = {
             "op": "subscribe",
@@ -117,6 +124,7 @@ class OkxClient(BaseClient):
         except Exception as e:
             traceback.print_exc()
 
+    @try_exc_async
     async def _subscribe_positions(self):
         for symbol in self.markets_list:
             if market := self.markets.get(symbol):
@@ -134,6 +142,7 @@ class OkxClient(BaseClient):
                 await self._connected.wait()
                 await self._ws_private.send_json(msg)
 
+    @try_exc_async
     async def _subscribe_orders(self):
         for symbol in self.markets_list:
             if market := self.markets.get(symbol):
@@ -151,6 +160,7 @@ class OkxClient(BaseClient):
                 await self._connected.wait()
                 await self._ws_private.send_json(msg)
 
+    @try_exc_regular
     def _run_ws_forever(self, type, loop):
         while True:
             try:
@@ -161,6 +171,7 @@ class OkxClient(BaseClient):
             finally:
                 print(f"WS loop {type} completed. Restarting")
 
+    @try_exc_async
     async def _run_ws_loop(self, type):
         async with aiohttp.ClientSession() as s:
             if type == 'private':
@@ -193,17 +204,20 @@ class OkxClient(BaseClient):
                         await self._ping(ws)
                     self._process_msg(msg)
 
+    @try_exc_async
     async def _ping(self, ws):
         time_from = int(int(round(datetime.utcnow().timestamp())) - self.start_time) % 5
         if not time_from:
             await ws.ping(b'PING')
             self.start_time -= 1
 
+    @try_exc_regular
     def get_balance(self):
         if int(round(datetime.utcnow().timestamp() * 1000)) - self.balance['timestamp'] > 60:
             self.get_real_balance()
         return self.balance['total']
 
+    @try_exc_regular
     def get_position(self):
         self.positions = {}
         way = 'https://www.okx.com/api/v5/account/positions'
@@ -223,6 +237,7 @@ class OkxClient(BaseClient):
                                                    'realized_pnl_usd': 0,
                                                    'lever': self.leverage}})
 
+    @try_exc_regular
     def _update_positions(self, obj):
         if not obj['data']:
             return
@@ -253,6 +268,7 @@ class OkxClient(BaseClient):
         #     if obj['data'][0][one]:
         #         self.positions[obj['arg']['instId']].update({one: obj['data'][0][one]})
 
+    @try_exc_regular
     def _update_orderbook(self, obj):
         symbol = obj['arg']['instId']
         contract = self.get_contract_value(symbol)
@@ -261,6 +277,7 @@ class OkxClient(BaseClient):
                                         'bids': [[float(x[0]), float(x[1]) * contract] for x in orderbook['bids']],
                                         'timestamp': int(orderbook['ts'])}})
 
+    @try_exc_regular
     def _update_account(self, obj):
         resp = obj['data']
         if len(resp):
@@ -273,6 +290,7 @@ class OkxClient(BaseClient):
                             'total': 0,
                             'timestamp': int(round(datetime.utcnow().timestamp() * 1000))}
 
+    @try_exc_regular
     def _update_orders(self, obj):
         if obj.get('data') and obj.get('arg'):
             for order in obj.get('data'):
@@ -294,12 +312,14 @@ class OkxClient(BaseClient):
                 }
                 self.orders.update({order['ordId']: result})
 
+    @try_exc_regular
     def get_taker_fee(self, order):
         if not self.taker_fee:
             if order['fillNotionalUsd']:
                 self.taker_fee = abs(float(order['fillFee'])) / float(order['fillNotionalUsd'])
                 print(self.taker_fee, 'TAKER FEE')
 
+    @try_exc_regular
     def _process_msg(self, msg: aiohttp.WSMessage):
         obj = json.loads(msg.data)
         if obj.get('event'):
@@ -314,12 +334,14 @@ class OkxClient(BaseClient):
             elif obj['arg']['channel'] == 'orders':
                 self._update_orders(obj)
 
+    @try_exc_regular
     def get_contract_value(self, symbol):
         for instrument in self.instruments:
             if instrument['instId'] == symbol:
                 contract_value = float(instrument['ctVal'])
                 return contract_value
 
+    @try_exc_regular
     def get_sizes_for_symbol(self, symbol):
         for instrument in self.instruments:
             if instrument['instId'] == symbol:
@@ -330,6 +352,7 @@ class OkxClient(BaseClient):
                 quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
                 return tick_size, step_size, quantity_precision, contract_value, min_size
 
+    @try_exc_regular
     def fit_sizes(self, amount, price, symbol):
         tick_size, step_size, quantity_precision, contract_value, min_size = self.get_sizes_for_symbol(symbol)
         amount = amount / contract_value
@@ -348,6 +371,7 @@ class OkxClient(BaseClient):
         self.price = round(rounded_price, round_price_len)
         return self.price, self.amount
 
+    @try_exc_async
     async def create_order(self, symbol, side, session, expire=100, client_id=None) -> dict:
         self.time_sent = int(round((datetime.utcnow().timestamp()) * 1000))
         if not self._ws_private:
@@ -363,6 +387,7 @@ class OkxClient(BaseClient):
             time.sleep(0.01)
         return self.get_order_response()
 
+    @try_exc_regular
     def get_order_response(self):
         if self.create_order_response:
             response = {
@@ -382,6 +407,7 @@ class OkxClient(BaseClient):
             self.error_info = "WS DOESN'T GIVE ANY DATA ABOUT ERROR"
         return response
 
+    @try_exc_async
     async def _send_order(self, symbol, amount, price, side, expire=100):
         # expire_date = str(round((datetime.utcnow().timestamp() + expire) * 1000))
         msg = {
@@ -402,16 +428,19 @@ class OkxClient(BaseClient):
         await self._ws_private.send_json(msg)
 
     @staticmethod
+    @try_exc_regular
     def get_timestamp():
         now = datetime.utcnow()
         t = now.isoformat("T", "milliseconds")
         return t + "Z"
 
+    @try_exc_regular
     def get_instruments(self):
         way = f'https://www.okx.com/api/v5/public/instruments?instType=SWAP'
         resp = requests.get(url=way, headers=self.headers).json()
         return resp['data']
 
+    @try_exc_regular
     def get_markets(self):
         markets = {}
         for instrument in self.instruments:
@@ -423,6 +452,7 @@ class OkxClient(BaseClient):
             # print(inst['instId'], inst, '\n')
         return markets
 
+    @try_exc_regular
     def get_available_balance(self):
         available_balances = {}
         position_value = 0
@@ -455,9 +485,11 @@ class OkxClient(BaseClient):
             available_balances['sell'] = 0
         return available_balances
 
+    @try_exc_regular
     def get_positions(self):
         return self.positions
 
+    @try_exc_regular
     def get_private_headers(self, method, way, body=None):
         timestamp = self.get_timestamp()
         signature = self.signature(timestamp, method, way, body)
@@ -468,6 +500,7 @@ class OkxClient(BaseClient):
         headers.update(self.headers)
         return headers
 
+    @try_exc_regular
     def get_real_balance(self):
         way = 'https://www.okx.com/api/v5/account/balance?ccy=USDT'
         headers = self.get_private_headers('GET', '/api/v5/account/balance?ccy=USDT')
@@ -488,18 +521,22 @@ class OkxClient(BaseClient):
         #                         'imr': '', 'isoEq': '0', 'mgnRatio': '', 'mmr': '', 'notionalUsd': '', 'ordFroz': '',
         #                         'totalEq': '500.25821050503714', 'uTime': '1698245152624'}], 'msg': ''}
 
+    @try_exc_regular
     def get_orderbook(self, symbol):
         while not self.orderbook.get(symbol):
             print(f"{self.EXCHANGE_NAME}: CAN'T GET OB {symbol}")
             time.sleep(0.01)
         return self.orderbook[symbol]
 
+    @try_exc_regular
     def get_last_price(self, side):
         return self.last_price[side]
 
+    @try_exc_regular
     def get_orders(self):
         return self.orders
 
+    @try_exc_async
     async def get_all_orders(self, symbol=None, session=None):
         base_way = 'https://www.okx.com'
         way = '/api/v5/trade/orders-pending?'
@@ -512,6 +549,7 @@ class OkxClient(BaseClient):
                 data = await resp.json()
                 return self.reformat_orders(data)
 
+    @try_exc_regular
     def _get_all_orders(self):
         base_way = 'https://www.okx.com'
         way = '/api/v5/trade/orders-pending?'
@@ -522,6 +560,7 @@ class OkxClient(BaseClient):
         data = requests.get(url=base_way + way, headers=headers).json()
         return self.reformat_orders(data)
 
+    @try_exc_async
     async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession):
         base_way = 'https://www.okx.com'
         way = '/api/v5/trade/order' + '?' + 'ordId=' + order_id + '&' + 'instId=' + symbol
@@ -555,6 +594,7 @@ class OkxClient(BaseClient):
                     'ts_update': int(datetime.utcnow().timestamp() * 1000)
                 }
 
+    @try_exc_regular
     def get_order_status(self, order, req_type):
         status = None
         flag = False
@@ -580,6 +620,7 @@ class OkxClient(BaseClient):
             status = OrderStatus.NOT_EXECUTED
         return status, flag
 
+    @try_exc_regular
     def reformat_orders(self, response):
         orders = []
         for order in response['data']:
@@ -620,6 +661,7 @@ class OkxClient(BaseClient):
             orders.append(order)
         return orders
 
+    @try_exc_regular
     def cancel_all_orders(self):
         base_way = 'https://www.okx.com'
         way = '/api/v5/trade/cancel-batch-orders'
@@ -637,6 +679,7 @@ class OkxClient(BaseClient):
             else:
                 print(f"ORDER {order['ordId']} ERROR: {order['sMsg']}")
 
+    @try_exc_async
     async def get_orderbook_by_symbol(self, symbol):
         way = f'https://www.okx.com/api/v5/market/books?instId={symbol}&sz=10'
         async with aiohttp.ClientSession() as session:
@@ -651,6 +694,7 @@ class OkxClient(BaseClient):
                 orderbook['timestamp'] = int(orderbook['ts'])
                 return orderbook
 
+    @try_exc_regular
     def create_http_order(self, symbol, side, expire=100, client_id=None):
         base_way = 'https://www.okx.com'
         way = '/api/v5/trade/order'
@@ -684,6 +728,7 @@ class OkxClient(BaseClient):
                 'status': ResponseStatus.ERROR
             }
 
+    @try_exc_regular
     def get_all_tops(self):
         tops = {}
         for symbol, orderbook in self.orderbook.items():

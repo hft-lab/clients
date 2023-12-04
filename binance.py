@@ -15,6 +15,8 @@ import requests
 from clients.base_client import BaseClient
 from clients.enums import ConnectMethodEnum, EventTypeEnum, PositionSideEnum, ResponseStatus, OrderStatus, \
     ClientsOrderStatuses
+from core.wrappers import try_exc_regular, try_exc_async
+
 
 import orjson
 
@@ -73,23 +75,28 @@ class BinanceClient(BaseClient):
         self.get_position()
         self.pings = []
 
+    @try_exc_regular
     def cancel_all_orders(self, orderID=None) -> dict:
         return self.__cancel_open_orders()
 
+    @try_exc_regular
     def get_positions(self) -> dict:
         return self.positions
 
+    @try_exc_regular
     def get_balance(self) -> float:
         if time.time() - self.balance['timestamp'] > 60:
             self.get_real_balance()
         return self.balance['total']
 
+    @try_exc_regular
     def get_orderbook(self, symbol) -> dict:
         while not self.orderbook.get(symbol):
             print(f"{self.EXCHANGE_NAME}: CAN'T GET OB {symbol}")
             time.sleep(0.01)
         return self.orderbook[symbol]
 
+    @try_exc_regular
     def get_all_tops(self):
         time_start = time.time()
         tops = {}
@@ -104,6 +111,7 @@ class BinanceClient(BaseClient):
                               'ts_exchange': orderbook['timestamp']}})
         return tops
 
+    @try_exc_async
     async def get_multi_orderbook(self, symbol):
         async with aiohttp.ClientSession() as session:
             async with session.get(url=self.urlOrderbooks + symbol) as response:
@@ -116,9 +124,11 @@ class BinanceClient(BaseClient):
                 except Exception as error:
                     print('Error from Client. Binance Module:', symbol, error)
 
+    @try_exc_regular
     def get_last_price(self, side: str) -> float:
         return self.last_price[side.lower()]
 
+    @try_exc_regular
     def get_markets(self):
         markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
         for market in markets['symbols']:
@@ -129,12 +139,14 @@ class BinanceClient(BaseClient):
                     self.markets.update({coin: market['symbol']})
         return self.markets
 
+    @try_exc_regular
     def run_updater(self) -> None:
         self.lk_check.start()
         self.bal_check.start()
         self.wsd_public.start()
         self.wsu_private.start()
 
+    @try_exc_regular
     def _run_forever(self, type, loop) -> None:
         while True:
             try:
@@ -142,6 +154,7 @@ class BinanceClient(BaseClient):
             except Exception:  # noqa
                 traceback.print_exc()
 
+    @try_exc_async
     async def _run_loop(self, type) -> None:
         async with aiohttp.ClientSession() as session:
             if type == ConnectMethodEnum.PUBLIC:
@@ -150,11 +163,13 @@ class BinanceClient(BaseClient):
                 await self._user_data_getter(session)
 
     # PUBLIC -----------------------------------------------------------------------------------------------------------
+    @try_exc_regular
     def _check_symbol_value(self) -> None:
         url_path = '/fapi/v1/exchangeInfo'
         response = requests.get(self.BASE_URL + url_path).json()
         self.exchange_info = response
 
+    @try_exc_regular
     def get_sizes_for_symbol(self, symbol):
         for key, value in self.exchange_info.items():
             # print(key)
@@ -171,6 +186,7 @@ class BinanceClient(BaseClient):
                                     step_size = float(fltr['stepSize'])
                             return tick_size, step_size, quantity_precision, price_precision
 
+    @try_exc_regular
     def __check_ob(self, ob: dict, side: str, symbol) -> None:
         reformat_ob = [[float(x[0]), float(x[1])] for x in ob[side]]
         # if not len(self.orderbook[self.symbol][side]):
@@ -181,6 +197,7 @@ class BinanceClient(BaseClient):
             if new_order[1] > 0:
                 self.orderbook[symbol][side].append(new_order)
 
+    @try_exc_async
     async def __orderbook_update(self, ob: dict) -> None:
         symbol = ob['s']
         if not self.orderbook.get(symbol):
@@ -196,6 +213,7 @@ class BinanceClient(BaseClient):
             if ask != self.orderbook[symbol]['asks'][0][0] or bid != self.orderbook[symbol]['bids'][0][0]:
                 self.count_flag = True
 
+    @try_exc_async
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
         async with session.ws_connect(self.BASE_WS + list(self.markets.keys())[0].lower()) as ws:
             # self.markets_list = list(self.markets.keys())[:10]
@@ -217,9 +235,11 @@ class BinanceClient(BaseClient):
 
     # PRIVATE ----------------------------------------------------------------------------------------------------------
     @staticmethod
+    @try_exc_regular
     def _prepare_query(params: dict) -> str:
         return urlencode(params)
 
+    @try_exc_regular
     def get_available_balance(self):
         available_balances = {}
         position_value = 0
@@ -277,17 +297,20 @@ class BinanceClient(BaseClient):
     #     elif side == 'sell':
     #         return available_margin + position_value
 
+    @try_exc_regular
     def _create_signature(self, query: str) -> str:
         if self.__secret_key is None or self.__secret_key == "":
             raise Exception("Secret key are required")
 
         return hmac.new(self.__secret_key.encode(), msg=query.encode(), digestmod=hashlib.sha256).hexdigest()
 
+    @try_exc_regular
     def _balance(self) -> None:
         while True:
             self.get_real_balance()
             time.sleep(59)
 
+    @try_exc_regular
     def get_position(self):
         self.positions = {}
         url_path = "/fapi/v2/account"
@@ -314,6 +337,7 @@ class BinanceClient(BaseClient):
             time.sleep(5)
             self.get_position()
 
+    @try_exc_regular
     def get_real_balance(self) -> [float, float]:
         url_path = "/fapi/v2/balance"
         payload = {
@@ -337,6 +361,7 @@ class BinanceClient(BaseClient):
             time.sleep(120)
             return self.get_real_balance()
 
+    @try_exc_async
     async def get_historical_price(self, session, symbol, time_):
         url_path = "/fapi/v1/markPriceKlines"
         payload = {
@@ -359,6 +384,7 @@ class BinanceClient(BaseClient):
             #     time_ = int(time_)
             #     return await self.get_historical_price(session, symbol, time_)
 
+    @try_exc_async
     async def get_funding_history(self, session, symbol):
         url_path = "/fapi/v1/fundingRate"
         payload = {
@@ -374,6 +400,7 @@ class BinanceClient(BaseClient):
         async with session.get(url=self.BASE_URL + url_path + '?' + query_string, headers=self.headers) as resp:
             return await resp.json()
 
+    @try_exc_async
     async def get_funding_payments(self, session):
         url_path = "/fapi/v1/income"
         payload = {
@@ -412,6 +439,7 @@ class BinanceClient(BaseClient):
 
         return funding_payments
 
+    @try_exc_regular
     def fit_sizes(self, amount, price, symbol):
         tick_size, step_size, quantity_precision, price_precision = self.get_sizes_for_symbol(symbol)
         rounded_amount = round(amount / step_size) * step_size
@@ -420,6 +448,7 @@ class BinanceClient(BaseClient):
         self.price = round(rounded_price, price_precision)
         return self.price, self.amount
 
+    @try_exc_async
     async def create_order(self, symbol, side, session, expire=5000, client_id=None) -> dict:
         side = side.upper()
         time_sent = datetime.datetime.utcnow().timestamp()
@@ -467,6 +496,7 @@ class BinanceClient(BaseClient):
                 'status': ResponseStatus.ERROR
             }
 
+    @try_exc_regular
     def __cancel_open_orders(self) -> dict:
         url_path = "/fapi/v1/allOpenOrders"
         reses = []
@@ -482,6 +512,7 @@ class BinanceClient(BaseClient):
             reses.append(res)
         return reses
 
+    @try_exc_async
     async def get_orderbook_by_symbol(self, symbol):
         async with aiohttp.ClientSession() as session:
             url_path = "/fapi/v1/depth"
@@ -496,6 +527,7 @@ class BinanceClient(BaseClient):
                 }
                 return orderbook
 
+    @try_exc_async
     async def get_all_orders(self, symbol: str, session: aiohttp.ClientSession) -> list:
         url_path = "/fapi/v1/allOrders"
         payload = {
@@ -554,6 +586,7 @@ class BinanceClient(BaseClient):
 
         return orders
 
+    @try_exc_async
     async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession) -> dict:
         url_path = "/fapi/v1/order"
         payload = {
@@ -598,6 +631,7 @@ class BinanceClient(BaseClient):
                 'ts_update': int((time.time() - 3600) * 1000)
             }
 
+    @try_exc_regular
     def _get_listen_key(self) -> None:
         response = requests.post(
             self.BASE_URL + '/fapi/v1/listenKey', headers=self.headers).json()
@@ -606,11 +640,13 @@ class BinanceClient(BaseClient):
             raise Exception(f'ListenKey Error: {response}')
         self.listen_key = response.get('listenKey')
 
+    @try_exc_regular
     def _ping_listen_key(self) -> None:
         while True:
             time.sleep(59 * 60)
             requests.put(self.BASE_URL + '/fapi/v1/listenKey', headers={'X-MBX-APIKEY': self.__api_key})
 
+    @try_exc_async
     async def _user_data_getter(self, session: aiohttp.ClientSession) -> None:
         async with session.ws_connect(self.BASE_WS + self.listen_key) as ws:
             async for msg in ws:
