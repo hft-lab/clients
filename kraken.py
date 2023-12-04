@@ -532,7 +532,7 @@ class KrakenClient(BaseClient):
         self.price = round(rounded_price, price_precision)
         return self.price, self.amount
 
-    async def create_order(self, symbol, side: str, session: aiohttp.ClientSession, expire=5000, client_id=None):
+    async def create_order(self, symbol, side, session, expire=5000, client_id=None):
         time_sent = datetime.utcnow().timestamp()
         nonce = str(int(time.time() * 1000))
         url_path = "/derivatives/api/v3/sendorder"

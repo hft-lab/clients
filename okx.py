@@ -348,7 +348,7 @@ class OkxClient(BaseClient):
         self.price = round(rounded_price, round_price_len)
         return self.price, self.amount
 
-    async def create_order(self, symbol, side, session: aiohttp.ClientSession, expire=100, client_id=None) -> dict:
+    async def create_order(self, symbol, side, session, expire=100, client_id=None) -> dict:
         self.time_sent = int(round((datetime.utcnow().timestamp()) * 1000))
         if not self._ws_private:
             return self.create_http_order(symbol, side, expire=expire, client_id=client_id)

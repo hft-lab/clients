@@ -420,8 +420,7 @@ class BinanceClient(BaseClient):
         self.price = round(rounded_price, price_precision)
         return self.price, self.amount
 
-    async def create_order(self, symbol, side: str, session: aiohttp.ClientSession, expire=5000,
-                           client_id=None) -> dict:
+    async def create_order(self, symbol, side, session, expire=5000, client_id=None) -> dict:
         side = side.upper()
         time_sent = datetime.datetime.utcnow().timestamp()
         url_path = '/fapi/v1/order?'

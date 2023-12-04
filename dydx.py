@@ -321,8 +321,7 @@ class DydxClient(BaseClient):
         self.price = round(rounded_price, round_price_len)
         return self.price, self.amount
 
-    async def create_order(self, symbol, side: str, session: aiohttp.ClientSession,
-                           type: str = 'LIMIT', expire: int = 10000, client_id: str = None, expiration=None) -> dict:
+    async def create_order(self, symbol, side, session, expire=10000, client_id=None, expiration=None) -> dict:
         # NECESSARY
         time_sent = datetime.utcnow().timestamp()
         expire_date = int(round(time.time()) + expire)
@@ -948,12 +947,13 @@ if __name__ == '__main__':
     import sys
 
     config = configparser.ConfigParser()
-    config.read(sys.argv[1], "utf-8")
+    config.read('config.ini', "utf-8")
     client = DydxClient(keys=config['DYDX'],
-                        leverage = float(config['SETTINGS']['LEVERAGE']),
+                        leverage=float(config['SETTINGS']['LEVERAGE']),
                         max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
                         markets_list=['RUNE'])
-    # client.run_updater()
+    client.run_updater()
+    client.get_available_balance()
     # client.get_real_balance()
     # print(client.get_balance())
     # client.run_updater()

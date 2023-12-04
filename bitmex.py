@@ -42,6 +42,8 @@ class BitmexClient(BaseClient):
         self.subscriptions = ['margin', 'position', 'orderBook10', 'execution']
 
         self.auth = auth(self.BASE_URL, self.api_key, self.api_secret)
+        self.amount = 0
+        self.price = 0
         self.data = {}
         self.orders = {}
         self.positions = {}
@@ -265,38 +267,25 @@ class BitmexClient(BaseClient):
         """Get all your open orders."""
         return self.data['order']
 
-    def fit_price(self, price):
-        if not self.price_precision:
-            if '.' in str(self.tick_size):
-                round_price_len = len(str(self.tick_size).split('.')[1])
-            else:
-                round_price_len = 0
-            price = round(price - (price % self.tick_size), round_price_len)
+    def fit_sizes(self, amount, price, symbol) -> None:
+        tick_size, step_size, quantity_precision = self.get_sizes_for_symbol(symbol)
+        self.amount = round(amount / step_size) * step_size
+        if '.' in str(tick_size):
+            round_price_len = len(str(tick_size).split('.')[1])
+        elif '-' in str(tick_size):
+            round_price_len = int(str(tick_size).split('-')[1])
         else:
-            price = float(round(float(round(price / self.tick_size) * self.tick_size), self.price_precision))
-        return price
+            round_price_len = 0
+        rounded_price = round(price / tick_size) * tick_size
+        self.price = round(rounded_price, round_price_len)
 
-    def fit_amount(self, amount):
-        orderbook = self.get_orderbook()[self.symbol]
-        change = (orderbook['asks'][0][0] + orderbook['bids'][0][0]) / 2
-        amount = amount * change
-        if self.symbol == 'XBTUSD':
-            amount = int(round(amount - (amount % self.step_size)))
-        else:
-            amount = int(round(amount / self.contract_price))
-            amount = int(round(amount - amount % self.step_size))
-        return amount
-
-    async def create_order(self, amount: float, price: float, side: str, session: aiohttp.ClientSession,
-                           expire: int = 100, client_id=None):
+    async def create_order(self, symbol, side, session, expire=100, client_id=None):
         self.time_sent = time.time()
-        price = self.fit_price(price)
-        amount = self.fit_amount(amount)
         body = {
-            "symbol": self.symbol,
+            "symbol": symbol,
             "ordType": "Limit",
-            "price": price,
-            "orderQty": amount,
+            "price": self.price,
+            "orderQty": self.amount,
             "side": side.capitalize()
         }
         if client_id is not None:
@@ -324,7 +313,7 @@ class BitmexClient(BaseClient):
             'status': status
         }
 
-    async def _post(self, path: str, data: any, session: aiohttp.ClientSession):
+    async def _post(self, path, data, session):
         headers_body = f"symbol={data['symbol']}&side={data['side']}&ordType=Limit&orderQty={data['orderQty']}&price={data['price']}"
         headers = self.__get_auth("POST", path, headers_body)
         headers.update(
@@ -341,7 +330,7 @@ class BitmexClient(BaseClient):
         else:
             self.swagger_client.Order.Order_amend(orderID=id, price=price).result()
 
-    def cancel_all_orders(self, orderID=None):
+    def cancel_all_orders(self):
         print('>>>>', self.swagger_client.Order.Order_cancelAll().result())
         # print('order', order)
         # if not order['ordStatus'] in ['Canceled', 'Filled']:
@@ -474,7 +463,22 @@ if __name__ == '__main__':
                           markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
     client.run_updater()
 
+    async def test_order():
+        async with aiohttp.ClientSession() as session:
+            ob = client.get_orderbook('RUNEUSDT')
+            price = ob['bids'][5][0]
+            # client.get_markets()
+            client.fit_sizes(10, price, 'RUNEUSDT')
+            data = await client.create_order('RUNEUSDT',
+                                             'buy',
+                                             session=session,
+                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+            print(data)
+            data_cancel = client.cancel_all_orders()
+            print(data_cancel)
+
     time.sleep(3)
+    print(client.markets)
 
     print(client.get_real_balance())
     # print(client.get_positions())
