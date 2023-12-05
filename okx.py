@@ -245,9 +245,8 @@ class OkxClient(BaseClient):
             side = 'LONG' if float(obj['data'][0]['pos']) > 0 else 'SHORT'
             amount_usd = float(obj['data'][0]['notionalUsd'])
             if side == 'SHORT':
-                amount = -amount_usd / float(obj['data'][0]['markPx'])
-            else:
-                amount = amount_usd / float(obj['data'][0]['markPx'])
+                amount_usd = -amount_usd
+            amount = amount_usd / float(obj['data'][0]['markPx'])
             self.positions.update({obj['arg']['instId']: {'side': side,
                                                           'amount_usd': amount_usd,
                                                           'amount': amount,
