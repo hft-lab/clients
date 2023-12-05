@@ -44,6 +44,8 @@ class BitmexClient(BaseClient):
 
         self.auth = auth(self.BASE_URL, self.api_key, self.api_secret)
         self.amount = 0
+        self.amount_contracts = 0
+        self.taker_fee = 0.0005
         self.price = 0
         self.data = {}
         self.orders = {}
@@ -67,7 +69,7 @@ class BitmexClient(BaseClient):
         instruments = self.swagger_client.Instrument.Instrument_get(
             filter=json.dumps({'quoteCurrency': 'USDT', 'state': 'Open'})).result()
         for instr in instruments[0]:
-            if '2' not in instr['symbol']:
+            if '2' not in instr['symbol'] and '_' not in instr['symbol']:
                 instr_list.update({instr['symbol']: instr})
         return instr_list
         # for instr in second_page[0]:
@@ -103,7 +105,8 @@ class BitmexClient(BaseClient):
         tick_size = instrument['tick_size']
         step_size = instrument['step_size']
         quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
-        return tick_size, step_size, quantity_precision
+        contract_value = instrument['underlyingToPositionMultiplier']
+        return tick_size, step_size, quantity_precision, contract_value
 
     @try_exc_regular
     def _run_ws_forever(self):
@@ -152,6 +155,82 @@ class BitmexClient(BaseClient):
         return status
 
     @try_exc_regular
+    def get_all_tops(self):
+        # NECESSARY
+        tops = {}
+        for symbol, orderbook in self.orderbook.items():
+            coin = symbol.upper().split('USD')[0]
+            if len(orderbook['bids']) and len(orderbook['asks']):
+                tops.update({self.EXCHANGE_NAME + '__' + coin:
+                               {'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
+                                'bid_vol': orderbook['bids'][0][1], 'ask_vol': orderbook['asks'][0][1],
+                                'ts_exchange': orderbook['timestamp']}})
+        return tops
+
+    @try_exc_async
+    async def get_all_orders(self, symbol: str, session: aiohttp.ClientSession):
+        res = self.swagger_client.Order.Order_getOrders(filter=json.dumps({'symbol': symbol})).result()[0]
+        tick_size, step_size, quantity_precision, contract_value = self.get_sizes_for_symbol(symbol)
+        orders = []
+        for order in res:
+            if res.get('ordStatus') == 'Filled':
+                status = OrderStatus.FULLY_EXECUTED
+            elif res['orderQty'] > res['cumQty']:
+                status = OrderStatus.PARTIALLY_EXECUTED
+            else:
+                status = OrderStatus.NOT_EXECUTED
+            real_size = res['cumQty'] / contract_value
+            expect_size = res['orderQty'] / contract_value
+            real_price = res.get('avgPx', 0)
+            expect_price = res.get('price', 0)
+            orders.append(
+                {
+                    'id': uuid.uuid4(),
+                    'datetime': datetime.strptime(order['transactTime'], '%Y-%m-%dT%H:%M:%SZ'),
+                    'ts': int(datetime.utcnow().timestamp()),
+                    'context': 'web-interface' if 'api_' not in order['clOrdID'] else order['clOrdID'].split('_')[1],
+                    'parent_id': uuid.uuid4(),
+                    'exchange_order_id': order['orderID'],
+                    'type': order['timeInForce'],
+                    'status': status,
+                    'exchange': self.EXCHANGE_NAME,
+                    'side': order['side'].lower(),
+                    'symbol': symbol,
+                    'expect_price': expect_price,
+                    'expect_amount_coin': expect_size,
+                    'expect_amount_usd': expect_price * expect_size,
+                    'expect_fee': self.taker_fee,
+                    'factual_price': real_price,
+                    'factual_amount_coin': real_size,
+                    'factual_amount_usd': real_size * real_price,
+                    'factual_fee': self.taker_fee,
+                    'order_place_time': 0,
+                    'env': '-',
+                    'datetime_update': datetime.utcnow(),
+                    'ts_update': int(datetime.utcnow().timestamp()),
+                    'client_id': order['clientId']
+                }
+            )
+        return orders
+
+    @try_exc_async
+    async def get_order_by_id(self, symbol, order_id, session):
+        res = self.swagger_client.Order.Order_getOrders(filter=json.dumps({'orderID': order_id})).result()[0][0]
+        tick_size, step_size, quantity_precision, contract_value = self.get_sizes_for_symbol(symbol)
+        real_size = res['cumQty'] / contract_value
+        real_price = res.get('avgPx', 0)
+        return {
+            'exchange_order_id': order_id,
+            'exchange': self.EXCHANGE_NAME,
+            'status': OrderStatus.FULLY_EXECUTED if res.get('ordStatus') == 'Filled' else OrderStatus.NOT_EXECUTED,
+            'factual_price': real_price,
+            'factual_amount_coin': real_size,
+            'factual_amount_usd': real_price * real_size,
+            'datetime_update': datetime.utcnow(),
+            'ts_update': int(datetime.utcnow().timestamp() * 1000)
+        }
+
+    @try_exc_regular
     def get_order_result(self, order):
         factual_price = order['avgPx'] if order.get('avgPx') else 0
         factual_size_coin = abs(order['homeNotional']) if order.get('homeNotional') else 0
@@ -183,6 +262,17 @@ class BitmexClient(BaseClient):
                                                     'lever': self.leverage}})
 
     @try_exc_regular
+    def update_orderbook(self, data):
+        for ob in data:
+            if ob.get('symbol') and self.instruments.get(ob['symbol']):
+                symbol = ob['symbol']
+                ob.update({'timestamp': int(datetime.utcnow().timestamp() * 1000)})
+                instr = self.get_instrument(symbol)
+                ob['bids'] = [[x[0], x[1] / instr['underlyingToPositionMultiplier']] for x in ob['bids']]
+                ob['asks'] = [[x[0], x[1] / instr['underlyingToPositionMultiplier']] for x in ob['asks']]
+                self.orderbook.update({symbol: ob})
+
+    @try_exc_regular
     def _process_msg(self, msg: aiohttp.WSMessage):
         if msg.type == aiohttp.WSMsgType.TEXT:
             message = json.loads(msg.data)
@@ -197,11 +287,7 @@ class BitmexClient(BaseClient):
                         result = self.get_order_result(order)
                         self.orders.update({order['orderID']: result})
                 elif message['table'] == 'orderBook10':
-                    for ob in message['data']:
-                        if ob.get('symbol'):
-                            ob.update({'timestamp': int(datetime.utcnow().timestamp() * 1000)})
-                            symbol = ob['symbol']
-                            self.orderbook.update({symbol: ob})
+                    self.update_orderbook(message['data'])
                 elif message['table'] == 'position':
                     for position in message['data']:
                         if position.get('currentQty'):
@@ -290,9 +376,12 @@ class BitmexClient(BaseClient):
         return self.data['order']
 
     @try_exc_regular
-    def fit_sizes(self, amount, price, symbol) -> None:
-        tick_size, step_size, quantity_precision = self.get_sizes_for_symbol(symbol)
-        self.amount = round(amount / step_size) * step_size
+    def fit_sizes(self, amount, price, symbol):
+        tick_size, step_size, quantity_precision, contract_value = self.get_sizes_for_symbol(symbol)
+        amount = amount * contract_value
+        rounded_amount = round(amount / step_size) * step_size
+        self.amount_contracts = round(rounded_amount, quantity_precision)
+        self.amount = round(self.amount_contracts * contract_value, 8)
         if '.' in str(tick_size):
             round_price_len = len(str(tick_size).split('.')[1])
         elif '-' in str(tick_size):
@@ -301,6 +390,7 @@ class BitmexClient(BaseClient):
             round_price_len = 0
         rounded_price = round(price / tick_size) * tick_size
         self.price = round(rounded_price, round_price_len)
+        return self.price, self.amount
 
     @try_exc_async
     async def create_order(self, symbol, side, session, expire=100, client_id=None):
@@ -358,7 +448,8 @@ class BitmexClient(BaseClient):
 
     @try_exc_regular
     def cancel_all_orders(self):
-        print('>>>>', self.swagger_client.Order.Order_cancelAll().result())
+        result = self.swagger_client.Order.Order_cancelAll().result()
+        return result
         # print('order', order)
         # if not order['ordStatus'] in ['Canceled', 'Filled']:
         #
@@ -390,6 +481,11 @@ class BitmexClient(BaseClient):
         url_parts = list(urllib.parse.urlparse(self.BASE_WS))
         url_parts[2] += "?subscribe={}".format(','.join(self.subscriptions))
         return urllib.parse.urlunparse(url_parts)
+
+    @try_exc_regular
+    def get_orders(self):
+        # NECESSARY
+        return self.orders
 
     # def get_pnl(self):
     #     positions = self.positions()
@@ -430,30 +526,48 @@ class BitmexClient(BaseClient):
     def get_positions(self) -> dict:
         return self.positions
 
+    @try_exc_async
+    async def get_orderbook_by_symbol(self, symbol):
+        res = client.swagger_client.OrderBook.OrderBook_getL2(symbol=symbol).result()[0]
+        tick_size, step_size, quantity_precision, contract_value = self.get_sizes_for_symbol(symbol)
+        orderbook = dict()
+        orderbook['bids'] = [[x['price'], x['size'] / contract_value] for x in res if x['side'] == 'Buy']
+        orderbook['asks'] = [[x['price'], x['size'] / contract_value] for x in res if x['side'] == 'Sell']
+        orderbook['timestamp'] = int(datetime.utcnow().timestamp() * 1000)
+        return orderbook
+
     @try_exc_regular
     def get_available_balance(self, side):
-        # if 'USDT' in self.symbol:
-        funds = [x for x in self.get_balance() if x['currency'] == 'USDt'][0]
-        change = 1
-        # else:
-        #     funds = [x for x in self.funds() if x['currency'] == 'XBt'][0]
-        #     change = self.get_orderbook()['XBTUSD']['bids'][0][0]
-        positions = self.get_positions()
-        wallet_balance = (funds['walletBalance'] / 10 ** self.pos_power) * change
-        available_balance = wallet_balance * self.leverage
-        wallet_balance = wallet_balance if self.symbol == 'XBTUSD' else 0
+        available_balances = {}
         position_value = 0
-        for symbol, position in positions.items():
-            if position['foreignNotional']:
-                position_value = position['homeNotional'] * position['markPrice']
-
-            if self.symbol == symbol and position.get('currentQty'):
-                self.contract_price = abs(position_value / position['currentQty'])
-
-        if side == 'buy':
-            return available_balance - position_value - wallet_balance
+        position_value_abs = 0
+        available_margin = self.balance['total'] * self.leverage
+        avl_margin_per_market = available_margin / 100 * self.max_pos_part
+        for symbol, position in self.positions.items():
+            if position.get('amount_usd'):
+                position_value += position['amount_usd']
+                position_value_abs += abs(position['amount_usd'])
+                if position['amount_usd'] < 0:
+                    available_balances.update({symbol: {'buy': avl_margin_per_market + position['amount_usd'],
+                                                        'sell': avl_margin_per_market - position['amount_usd']}})
+                else:
+                    available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
+                                                        'sell': avl_margin_per_market + position['amount_usd']}})
+        if position_value_abs < available_margin:
+            available_balances['buy'] = available_margin - position_value
+            available_balances['sell'] = available_margin + position_value
         else:
-            return available_balance + position_value + wallet_balance
+            for symbol, position in self.positions.items():
+                if position.get('amount_usd'):
+                    if position['amount_usd'] < 0:
+                        available_balances.update({symbol: {'buy': abs(position['amount_usd']),
+                                                            'sell': 0}})
+                    else:
+                        available_balances.update({symbol: {'buy': 0,
+                                                            'sell': position['amount_usd']}})
+            available_balances['buy'] = 0
+            available_balances['sell'] = 0
+        return available_balances
 
     @try_exc_regular
     def get_position(self):
@@ -475,6 +589,7 @@ class BitmexClient(BaseClient):
     def get_orderbook(self, symbol):
         return self.orderbook[symbol]
 
+
 # def get_xbt_pos(self):
 #     bal_bitmex = [x for x in self.funds() if x['currency'] == 'XBt'][0]
 #     xbt_pos = bal_bitmex['walletBalance'] / 10 ** 8
@@ -489,38 +604,42 @@ class BitmexClient(BaseClient):
 if __name__ == '__main__':
     import configparser
     import sys
+    import uuid
 
     config = configparser.ConfigParser()
     config.read(sys.argv[1], "utf-8")
     client = BitmexClient(keys=config['BITMEX'],
                           leverage=float(config['SETTINGS']['LEVERAGE']),
                           max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
-                          markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
+                          markets_list=['LINK', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
     client.run_updater()
+
 
     async def test_order():
         async with aiohttp.ClientSession() as session:
-            ob = client.get_orderbook('RUNEUSDT')
-            price = ob['bids'][5][0]
-            # client.get_markets()
-            client.fit_sizes(10, price, 'RUNEUSDT')
-            data = await client.create_order('RUNEUSDT',
-                                             'buy',
-                                             session=session,
-                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-            print(data)
-            data_cancel = client.cancel_all_orders()
-            print(data_cancel)
+            ob = await client.get_orderbook_by_symbol('XBTUSDT')
+            print(ob)
+            # price = ob['bids'][5][0]
+            # # client.get_markets()
+            # client.fit_sizes(3, price, 'BTCUSDT')
+            # data = await client.create_order('BTCUSDT',
+            #                                  'buy',
+            #                                  session=session)
+            # print(data)
+            # data_cancel = client.cancel_all_orders()
+            # print(data_cancel)
+
 
     time.sleep(3)
-    print(client.markets)
 
-    print(client.get_real_balance())
+    # print(client.markets)
+    #
+    # client.get_real_balance()
+    asyncio.run(test_order())
     # print(client.get_positions())
     # print(client.get_balance())
     # print(client.orders)
     while True:
-
         # print(client.funds())
         # print(client.get_orderbook())
         # print('CYCLE DONE')
@@ -529,208 +648,3 @@ if __name__ == '__main__':
         # print("\n")
         time.sleep(1)
 
-# EXAMPLES:
-
-# import configparser
-# import sys
-#
-# cp = configparser.ConfigParser()
-# if len(sys.argv) != 2:
-#     sys.exit(1)
-# cp.read(sys.argv[1], "utf-8")
-# keys = cp
-# keys = {'BITMEX': {'api_key': 'HKli7p7qxcsqQmsYvR-fDDmM',
-#                    'api_secret': '28Dt_sLKMaGpbM2g-EI-NI1yT_mm880L56H_PhfAZ1Jug_R1',
-#                    'symbol': 'XBTUSD'}}
-# #
-# # #
-# api_key = keys["BITMEX"]["api_key"]
-# api_secret = keys["BITMEX"]["api_secret"]
-# bitmex_client = BitmexClient(keys['BITMEX'])
-# bitmex_client.run_updater()
-# #
-# time.sleep(1)
-#
-# print(bitmex_client.get_positions())
-# # loop = asyncio.new_event_loop()
-# async def func():
-#     async with aiohttp.ClientSession() as session:
-#         await bitmex_client.create_order(0.01, 30000, 'sell', session)
-# asyncio.run(func())
-
-# time.sleep(1)
-# open_orders = bitmex_client.swagger_client.Order.Order_getOrders(symbol='XBTUSD', reverse=True).result()[0]
-# # print(f"{open_orders=}")
-#
-# for order in open_orders:
-#     bitmex_client.cancel_order(order['orderID'])
-
-
-# # # #
-# # # /position/leverage
-# # time.sleep(3)
-# # funding = bitmex_client.swagger_client.Position.Position_updateLeverage(symbol='ETHUSD', leverage=10).result()
-# # print(funding)
-# # time.sleep(3)
-# # time.sleep(1)
-# # print(bitmex_client.get_positions())
-# time.sleep(2)
-# # print(f"BUY {bitmex_client.get_last_price('buy')}")
-# while True:
-#     bitmex_client.create_order(0.01, 22500, 'sell')
-# time.sleep(2)
-# print(f"SELL {bitmex_client.get_last_price('sell')}")
-
-#     time.sleep(1)
-#     orders = bitmex_client.open_orders()
-#     for order in orders:
-#         print(orders)
-#         bitmex_client.cancel_order(order['orderID'])
-#     print(bitmex_client.open_orders())
-#     # print(f"BALANCE {bitmex_client.get_real_balance()}")
-#     # print(f"POSITION {bitmex_client.get_positions()}")
-#     print(f"BUY {bitmex_client.get_available_balance('buy')}")
-#     print(f"SELL {bitmex_client.get_available_balance('sell')}")
-#     print(f'\n\n')
-
-# print(bitmex_client.funds())
-# # bitmex_client.get_real_balance()
-# while True:
-#     print(bitmex_client.get_orderbook())
-#     time.sleep(1)
-
-# funding = bitmex_client.swagger_client.Funding.Funding_get(symbol='XBTUSD').result()
-# print(funding)
-
-
-# bal_bitmex = [x for x in self.client_Bitmex.funds() if x['currency'] == currency][0]
-
-
-# while True:
-#     pos_bitmex = [x for x in bitmex_client.positions if x['symbol'] == 'XBTUSDT'][0]
-#     side = 'Buy' if pos_bitmex['currentQty'] < 0 else 'Sell'
-#     size = abs(pos_bitmex['currentQty'])
-#     open_orders = bitmex_client.open_orders(clOrdIDPrefix='')
-#     price = orderbook['asks'][0][0] if side == 'Sell' else orderbook['bids'][0][0]
-#     exist = False
-#     for order in open_orders:
-#         if 'CANCEL' in order['clOrdID']:
-#             if price != order['price']:
-#                 bitmex_client.change_order(size, price, order['orderID'])
-#                 print(f"Changed {size}")
-#             exist = True
-#             break
-#     if exist:
-#         continue
-#     bitmex_client.create_order(size, price, side, 'Limit', 'CANCEL')
-
-# print(bitmex_client.get_available_balance('Sell'))
-# print(bitmex_client.get_available_balance('Buy'))
-# # while True:
-#     # orders = bitmex_client.swagger_client.Order.Order_getOrders(symbol='XBTUSD', reverse=True).result()[0]
-# a = bitmex_client.get_instrument()
-# print(a)
-# print(f"volume24h: {a['volume24h']}")
-# print(f"homeNotional24h: {a['homeNotional24h']}")
-# print(f"turnover24h: {a['turnover24h']}")
-# print(f"foreignNotional24h: {a['foreignNotional24h']}")
-# contract_price = a['foreignNotional24h'] / a['volume24h']
-# print(contract_price)
-# orders = bitmex_client.swagger_client.User.User_getExecutionHistory(symbol='XBTUSD', timestamp=date).result()
-# if len(orders[0]):
-#     print(orders[0])
-#     break
-# for order in orders[0]:
-#     print(f"Time: {order['transactTime']}")
-#     print(f"Order ID: {order['clOrdID']}")
-#     # print(f"Realized PNL: {order['realisedPnl'] / 100000000} USD")
-#     print(f"Side: {order['side']}")
-#     print(f"Order size: {order['orderQty']} USD")
-#     print(f"Price: {order['price']}")
-#     print()
-# orders = bitmex_client.swagger_client.Settlement.Settlement_get(symbol='XBTUSDT',).result()
-# orders = bitmex_client.swagger_client.User.User_getWalletHistory(currency='USDt',).result()
-# instruments = bitmex_client.swagger_client.Instrument.Instrument_getActiveAndIndices().result()
-# print(instruments)
-# for instrument in instruments[0]:
-#     print(instrument['symbol'])
-# time.sleep(1)
-# orderbook = bitmex_client.get_orderbook()()['XBT/USDT']
-# print(orderbook)
-# print(orders)
-# money = bitmex_client.funds()
-# print(money)
-#     bitmex_client.create_order(size, price, side, 'Limit', 'CANCEL')
-# bitmex_client.create_order(1000, 12000, 'Buy', 'Limit', 'CANCEL1')
-# time.sleep(1)
-
-#     print(order)
-
-
-# orders = bitmex_client.open_orders('')
-# print(orders)
-
-# TRANZACTION HISTORY
-# orders = bitmex_client.swagger_client.User.User_getWalletHistory(currency='USDt',).result()
-#
-# for tranz in orders[0]:
-#     print("TRANZ:" + tranz['transactID'])
-#     print("type:" + str(tranz['transactType']))
-#     print("status:" + str(tranz['transactStatus']))
-#     print("amount:" + str(tranz['amount'] / (10 ** 6)))
-#     if tranz['fee']:
-#         print("fee:" + str(tranz['fee'] / (10 ** 6)))
-#     print("walletBalance:" + str(tranz['walletBalance'] / (10 ** 6)))
-#     if tranz['marginBalance']:
-#         print("marginBalance:" + str(tranz['marginBalance'] / (10 ** 6)))
-#     print('Timestamp:' + str(tranz['timestamp']))
-#     print()
-# time.sleep(1)
-
-
-# time.sleep(1)
-# open_orders = bitmex_client.open_orders(clOrdIDPrefix='BALANCING')
-# print(open_orders)
-
-# open_orders_resp = [{'orderID': '20772f48-24a3-4cff-a470-670d51a1666e', 'clOrdID': 'BALANCING', 'clOrdLinkID': '', 'account': 2133275,
-#   'symbol': 'XBTUSDT', 'side': 'Buy', 'simpleOrderQty': None, 'orderQty': 1000, 'price': 15000, 'displayQty': None,
-#   'stopPx': None, 'pegOffsetValue': None, 'pegPriceType': '', 'currency': 'USDT', 'settlCurrency': 'USDt',
-#   'ordType': 'Limit', 'timeInForce': 'GoodTillCancel', 'execInst': '', 'contingencyType': '', 'exDestination': 'XBME',
-#   'ordStatus': 'New', 'triggered': '', 'workingIndicator': True, 'ordRejReason': '', 'simpleLeavesQty': None,
-#   'leavesQty': 1000, 'simpleCumQty': None, 'cumQty': 0, 'avgPx': None, 'multiLegReportingType': 'SingleSecurity',
-#   'text': 'Submitted via API.', 'transactTime': '2022-11-16T17:18:45.740Z', 'timestamp': '2022-11-16T17:18:45.740Z'}]
-# bitmex_client.create_order(1000, 17000, 'Buy', 'Limit', 'BALANCING BTC2')
-# time.sleep(1)
-# print(commission.result())
-# print(orders.objRef)
-# print(orders.op)
-# print(orders.status)
-# bitmex_client.cancel_order(id)
-# print(bitmex_client.data['execution'])
-# print(bitmex_client.recent_trades())
-# print(bitmex_client.funds()[1])
-# print(bitmex_client.get_orderbook()())
-
-#   [{'orderID': 'baf6fc1e-8f76-4090-a3f3-254314da86b4', 'clOrdID': 'BALANCING BTC', 'clOrdLinkID': '', 'account': 2133275,
-#   'symbol': 'XBTUSDT', 'side': 'Buy', 'simpleOrderQty': None, 'orderQty': 1000, 'price': 17000, 'displayQty': None,
-#   'stopPx': None, 'pegOffsetValue': None, 'pegPriceType': '', 'currency': 'USDT', 'settlCurrency': 'USDt',
-#   'ordType': 'Limit', 'timeInForce': 'GoodTillCancel', 'execInst': '', 'contingencyType': '', 'exDestination': 'XBME',
-#   'ordStatus': 'New', 'triggered': '', 'workingIndicator': True, 'ordRejReason': '', 'simpleLeavesQty': None,
-#   'leavesQty': 1000, 'simpleCumQty': None, 'cumQty': 0, 'avgPx': None, 'multiLegReportingType': 'SingleSecurity',
-#   'text': 'Submitted via API.', 'transactTime': '2022-11-16T17:24:10.721Z', 'timestamp': '2022-11-16T17:24:10.721Z',
-#   'lastQty': None, 'lastPx': None, 'lastLiquidityInd': '', 'tradePublishIndicator': '',
-#   'trdMatchID': '00000000-0000-0000-0000-000000000000', 'execID': 'cee84b5e-3946-afe5-c1c7-f7d99945dfd7',
-#   'execType': 'New', 'execCost': None, 'homeNotional': None, 'foreignNotional': None, 'commission': None,
-#   'lastMkt': '', 'execComm': None, 'underlyingLastPx': None},
-#    {'orderID': 'baf6fc1e-8f76-4090-a3f3-254314da86b4',
-#   'clOrdID': 'BALANCING BTC', 'clOrdLinkID': '', 'account': 2133275, 'symbol': 'XBTUSDT', 'side': 'Buy',
-#   'simpleOrderQty': None, 'orderQty': 1000, 'price': 17000, 'displayQty': None, 'stopPx': None, 'pegOffsetValue': None,
-#   'pegPriceType': '', 'currency': 'USDT', 'settlCurrency': 'USDt', 'ordType': 'Limit', 'timeInForce': 'GoodTillCancel',
-#   'execInst': '', 'contingencyType': '', 'exDestination': 'XBME', 'ordStatus': 'Filled', 'triggered': '',
-#   'workingIndicator': False, 'ordRejReason': '', 'simpleLeavesQty': None, 'leavesQty': 0, 'simpleCumQty': None,
-#   'cumQty': 1000, 'avgPx': 16519, 'multiLegReportingType': 'SingleSecurity', 'text': 'Submitted via API.',
-#   'transactTime': '2022-11-16T17:24:10.721Z', 'timestamp': '2022-11-16T17:24:10.721Z', 'lastQty': 1000, 'lastPx': 16519,
-#   'lastLiquidityInd': 'RemovedLiquidity', 'tradePublishIndicator': 'PublishTrade',
-#   'trdMatchID': '15cd273d-ded8-e339-b3b1-9a9080b5d10f', 'execID': 'adcc6b75-2d57-a9d2-47c4-8db921d8aae1',
-#   'execType': 'Trade', 'execCost': 16519000, 'homeNotional': 0.001, 'foreignNotional': -16.519,
-#   'commission': 0.00022500045, 'lastMkt': 'XBME', 'execComm': 3716, 'underlyingLastPx': None}]

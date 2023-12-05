@@ -113,14 +113,11 @@ class DydxClient(BaseClient):
     @try_exc_regular
     def get_real_balance(self):
         # NECESSARY
-        try:
-            res = self.client.private.get_account().data
-            self.balance = {'free': float(res['account']['freeCollateral']),
-                            'total': float(res['account']['equity']),
-                            'timestamp': time.time()}
-            self.position_id = self.account['account']['positionId']
-        except:
-            pass
+        res = self.client.private.get_account().data
+        self.balance = {'free': float(res['account']['freeCollateral']),
+                        'total': float(res['account']['equity']),
+                        'timestamp': time.time()}
+        self.position_id = self.account['account']['positionId']
 
     @try_exc_regular
     def exit(self):
@@ -267,48 +264,43 @@ class DydxClient(BaseClient):
                                data=json.dumps(remove_nones(data))) as resp:
             res = await resp.json()
             # print(f"{self.EXCHANGE_NAME} get_all_orders {res=}")
-            try:
-                for order in res['orders']:
-                    if res.get('status') == ClientsOrderStatuses.FILLED and float(res['origQty']) > float(
-                            res['executedQty']):
-                        status = OrderStatus.PARTIALLY_EXECUTED
-                    elif res.get('status') == ClientsOrderStatuses.FILLED:
-                        status = OrderStatus.FULLY_EXECUTED
-                    else:
-                        status = OrderStatus.NOT_EXECUTED
+            for order in res['orders']:
+                if res.get('status') == ClientsOrderStatuses.FILLED and float(res['origQty']) > float(
+                        res['executedQty']):
+                    status = OrderStatus.PARTIALLY_EXECUTED
+                elif res.get('status') == ClientsOrderStatuses.FILLED:
+                    status = OrderStatus.FULLY_EXECUTED
+                else:
+                    status = OrderStatus.NOT_EXECUTED
 
-                    orders.append(
-                        {
-                            'id': uuid.uuid4(),
-                            'datetime': datetime.strptime(order['createdAt'], '%Y-%m-%dT%H:%M:%SZ'),
-                            'ts': int(time.time()),
-                            'context': 'web-interface' if not 'api_' in order['clientId'] else
-                            order['clientId'].split('_')[1],
-                            'parent_id': uuid.uuid4(),
-                            'exchange_order_id': order['id'],
-                            'type': order['timeInForce'],
-                            'status': status,
-                            'exchange': self.EXCHANGE_NAME,
-                            'side': order['side'].lower(),
-                            'symbol': symbol,
-                            'expect_price': float(order['price']),
-                            'expect_amount_coin': float(order['size']),
-                            'expect_amount_usd': float(order['price']) * float(order['size']),
-                            'expect_fee': self.taker_fee,
-                            'factual_price': float(order['price']),
-                            'factual_amount_coin': float(order['size']),
-                            'factual_amount_usd': float(order['size']) * float(order['price']),
-                            'factual_fee': self.taker_fee,
-                            'order_place_time': 0,
-                            'env': '-',
-                            'datetime_update': datetime.utcnow(),
-                            'ts_update': int(time.time()),
-                            'client_id': order['clientId']
-                        }
-                    )
-            except:
-                traceback.print_exc()
-
+                orders.append(
+                    {
+                        'id': uuid.uuid4(),
+                        'datetime': datetime.strptime(order['createdAt'], '%Y-%m-%dT%H:%M:%SZ'),
+                        'ts': int(time.time()),
+                        'context': 'web-interface' if 'api_' not in order['clientId'] else order['clientId'].split('_')[1],
+                        'parent_id': uuid.uuid4(),
+                        'exchange_order_id': order['id'],
+                        'type': order['timeInForce'],
+                        'status': status,
+                        'exchange': self.EXCHANGE_NAME,
+                        'side': order['side'].lower(),
+                        'symbol': symbol,
+                        'expect_price': float(order['price']),
+                        'expect_amount_coin': float(order['size']),
+                        'expect_amount_usd': float(order['price']) * float(order['size']),
+                        'expect_fee': self.taker_fee,
+                        'factual_price': float(order['price']),
+                        'factual_amount_coin': float(order['size']),
+                        'factual_amount_usd': float(order['size']) * float(order['price']),
+                        'factual_fee': self.taker_fee,
+                        'order_place_time': 0,
+                        'env': '-',
+                        'datetime_update': datetime.utcnow(),
+                        'ts_update': int(time.time()),
+                        'client_id': order['clientId']
+                    }
+                )
             return orders
 
     @try_exc_regular
@@ -337,7 +329,6 @@ class DydxClient(BaseClient):
     @try_exc_async
     async def create_order(self, symbol, side, session, expire=10000, client_id=None, type='LIMIT', expiration=None) -> dict:
         # NECESSARY
-        print(side)
         time_sent = datetime.utcnow().timestamp()
         expire_date = int(round(time.time()) + expire)
         now_iso_string = generate_now_iso()
