@@ -414,7 +414,7 @@ class KrakenClient(BaseClient):
     @try_exc_async
     async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession) -> dict:
         fills_orders = await self.get_fills(session)
-        if fills_orders.get('result') == 'success':
+        if type(fills_orders) == dict and fills_orders.get('result') == 'success':
             prices = []
             sizes = []
             for fill in fills_orders.get('fills', []):
@@ -452,8 +452,8 @@ class KrakenClient(BaseClient):
     @try_exc_async
     async def __get_order_by_all_orders(self, session, order_id):
         all_orders = await self.__get_all_orders(session)
-        if orders := all_orders.get('elements'):
-            for order in orders:
+        if type(all_orders) == dict and all_orders.get('elements'):
+            for order in all_orders['elements']:
                 stts = OrderStatus.PROCESSING
                 price = 0
                 amount = 0

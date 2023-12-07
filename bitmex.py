@@ -54,13 +54,14 @@ class BitmexClient(BaseClient):
         self.balance = {}
         self.keys = {}
         self.exited = False
+        self.error_info = None
         self.swagger_client = self.swagger_client_init()
         self.commission = self.swagger_client.User.User_getCommission().result()[0]
         self.instruments = self.get_all_instruments()
         self.markets = self.get_markets()
         self.get_real_balance()
         self.wst = threading.Thread(target=self._run_ws_forever, daemon=True)
-        self.time_sent = time.time()
+        self.time_sent = datetime.utcnow().timestamp()
 
     @try_exc_regular
     def get_all_instruments(self):
@@ -250,17 +251,35 @@ class BitmexClient(BaseClient):
         return result
 
     @try_exc_regular
-    def update_position(self, position):
-        side = 'SHORT' if position['foreignNotional'] > 0 else 'LONG'
-        amount = -position['currentQty'] if side == 'SHORT' else position['currentQty']
-        price = position['avgEntryPrice'] if position.get('avgEntryPrice') else 0
-        self.positions.update({position['symbol']: {'side': side,
-                                                    'amount_usd': -position['foreignNotional'],
-                                                    'amount': amount / (10 ** 6),
-                                                    'entry_price': price,
-                                                    'unrealized_pnl_usd': position['unrealisedPnl'] / (10 ** 6),
-                                                    'realized_pnl_usd': position['realisedPnl'] / (10 ** 6),
-                                                    'lever': self.leverage}})
+    def _process_msg(self, msg: aiohttp.WSMessage):
+        if msg.type == aiohttp.WSMsgType.TEXT:
+            message = json.loads(msg.data)
+            if message.get('subscribe'):
+                print(message)
+            if message.get("action"):
+                if message['table'] == 'execution':
+                    self.update_fills(message['data'])
+                elif message['table'] == 'orderBook10':
+                    self.update_orderbook(message['data'])
+                elif message['table'] == 'position':
+                    self.update_positions(message['data'])
+                elif message['table'] == 'margin':
+                    self.update_balance(message['data'])
+
+    @try_exc_regular
+    def update_positions(self, data):
+        for position in data:
+            if position.get('foreignNotional'):
+                side = 'SHORT' if position['foreignNotional'] > 0 else 'LONG'
+                amount = -position['currentQty'] if side == 'SHORT' else position['currentQty']
+                price = position['avgEntryPrice'] if position.get('avgEntryPrice') else 0
+                self.positions.update({position['symbol']: {'side': side,
+                                                            'amount_usd': -position['foreignNotional'],
+                                                            'amount': amount / (10 ** 6),
+                                                            'entry_price': price,
+                                                            'unrealized_pnl_usd': 0,
+                                                            'realized_pnl_usd': 0,
+                                                            'lever': self.leverage}})
 
     @try_exc_regular
     def update_orderbook(self, data):
@@ -274,37 +293,21 @@ class BitmexClient(BaseClient):
                 self.orderbook.update({symbol: ob})
 
     @try_exc_regular
-    def _process_msg(self, msg: aiohttp.WSMessage):
-        if msg.type == aiohttp.WSMsgType.TEXT:
-            message = json.loads(msg.data)
-            if message.get('subscribe'):
-                print(message)
-            if message.get("action"):
-                if message['table'] == 'execution':
-                    for order in message['data']:
-                        if order['ordStatus'] == 'New':
-                            timestamp = self.timestamp_from_date(order['transactTime'])
-                            print(f'BITMEX ORDER PLACE TIME: {timestamp - self.time_sent} sec')
-                        result = self.get_order_result(order)
-                        self.orders.update({order['orderID']: result})
-                elif message['table'] == 'orderBook10':
-                    self.update_orderbook(message['data'])
-                elif message['table'] == 'position':
-                    for position in message['data']:
-                        if position.get('currentQty'):
-                            try:
-                                self.update_position(position)
-                            except:
-                                pass
-                elif message['table'] == 'margin':
-                    for balance in message['data']:
-                        if balance['currency'] == 'USDt':
-                            try:
-                                self.balance = {'free': float(balance['availableMargin']) / (10 ** 6),
-                                                'total': float(balance['marginBalance']) / (10 ** 6),
-                                                'timestamp': datetime.utcnow().timestamp()}
-                            except:
-                                pass
+    def update_fills(self, data):
+        for order in data:
+            if order['ordStatus'] == 'New':
+                timestamp = self.timestamp_from_date(order['transactTime'])
+                print(f'BITMEX ORDER PLACE TIME: {timestamp - self.time_sent} sec')
+            result = self.get_order_result(order)
+            self.orders.update({order['orderID']: result})
+
+    @try_exc_regular
+    def update_balance(self, data):
+        for balance in data:
+            if balance['currency'] == 'USDt' and balance.get('marginBalance'):
+                self.balance = {'free': balance.get('availableMargin', 0) / (10 ** 6),
+                                'total': balance['marginBalance'] / (10 ** 6),
+                                'timestamp': datetime.utcnow().timestamp()}
 
     @staticmethod
     @try_exc_regular
@@ -312,20 +315,6 @@ class BitmexClient(BaseClient):
         # date = '2023-02-15T02:55:27.640Z'
         ms = int(date.split(".")[1].split('Z')[0]) / 1000
         return time.mktime(datetime.strptime(date, "%Y-%m-%dT%H:%M:%S.%fZ").timetuple()) + ms
-
-    @staticmethod
-    @try_exc_regular
-    def order_leaves_quantity(o):
-        if o['leavesQty'] is None:
-            return True
-        return o['leavesQty'] > 0
-
-    @staticmethod
-    @try_exc_regular
-    def find_by_keys(keys, table, matchData):
-        for item in table:
-            if all(item[k] == matchData[k] for k in keys):
-                return item
 
     @staticmethod
     @try_exc_regular
@@ -382,7 +371,7 @@ class BitmexClient(BaseClient):
         amount = amount * contract_value
         rounded_amount = round(amount / step_size) * step_size
         self.amount_contracts = round(rounded_amount, quantity_precision)
-        self.amount = round(self.amount_contracts * contract_value, 8)
+        self.amount = round(self.amount_contracts / contract_value, 8)
         if '.' in str(tick_size):
             round_price_len = len(str(tick_size).split('.')[1])
         elif '-' in str(tick_size):
@@ -395,7 +384,7 @@ class BitmexClient(BaseClient):
 
     @try_exc_async
     async def create_order(self, symbol, side, session, expire=100, client_id=None):
-        self.time_sent = time.time()
+        self.time_sent = datetime.utcnow().timestamp()
         body = {
             "symbol": symbol,
             "ordType": "Limit",
@@ -412,6 +401,7 @@ class BitmexClient(BaseClient):
         exchange_order_id = None
         if res.get('errors'):
             status = ResponseStatus.ERROR
+            self.error_info = res.get('errors')
         elif res.get('order') and res['order'].get('status'):
             timestamp = int(
                 datetime.timestamp(datetime.strptime(res['order']['createdAt'], '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
@@ -420,7 +410,7 @@ class BitmexClient(BaseClient):
             exchange_order_id = res['orderID']
         else:
             status = ResponseStatus.NO_CONNECTION
-
+            self.error_info = res
         return {
             'exchange_name': self.EXCHANGE_NAME,
             'exchange_order_id': exchange_order_id,
@@ -529,7 +519,7 @@ class BitmexClient(BaseClient):
 
     @try_exc_async
     async def get_orderbook_by_symbol(self, symbol):
-        res = client.swagger_client.OrderBook.OrderBook_getL2(symbol=symbol).result()[0]
+        res = self.swagger_client.OrderBook.OrderBook_getL2(symbol=symbol).result()[0]
         tick_size, step_size, quantity_precision, contract_value = self.get_sizes_for_symbol(symbol)
         orderbook = dict()
         orderbook['bids'] = [[x['price'], x['size'] / contract_value] for x in res if x['side'] == 'Buy']
@@ -538,7 +528,7 @@ class BitmexClient(BaseClient):
         return orderbook
 
     @try_exc_regular
-    def get_available_balance(self, side):
+    def get_available_balance(self):
         available_balances = {}
         position_value = 0
         position_value_abs = 0
@@ -611,7 +601,6 @@ if __name__ == '__main__':
     config.read(sys.argv[1], "utf-8")
     client = BitmexClient(keys=config['BITMEX'],
                           leverage=float(config['SETTINGS']['LEVERAGE']),
-                          max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
                           markets_list=['LINK', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
     client.run_updater()
 
@@ -631,13 +620,14 @@ if __name__ == '__main__':
             # print(data_cancel)
 
 
-    time.sleep(3)
+    # time.sleep(3)
 
     # print(client.markets)
     #
     # client.get_real_balance()
-    asyncio.run(test_order())
-    # print(client.get_positions())
+    # asyncio.run(test_order())
+    # client.get_position()
+    # print(client.positions)
     # print(client.get_balance())
     # print(client.orders)
     while True:
