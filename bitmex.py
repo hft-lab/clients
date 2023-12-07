@@ -58,6 +58,7 @@ class BitmexClient(BaseClient):
         self.commission = self.swagger_client.User.User_getCommission().result()[0]
         self.instruments = self.get_all_instruments()
         self.markets = self.get_markets()
+        self.get_real_balance()
         self.wst = threading.Thread(target=self._run_ws_forever, daemon=True)
         self.time_sent = time.time()
 
