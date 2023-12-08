@@ -46,7 +46,7 @@ class BinanceClient(BaseClient):
         self.balance = {
             'total': 0.0,
             'avl_balance': 0.0,
-            'timestamp': time.time()
+            'timestamp': round(datetime.datetime.utcnow().timestamp())
         }
         self.last_price = {
             'sell': 0,
@@ -352,7 +352,7 @@ class BinanceClient(BaseClient):
         if isinstance(res, list):
             for s in res:
                 if s['asset'] == 'USDT':
-                    self.balance['timestamp'] = time.time()
+                    self.balance['timestamp'] = round(datetime.datetime.utcnow().timestamp())
                     self.balance['total'] = float(s['balance']) + float(s['crossUnPnl'])
                     self.balance['free'] = float(s['availableBalance'])
                     return float(s['balance']) + float(s['crossUnPnl']), float(s['availableBalance'])

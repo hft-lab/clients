@@ -189,7 +189,7 @@ class KrakenClient(BaseClient):
 
     @try_exc_regular
     def get_balance(self) -> float:
-        if time.time() - self.balance['timestamp'] > 60:
+        if round(datetime.utcnow().timestamp()) - self.balance['timestamp'] > 60:
             self.get_real_balance()
         return self.balance['total']
 
@@ -546,10 +546,9 @@ class KrakenClient(BaseClient):
             ),
         }
         res = requests.get(headers=headers, url=self.BASE_URL + url_path).json()
-        print(res)
         self.balance['total'] = res['accounts']['flex']['portfolioValue']
         self.balance['free'] = res['accounts']['flex']['availableMargin']
-        self.balance['timestamp'] = time.time()
+        self.balance['timestamp'] = round(datetime.utcnow().timestamp())
 
     @try_exc_regular
     def fit_sizes(self, amount, price, symbol):
@@ -692,7 +691,7 @@ class KrakenClient(BaseClient):
 
                         elif msg_data.get('feed') == 'balances':
                             if msg_data.get('balance_value'):
-                                self.balance['timestamp'] = time.time()
+                                self.balance['timestamp'] = round(datetime.utcnow().timestamp())
                                 self.balance['total'] = msg_data['portfolio_value']
                                 self.balance['free'] = msg_data['available_margin']
 

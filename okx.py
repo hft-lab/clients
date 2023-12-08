@@ -213,7 +213,7 @@ class OkxClient(BaseClient):
 
     @try_exc_regular
     def get_balance(self):
-        if int(round(datetime.utcnow().timestamp() * 1000)) - self.balance['timestamp'] > 60:
+        if round(datetime.utcnow().timestamp()) - self.balance['timestamp'] > 60:
             self.get_real_balance()
         return self.balance['total']
 
@@ -283,11 +283,11 @@ class OkxClient(BaseClient):
             acc_data = resp[0]['details'][0]
             self.balance = {'free': float(acc_data['availBal']),
                             'total': float(acc_data['availBal']) + float(acc_data['frozenBal']),
-                            'timestamp': int(resp[0]['uTime'])}
+                            'timestamp': round(datetime.utcnow().timestamp())}
         else:
             self.balance = {'free': 0,
                             'total': 0,
-                            'timestamp': int(round(datetime.utcnow().timestamp() * 1000))}
+                            'timestamp': round(datetime.utcnow().timestamp())}
 
     @try_exc_regular
     def _update_orders(self, obj):
@@ -316,7 +316,6 @@ class OkxClient(BaseClient):
         if not self.taker_fee:
             if order['fillNotionalUsd']:
                 self.taker_fee = abs(float(order['fillFee'])) / float(order['fillNotionalUsd'])
-                print(self.taker_fee, 'TAKER FEE')
 
     @try_exc_regular
     def _process_msg(self, msg: aiohttp.WSMessage):
@@ -509,7 +508,7 @@ class OkxClient(BaseClient):
         if resp.get('code') == '0':
             self.balance = {'free': float(resp['data'][0]['details'][0]['availBal']),
                             'total': float(resp['data'][0]['details'][0]['eq']),
-                            'timestamp': datetime.utcnow().timestamp() * 1000}
+                            'timestamp': round(datetime.utcnow().timestamp())}
         # {'code': '0', 'data': [{'adjEq': '', 'borrowFroz': '', 'details': [
         #     {'availBal': '466.6748538968118', 'availEq': '466.6748538968118', 'borrowFroz': '',
         #      'cashBal': '500.0581872301451', 'ccy': 'USDT', 'crossLiab': '', 'disEq': '500.25821050503714',

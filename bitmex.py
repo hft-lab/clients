@@ -273,7 +273,8 @@ class BitmexClient(BaseClient):
                 side = 'SHORT' if position['foreignNotional'] > 0 else 'LONG'
                 amount = -position['currentQty'] if side == 'SHORT' else position['currentQty']
                 price = position['avgEntryPrice'] if position.get('avgEntryPrice') else 0
-                self.positions.update({position['symbol']: {'side': side,
+                symbol = position['symbol'] if position['symbol'] != 'XBTUSDT' else 'BTCUSDT'
+                self.positions.update({symbol: {'side': side,
                                                             'amount_usd': -position['foreignNotional'],
                                                             'amount': amount / (10 ** 6),
                                                             'entry_price': price,
@@ -385,6 +386,7 @@ class BitmexClient(BaseClient):
     @try_exc_async
     async def create_order(self, symbol, side, session, expire=100, client_id=None):
         self.time_sent = datetime.utcnow().timestamp()
+        symbol = symbol if 'BTC' not in symbol else 'XBTUSDT'
         body = {
             "symbol": symbol,
             "ordType": "Limit",
@@ -392,6 +394,7 @@ class BitmexClient(BaseClient):
             "orderQty": self.amount,
             "side": side.capitalize()
         }
+        print(f'BITMEX BODY: {body}')
         if client_id is not None:
             body["clOrdID"] = client_id
 
@@ -563,8 +566,10 @@ class BitmexClient(BaseClient):
     @try_exc_regular
     def get_position(self):
         '''Get your positions.'''
-        pos_bitmex = {x['symbol']: x for x in self.swagger_client.Position.Position_get().result()[0]}
+        poses = self.swagger_client.Position.Position_get().result()[0]
+        pos_bitmex = {x['symbol']: x for x in poses}
         for symbol, position in pos_bitmex.items():
+            symbol = 'BTCUSDT' if 'XBT' in symbol else symbol
             pos_bitmex[symbol] = {
                 'amount': float(position['homeNotional']),
                 'entry_price': float(position['avgEntryPrice']),

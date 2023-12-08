@@ -116,7 +116,7 @@ class DydxClient(BaseClient):
         res = self.client.private.get_account().data
         self.balance = {'free': float(res['account']['freeCollateral']),
                         'total': float(res['account']['equity']),
-                        'timestamp': time.time()}
+                        'timestamp': round(datetime.utcnow().timestamp())}
         self.position_id = self.account['account']['positionId']
 
     @try_exc_regular
@@ -741,7 +741,7 @@ class DydxClient(BaseClient):
     @try_exc_regular
     def get_balance(self):
         # NECESSARY
-        if time.time() - self.balance['timestamp'] > 60:
+        if round(datetime.utcnow().timestamp()) - self.balance['timestamp'] > 60:
             self.get_real_balance()
         return self.balance['total']
 
@@ -749,7 +749,7 @@ class DydxClient(BaseClient):
     def _update_account(self, account):
         self.balance = {'free': float(account['freeCollateral']),
                         'total': float(account['equity']),
-                        'timestamp': time.time()}
+                        'timestamp': round(datetime.utcnow().timestamp())}
         for market, position in account['openPositions'].items():
             position = self._append_format_pos(position)
             self.positions[market] = position
