@@ -1,5 +1,5 @@
 import asyncio
-import datetime
+from datetime import datetime
 import hashlib
 import hmac
 import threading
@@ -46,7 +46,7 @@ class BinanceClient(BaseClient):
         self.balance = {
             'total': 0.0,
             'avl_balance': 0.0,
-            'timestamp': round(datetime.datetime.utcnow().timestamp())
+            'timestamp': round(datetime.utcnow().timestamp())
         }
         self.last_price = {
             'sell': 0,
@@ -352,7 +352,7 @@ class BinanceClient(BaseClient):
         if isinstance(res, list):
             for s in res:
                 if s['asset'] == 'USDT':
-                    self.balance['timestamp'] = round(datetime.datetime.utcnow().timestamp())
+                    self.balance['timestamp'] = round(datetime.utcnow().timestamp())
                     self.balance['total'] = float(s['balance']) + float(s['crossUnPnl'])
                     self.balance['free'] = float(s['availableBalance'])
                     return float(s['balance']) + float(s['crossUnPnl']), float(s['availableBalance'])
@@ -434,7 +434,7 @@ class BinanceClient(BaseClient):
                                      'positionSize': (float(fund['income']) / -float(rate[0])) / price,
                                      'market': symbol,
                                      'payment': fund['income'],
-                                     'datetime': datetime.datetime.fromtimestamp(fund['time'] / 1000),
+                                     'datetime': datetime.fromtimestamp(fund['time'] / 1000),
                                      'asset': 'USDT'})
 
         return funding_payments
@@ -451,7 +451,7 @@ class BinanceClient(BaseClient):
     @try_exc_async
     async def create_order(self, symbol, side, session, expire=5000, client_id=None) -> dict:
         side = side.upper()
-        time_sent = datetime.datetime.utcnow().timestamp()
+        time_sent = datetime.utcnow().timestamp()
         url_path = '/fapi/v1/order?'
         query_string = f"timestamp={int(time.time() * 1000)}&symbol={symbol}&side={side}&type=LIMIT&" \
                        f"price={self.price}&quantity={self.amount}&timeInForce=GTC&" \
@@ -471,14 +471,14 @@ class BinanceClient(BaseClient):
                 elif res.get('status'):
                     status = ResponseStatus.SUCCESS
                     timestamp = res['updateTime']
-                    utc_diff = round((datetime.datetime.utcnow().timestamp() - time.time()) * 1000)
+                    utc_diff = round((datetime.utcnow().timestamp() - time.time()) * 1000)
                     timestamp += utc_diff
                 else:
                     status = ResponseStatus.NO_CONNECTION
                 ping = int(round(timestamp - (time_sent * 1000), 0))
                 self.pings.append(ping)
                 with open(f'{self.EXCHANGE_NAME}_pings.txt', 'a') as file:
-                    file.write(str(datetime.datetime.utcnow()) + ' ' + str(ping) + '\n')
+                    file.write(str(datetime.utcnow()) + ' ' + str(ping) + '\n')
                 avr = int(round((sum(self.pings) / len(self.pings)), 0))
                 print(f"{self.EXCHANGE_NAME}: ping {ping}|avr: {avr}|max: {max(self.pings)}|min: {min(self.pings)}")
                 return {
@@ -492,7 +492,7 @@ class BinanceClient(BaseClient):
             return {
                 'exchange_name': self.EXCHANGE_NAME,
                 'exchange_order_id': None,
-                'timestamp': int(round(datetime.datetime.utcnow().timestamp() * 1000)),
+                'timestamp': int(round(datetime.utcnow().timestamp() * 1000)),
                 'status': ResponseStatus.ERROR
             }
 
@@ -555,7 +555,7 @@ class BinanceClient(BaseClient):
                     orders.append(
                         {
                             'id': uuid.uuid4(),
-                            'datetime': datetime.datetime.fromtimestamp(int(order['time'] / 1000)),
+                            'datetime': datetime.fromtimestamp(int(order['time'] / 1000)),
                             'ts': int(order['time']),
                             'context': 'web-interface' if not 'api_' in order['clientOrderId'] else
                             order['clientOrderId'].split('_')[1],
@@ -576,7 +576,7 @@ class BinanceClient(BaseClient):
                             'order_place_time': 0,
                             'factual_fee': self.taker_fee,
                             'env': '-',
-                            'datetime_update': datetime.datetime.utcnow(),
+                            'datetime_update': datetime.utcnow(),
                             'ts_update': int(time.time() * 1000),
                             'client_id': order['clientOrderId']
                         }
@@ -610,7 +610,7 @@ class BinanceClient(BaseClient):
                     'factual_price': 0,
                     'factual_amount_coin': 0,
                     'factual_amount_usd': 0,
-                    'datetime_update': datetime.datetime.utcnow(),
+                    'datetime_update': datetime.utcnow(),
                     'ts_update': int((time.time() - 3600) * 1000)}
             if res.get('status') == ClientsOrderStatuses.FILLED and res.get('time', 0) == res.get('updateTime'):
                 status = OrderStatus.FULLY_EXECUTED
@@ -627,7 +627,7 @@ class BinanceClient(BaseClient):
                 'factual_price': float(res['avgPrice']),
                 'factual_amount_coin': float(res['executedQty']),
                 'factual_amount_usd': float(res['executedQty']) * float(res['avgPrice']),
-                'datetime_update': datetime.datetime.utcnow(),
+                'datetime_update': datetime.utcnow(),
                 'ts_update': int((time.time() - 3600) * 1000)
             }
 
@@ -693,7 +693,7 @@ class BinanceClient(BaseClient):
                                 'factual_amount_usd': 0 if status in [OrderStatus.PROCESSING,
                                                                       OrderStatus.NOT_EXECUTED] else float(
                                     data['o']['z']) * float(data['o']['ap']),
-                                'datetime_update': datetime.datetime.utcnow(),
+                                'datetime_update': datetime.utcnow(),
                                 'ts_update': int((time.time() - 3600) * 1000)
                             }
 

@@ -83,9 +83,6 @@ class BitmexClient(BaseClient):
     def get_markets(self):
         markets = {}
         for market in self.instruments.values():
-            if market['rootSymbol'] == 'XBT':
-                markets.update({"BTC": market['symbol']})
-                continue
             markets.update({market['rootSymbol']: market['symbol']})
         return markets
 
@@ -131,15 +128,10 @@ class BitmexClient(BaseClient):
             async with s.ws_connect(self.__get_url()) as ws:
                 print("Bitmex: connected")
                 self._connected.set()
-                try:
-                    self._ws = ws
-                    async for msg in ws:
-                        self._process_msg(msg)
-                except Exception as e:
-                    traceback.print_exc()
-                    print("Bitmex ws loop exited: ", e)
-                finally:
-                    self._connected.clear()
+                self._ws = ws
+                async for msg in ws:
+                    self._process_msg(msg)
+                self._connected.clear()
 
     @staticmethod
     @try_exc_regular
@@ -273,7 +265,6 @@ class BitmexClient(BaseClient):
                 side = 'SHORT' if position['foreignNotional'] > 0 else 'LONG'
                 amount = -position['currentQty'] if side == 'SHORT' else position['currentQty']
                 price = position['avgEntryPrice'] if position.get('avgEntryPrice') else 0
-                symbol = position['symbol'] if position['symbol'] != 'XBTUSDT' else 'BTCUSDT'
                 self.positions.update({symbol: {'side': side,
                                                             'amount_usd': -position['foreignNotional'],
                                                             'amount': amount / (10 ** 6),
@@ -286,9 +277,8 @@ class BitmexClient(BaseClient):
     def update_orderbook(self, data):
         for ob in data:
             if ob.get('symbol') and self.instruments.get(ob['symbol']):
-                symbol = ob['symbol']
                 ob.update({'timestamp': int(datetime.utcnow().timestamp() * 1000)})
-                instr = self.get_instrument(symbol)
+                instr = self.get_instrument(ob['symbol'])
                 ob['bids'] = [[x[0], x[1] / instr['underlyingToPositionMultiplier']] for x in ob['bids']]
                 ob['asks'] = [[x[0], x[1] / instr['underlyingToPositionMultiplier']] for x in ob['asks']]
                 self.orderbook.update({symbol: ob})
@@ -386,12 +376,11 @@ class BitmexClient(BaseClient):
     @try_exc_async
     async def create_order(self, symbol, side, session, expire=100, client_id=None):
         self.time_sent = datetime.utcnow().timestamp()
-        symbol = symbol if 'BTC' not in symbol else 'XBTUSDT'
         body = {
             "symbol": symbol,
             "ordType": "Limit",
             "price": self.price,
-            "orderQty": self.amount,
+            "orderQty": self.amount_contracts,
             "side": side.capitalize()
         }
         print(f'BITMEX BODY: {body}')
@@ -405,9 +394,8 @@ class BitmexClient(BaseClient):
         if res.get('errors'):
             status = ResponseStatus.ERROR
             self.error_info = res.get('errors')
-        elif res.get('order') and res['order'].get('status'):
-            timestamp = int(
-                datetime.timestamp(datetime.strptime(res['order']['createdAt'], '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
+        elif res.get('ordStatus') in ['']:
+            timestamp = int(datetime.timestamp(datetime.strptime(res['transactTime'], '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
             status = ResponseStatus.SUCCESS
             self.LAST_ORDER_ID = res['orderID']
             exchange_order_id = res['orderID']
@@ -568,9 +556,9 @@ class BitmexClient(BaseClient):
         '''Get your positions.'''
         poses = self.swagger_client.Position.Position_get().result()[0]
         pos_bitmex = {x['symbol']: x for x in poses}
+        all_poses = {}
         for symbol, position in pos_bitmex.items():
-            symbol = 'BTCUSDT' if 'XBT' in symbol else symbol
-            pos_bitmex[symbol] = {
+            all_poses[symbol] = {
                 'amount': float(position['homeNotional']),
                 'entry_price': float(position['avgEntryPrice']),
                 'unrealized_pnl_usd': 0,
@@ -579,7 +567,7 @@ class BitmexClient(BaseClient):
                 'realized_pnl_usd': 0,
                 'lever': float(position['leverage']),
             }
-        self.positions = pos_bitmex
+        self.positions = all_poses
 
     @try_exc_regular
     def get_orderbook(self, symbol):
@@ -606,13 +594,13 @@ if __name__ == '__main__':
     config.read(sys.argv[1], "utf-8")
     client = BitmexClient(keys=config['BITMEX'],
                           leverage=float(config['SETTINGS']['LEVERAGE']),
-                          markets_list=['LINK', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
-    client.run_updater()
+                          markets_list=['LINK', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
+    # client.run_updater()
 
 
     async def test_order():
         async with aiohttp.ClientSession() as session:
-            ob = await client.get_orderbook_by_symbol('XBTUSDT')
+            ob = await client.get_orderbook_by_symbol('ETHUSDT')
             print(ob)
             # price = ob['bids'][5][0]
             # # client.get_markets()
@@ -630,7 +618,7 @@ if __name__ == '__main__':
     # print(client.markets)
     #
     # client.get_real_balance()
-    # asyncio.run(test_order())
+    asyncio.run(test_order())
     # client.get_position()
     # print(client.positions)
     # print(client.get_balance())
