@@ -388,13 +388,13 @@ class BitmexClient(BaseClient):
             body["clOrdID"] = client_id
 
         res = await self._post("/api/v1/order", body, session)
-
+        print(f"BITMEX RES: {res}")
         timestamp = 0000000000000
         exchange_order_id = None
         if res.get('errors'):
             status = ResponseStatus.ERROR
             self.error_info = res.get('errors')
-        elif res.get('ordStatus') in ['']:
+        elif res.get('ordStatus'):
             timestamp = int(datetime.timestamp(datetime.strptime(res['transactTime'], '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
             status = ResponseStatus.SUCCESS
             self.LAST_ORDER_ID = res['orderID']
