@@ -46,6 +46,7 @@ class BitmexClient(BaseClient):
         self.amount = 0
         self.amount_contracts = 0
         self.taker_fee = 0.0005
+        self.requestLimit = 1200
         self.price = 0
         self.data = {}
         self.orders = {}
@@ -265,7 +266,7 @@ class BitmexClient(BaseClient):
                 side = 'SHORT' if position['foreignNotional'] > 0 else 'LONG'
                 amount = -position['currentQty'] if side == 'SHORT' else position['currentQty']
                 price = position['avgEntryPrice'] if position.get('avgEntryPrice') else 0
-                self.positions.update({symbol: {'side': side,
+                self.positions.update({position['symbol']: {'side': side,
                                                             'amount_usd': -position['foreignNotional'],
                                                             'amount': amount / (10 ** 6),
                                                             'entry_price': price,
@@ -281,7 +282,7 @@ class BitmexClient(BaseClient):
                 instr = self.get_instrument(ob['symbol'])
                 ob['bids'] = [[x[0], x[1] / instr['underlyingToPositionMultiplier']] for x in ob['bids']]
                 ob['asks'] = [[x[0], x[1] / instr['underlyingToPositionMultiplier']] for x in ob['asks']]
-                self.orderbook.update({symbol: ob})
+                self.orderbook.update({ob['symbol']: ob})
 
     @try_exc_regular
     def update_fills(self, data):
