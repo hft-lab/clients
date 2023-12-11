@@ -68,7 +68,7 @@ class BitmexClient(BaseClient):
     def get_markets(self):
         markets = {}
         for symbol, market in self.instruments.items():
-            markets.update({market['coin']: market})
+            markets.update({market['coin']: symbol})
         return markets
 
     @try_exc_regular
