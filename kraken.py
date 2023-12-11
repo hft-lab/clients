@@ -71,9 +71,9 @@ class KrakenClient(BaseClient):
         instruments = {}
         for market in markets['tickers']:
             symbol = market['symbol']
-            self.tickers.update({symbol: market})
             if 'PF_' not in symbol.upper():
                 continue
+            self.tickers.update({symbol: market})
             coin = market['pair'].split(':')[0]
             step_size = self.get_stepsize(market)
             quantity_precision = self.get_quantity_precision(step_size)
