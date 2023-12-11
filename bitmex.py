@@ -65,33 +65,17 @@ class BitmexClient(BaseClient):
         self.time_sent = datetime.utcnow().timestamp()
 
     @try_exc_regular
-    def get_all_instruments(self):
-        # first_page = self.swagger_client.Instrument.Instrument_get(count=500).result()
-        # second_page = self.swagger_client.Instrument.Instrument_get(count=500, start=500).result()
-        instr_list = {}
-        instruments = self.swagger_client.Instrument.Instrument_get(
-            filter=json.dumps({'quoteCurrency': 'USDT', 'state': 'Open'})).result()
-        for instr in instruments[0]:
-            if '2' not in instr['symbol'] and '_' not in instr['symbol']:
-                instr_list.update({instr['symbol']: instr})
-        return instr_list
-        # for instr in second_page[0]:
-        #     if instr['state']:
-        #         print(instr)
-        #         print()
-
-    @try_exc_regular
     def get_markets(self):
         markets = {}
-        for market in self.instruments.values():
-            markets.update({market['rootSymbol']: market['symbol']})
+        for symbol, market in self.instruments.items():
+            markets.update({market['coin']: market})
         return markets
 
     @try_exc_regular
     def run_updater(self):
         self.wst.start()
         # self.__wait_for_account()
-        # self.get_contract_price()
+        # self.get_contract_value()
 
     @try_exc_regular
     def get_fees(self, symbol):
@@ -99,14 +83,48 @@ class BitmexClient(BaseClient):
         maker_fee = self.commission[symbol]['makerFee']
         return taker_fee, maker_fee
 
+    @staticmethod
     @try_exc_regular
-    def get_sizes_for_symbol(self, symbol):
-        instrument = self.get_instrument(symbol)
-        tick_size = instrument['tick_size']
-        step_size = instrument['step_size']
-        quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
-        contract_value = instrument['underlyingToPositionMultiplier']
-        return tick_size, step_size, quantity_precision, contract_value
+    def get_quantity_precision(step_size):
+        if '.' in str(step_size):
+            quantity_precision = len(str(step_size).split('.')[1])
+        elif '-' in str(step_size):
+            quantity_precision = int(str(step_size).split('-')[1])
+        else:
+            quantity_precision = 1
+        return quantity_precision
+
+    @try_exc_regular
+    def get_all_instruments(self):
+        instr_list = {}
+        instruments = self.swagger_client.Instrument.Instrument_get(
+            filter=json.dumps({'quoteCurrency': 'USDT', 'state': 'Open'})).result()
+        for instr in instruments[0]:
+            if '2' in instr['symbol'] or '_' in instr['symbol']:
+                continue
+            contract_value = instr['underlyingToPositionMultiplier']
+            price_precision = self.get_price_precision(instr['tickSize'])
+            step_size = instr['lotSize'] / contract_value
+            quantity_precision = self.get_quantity_precision(step_size)
+            instr_list.update({instr['symbol']: {'tick_size': instr['tickSize'],
+                                                 'price_precision': price_precision,
+                                                 'step_size': instr['lotSize'] / contract_value,
+                                                 'quantity_precision': quantity_precision,
+                                                 'contract_value': contract_value,
+                                                 'coin': instr['rootSymbol']
+                                                 }})
+        return instr_list
+
+    @staticmethod
+    @try_exc_regular
+    def get_price_precision(tick_size):
+        if '.' in str(tick_size):
+            price_precision = len(str(tick_size).split('.')[1])
+        elif '-' in str(tick_size):
+            price_precision = int(str(tick_size).split('-')[1])
+        else:
+            price_precision = 0
+        return price_precision
 
     @try_exc_regular
     def _run_ws_forever(self):
@@ -165,7 +183,7 @@ class BitmexClient(BaseClient):
     @try_exc_async
     async def get_all_orders(self, symbol: str, session: aiohttp.ClientSession):
         res = self.swagger_client.Order.Order_getOrders(filter=json.dumps({'symbol': symbol})).result()[0]
-        tick_size, step_size, quantity_precision, contract_value = self.get_sizes_for_symbol(symbol)
+        contract_value = self.get_contract_value(symbol)
         orders = []
         for order in res:
             if res.get('ordStatus') == 'Filled':
@@ -211,7 +229,7 @@ class BitmexClient(BaseClient):
     @try_exc_async
     async def get_order_by_id(self, symbol, order_id, session):
         res = self.swagger_client.Order.Order_getOrders(filter=json.dumps({'orderID': order_id})).result()[0][0]
-        tick_size, step_size, quantity_precision, contract_value = self.get_sizes_for_symbol(symbol)
+        contract_value = self.get_contract_value(symbol)
         real_size = res['cumQty'] / contract_value
         real_price = res.get('avgPx', 0)
         return {
@@ -279,9 +297,9 @@ class BitmexClient(BaseClient):
         for ob in data:
             if ob.get('symbol') and self.instruments.get(ob['symbol']):
                 ob.update({'timestamp': int(datetime.utcnow().timestamp() * 1000)})
-                instr = self.get_instrument(ob['symbol'])
-                ob['bids'] = [[x[0], x[1] / instr['underlyingToPositionMultiplier']] for x in ob['bids']]
-                ob['asks'] = [[x[0], x[1] / instr['underlyingToPositionMultiplier']] for x in ob['asks']]
+                contract_value = self.get_contract_value(ob['symbol'])
+                ob['bids'] = [[x[0], x[1] / contract_value] for x in ob['bids']]
+                ob['asks'] = [[x[0], x[1] / contract_value] for x in ob['asks']]
                 self.orderbook.update({ob['symbol']: ob})
 
     @try_exc_regular
@@ -339,15 +357,6 @@ class BitmexClient(BaseClient):
         self.ws.close()
 
     @try_exc_regular
-    def get_instrument(self, symbol):
-        """Get the raw instrument data for this symbol."""
-        # Turn the 'tick_size' into 'tickLog' for use in rounding
-        instrument = self.instruments[symbol]
-        instrument['tick_size'] = instrument['tickSize']
-        instrument['step_size'] = instrument['lotSize']
-        return instrument
-
-    @try_exc_regular
     def get_balance(self):
         """Get your margin details."""
         return self.balance['total']
@@ -359,19 +368,17 @@ class BitmexClient(BaseClient):
 
     @try_exc_regular
     def fit_sizes(self, amount, price, symbol):
-        tick_size, step_size, quantity_precision, contract_value = self.get_sizes_for_symbol(symbol)
-        amount = amount * contract_value
-        rounded_amount = round(amount / step_size) * step_size
-        self.amount_contracts = round(rounded_amount, quantity_precision)
-        self.amount = round(self.amount_contracts / contract_value, 8)
-        if '.' in str(tick_size):
-            round_price_len = len(str(tick_size).split('.')[1])
-        elif '-' in str(tick_size):
-            round_price_len = int(str(tick_size).split('-')[1])
-        else:
-            round_price_len = 0
+        instr = self.instruments[symbol]
+        print(instr)
+        tick_size = instr['tick_size']
+        step_size = instr['step_size']
+        contract_value = instr['contract_value']
+        quantity_precision = instr['quantity_precision']
+        rounded_amount = round(round(amount / step_size) * step_size, quantity_precision)
+        self.amount_contracts = round(rounded_amount * contract_value)
+        self.amount = rounded_amount
         rounded_price = round(price / tick_size) * tick_size
-        self.price = round(rounded_price, round_price_len)
+        self.price = round(rounded_price, instr['price_precision'])
         return self.price, self.amount
 
     @try_exc_async
@@ -512,7 +519,7 @@ class BitmexClient(BaseClient):
     @try_exc_async
     async def get_orderbook_by_symbol(self, symbol):
         res = self.swagger_client.OrderBook.OrderBook_getL2(symbol=symbol).result()[0]
-        tick_size, step_size, quantity_precision, contract_value = self.get_sizes_for_symbol(symbol)
+        contract_value = self.get_contract_value(symbol)
         orderbook = dict()
         orderbook['bids'] = [[x['price'], x['size'] / contract_value] for x in res if x['side'] == 'Buy']
         orderbook['asks'] = [[x['price'], x['size'] / contract_value] for x in res if x['side'] == 'Sell']
@@ -574,16 +581,8 @@ class BitmexClient(BaseClient):
     def get_orderbook(self, symbol):
         return self.orderbook[symbol]
 
-
-# def get_xbt_pos(self):
-#     bal_bitmex = [x for x in self.funds() if x['currency'] == 'XBt'][0]
-#     xbt_pos = bal_bitmex['walletBalance'] / 10 ** 8
-#     return xbt_pos
-
-# def get_contract_price(self):
-#     # self.__wait_for_account()
-#     instrument = self.get_instrument()
-#     self.contract_price = instrument['foreignNotional24h'] / instrument['volume24h']
+    def get_contract_value(self, symbol):
+        return self.instruments[symbol]['contract_value']
 
 
 if __name__ == '__main__':
@@ -595,26 +594,26 @@ if __name__ == '__main__':
     config.read(sys.argv[1], "utf-8")
     client = BitmexClient(keys=config['BITMEX'],
                           leverage=float(config['SETTINGS']['LEVERAGE']),
-                          markets_list=['LINK', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
-    # client.run_updater()
+                          markets_list=['ETH', 'LINK', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
+    client.run_updater()
 
 
     async def test_order():
         async with aiohttp.ClientSession() as session:
-            ob = await client.get_orderbook_by_symbol('ETHUSDT')
-            print(ob)
-            # price = ob['bids'][5][0]
+            ob = client.get_orderbook('ETHUSDT')
+            # print(ob)
+            price = ob['bids'][5][0]
             # # client.get_markets()
-            # client.fit_sizes(3, price, 'BTCUSDT')
-            # data = await client.create_order('BTCUSDT',
-            #                                  'buy',
-            #                                  session=session)
-            # print(data)
-            # data_cancel = client.cancel_all_orders()
-            # print(data_cancel)
+            client.fit_sizes(0.0135235, price, 'ETHUSDT')
+            data = await client.create_order('ETHUSDT',
+                                             'buy',
+                                             session=session)
+            print(data)
+            data_cancel = client.cancel_all_orders()
+            print(data_cancel)
 
 
-    # time.sleep(3)
+    time.sleep(3)
 
     # print(client.markets)
     #

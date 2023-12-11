@@ -334,39 +334,54 @@ class OkxClient(BaseClient):
 
     @try_exc_regular
     def get_contract_value(self, symbol):
-        for instrument in self.instruments:
-            if instrument['instId'] == symbol:
-                contract_value = float(instrument['ctVal'])
-                return contract_value
+        contract_value = float(self.instruments[symbol]['contract_value'])
+        return contract_value
 
     @try_exc_regular
-    def get_sizes_for_symbol(self, symbol):
-        for instrument in self.instruments:
-            if instrument['instId'] == symbol:
-                tick_size = float(instrument['tickSz'])
-                step_size = float(instrument['lotSz'])
-                contract_value = float(instrument['ctVal'])
-                min_size = float(instrument['minSz'])
-                quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
-                return tick_size, step_size, quantity_precision, contract_value, min_size
+    def get_instruments(self):
+        resp = self.request_instruments()
+        instruments = {}
+        for instrument in resp:
+            contract_value = float(instrument['ctVal'])
+            step_size = float(instrument['lotSz']) / contract_value
+            quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
+            price_precision = self.get_price_precision(float(instrument['tickSz']))
+            instruments.update({instrument['instId']: {'coin': instrument['ctValCcy'],
+                                                       'state': instrument['state'],
+                                                       'settleCcy': instrument['settleCcy'],
+                                                       'tick_size': float(instrument['tickSz']),
+                                                       'step_size': step_size,
+                                                       'contract_value': contract_value,
+                                                       'quantity_precision': quantity_precision,
+                                                       'price_precision': price_precision}})
+        return instruments
+
+    @staticmethod
+    @try_exc_regular
+    def get_price_precision(tick_size):
+        if '.' in str(tick_size):
+            price_precision = len(str(tick_size).split('.')[1])
+        elif '-' in str(tick_size):
+            price_precision = int(str(tick_size).split('-')[1])
+        else:
+            price_precision = 0
+        return price_precision
 
     @try_exc_regular
     def fit_sizes(self, amount, price, symbol):
-        tick_size, step_size, quantity_precision, contract_value, min_size = self.get_sizes_for_symbol(symbol)
-        amount = amount / contract_value
-        if min_size > amount:
+        instr = self.instruments[symbol]
+        tick_size = instr['tick_size']
+        step_size = instr['step_size']
+        quantity_precision = instr['quantity_precision']
+        price_precision = instr['price_precision']
+        contract_value = instr['contract_value']
+        min_size = instr['min_size']
+        self.amount = round(round(amount / step_size) * step_size, quantity_precision)
+        if min_size > amount * contract_value:
             print(f"\n\nOKEX {symbol} ORDER LESS THAN MIN SIZE: {min_size}\n\n")
-        rounded_amount = round(amount / step_size) * step_size
-        self.amount_contracts = round(rounded_amount, quantity_precision)
-        self.amount = round(self.amount_contracts * contract_value, 8)
-        if '.' in str(tick_size):
-            round_price_len = len(str(tick_size).split('.')[1])
-        elif '-' in str(tick_size):
-            round_price_len = int(str(tick_size).split('-')[1])
-        else:
-            round_price_len = 0
+        self.amount_contracts = round(amount * contract_value)
         rounded_price = round(price / tick_size) * tick_size
-        self.price = round(rounded_price, round_price_len)
+        self.price = round(rounded_price, price_precision)
         return self.price, self.amount
 
     @try_exc_async
@@ -433,7 +448,7 @@ class OkxClient(BaseClient):
         return t + "Z"
 
     @try_exc_regular
-    def get_instruments(self):
+    def request_instruments(self):
         way = f'https://www.okx.com/api/v5/public/instruments?instType=SWAP'
         resp = requests.get(url=way, headers=self.headers).json()
         return resp['data']
@@ -441,13 +456,10 @@ class OkxClient(BaseClient):
     @try_exc_regular
     def get_markets(self):
         markets = {}
-        for instrument in self.instruments:
-            coin = instrument['ctValCcy']
-            market = instrument['instId']
+        for market, instrument in self.instruments.items():
             if instrument['state'] == 'live':
                 if instrument['settleCcy'] == 'USDT':
-                    markets.update({coin: market})
-            # print(inst['instId'], inst, '\n')
+                    markets.update({instrument['coin']: market})
         return markets
 
     @try_exc_regular
@@ -643,8 +655,8 @@ class OkxClient(BaseClient):
                 'side': order['side'].lower(),
                 'symbol': symbol,
                 'expect_price': float(order['px']),
-                'expect_amount_coin': float(order['sz']) * contract_value,
-                'expect_amount_usd': float(order['px']) * float(order['sz']) * contract_value,
+                'expect_amount_coin': float(order['sz']) / contract_value,
+                'expect_amount_usd': float(order['px']) * float(order['sz']) / contract_value,
                 'expect_fee': self.taker_fee,
                 'factual_price': float(order['avgPx']) if order['avgPx'] else 0,
                 'factual_amount_coin': float(order['fillSz']) * contract_value if order['fillSz'] else 0,
@@ -751,33 +763,35 @@ if __name__ == '__main__':
                        max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
                        markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
 
-    # client.run_updater()
-    client.get_real_balance()
+    client.run_updater()
+    # client.get_real_balance()
     time.sleep(1)
+    for symbol, instr in client.instruments.items():
+        print(symbol, instr)
+
     # print(client.get_orderbook('XRP-USDT-SWAP'))
     # print(client.get_available_balance())
-    print(client.get_orderbook('SOL-USDT-SWAP'))
-    price = client.get_orderbook('SOL-USDT-SWAP')['bids'][4][0]
+    # print(client.get_orderbook('SOL-USDT-SWAP'))
+    # price = client.get_orderbook('SOL-USDT-SWAP')['bids'][4][0]
     # price = 1
-    # client.fit_sizes(2, price, 'SOL-USDT-SWAP')
+    # client.fit_sizes(2.1223566, price, 'SOL-USDT-SWAP')
     # client.get_position()
     # print(client.positions)
     # client.get_real_balance()
-    print(client.balance)
+    # print(client.balance)
     # print(client.get_orderbook_by_symbol('XRP-USDT-SWAP'))
-    client.create_http_order('SOL-USDT-SWAP', 'buy')
-    #
+    # client.create_http_order('SOL-USDT-SWAP', 'buy')
     # # print(client.get_available_balance())
     #
     # async def test_order():
     #     async with aiohttp.ClientSession() as session:
-    #         # data = await client.create_order('SOL-USDT-SWAP',
-    #         #                                  'buy',
-    #         #                                  session=session,
-    #         #                                  client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+    #         data = await client.create_order('SOL-USDT-SWAP',
+    #                                          'buy',
+    #                                          session=session,
+    #                                          client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
     #         await client.get_all_orders()
     #         await client.get_order_by_id(order_id='637752702231269376', symbol='SOL-USDT-SWAP', session=session)
-    #         # print(data)
+            # print(data)
     # #
     # #
     # time.sleep(1)
