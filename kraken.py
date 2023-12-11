@@ -208,6 +208,7 @@ class KrakenClient(BaseClient):
                 if (market['tag'] == 'perpetual') & (market['pair'].split(":")[1] == 'USD') & (not market['postOnly']):
                     coin = market['pair'].split(":")[0]
                     self.markets.update({coin: market['symbol']})
+        return self.markets
 
     @try_exc_regular
     def get_balance(self) -> float:
