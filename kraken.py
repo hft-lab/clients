@@ -5,7 +5,6 @@ import hmac
 
 import threading
 import time
-import traceback
 import uuid
 from datetime import datetime
 
@@ -36,9 +35,11 @@ class KrakenClient(BaseClient):
         self.taker_fee = 0.0005
         self.requestLimit = 1200
         self.headers = {"Content-Type": "application/json"}
-        self.tickers = None
+        self.tickers = {}
         self.markets = {}
-        self.markets = self.get_markets()
+        self.precises = self.get_precises()
+        self.instruments = self.get_instruments()
+        self.get_markets()
         self.leverage = leverage
         self.__api_key = keys['API_KEY']
         self.__secret_key = keys['API_SECRET']
@@ -63,27 +64,56 @@ class KrakenClient(BaseClient):
         self.pings = []
         self.price = 0
         self.amount = 0
-        self.instruments = self.get_instruments()
 
     @try_exc_regular
     def get_instruments(self):
-        url_path = "/derivatives/api/v3/instruments"
-        res = requests.get(url=self.BASE_URL + url_path).json()
-        # for instrument in res['instruments']:
-        #     if instrument['symbol'] == 'pf_seiusd':
-        #         print(instrument)
-        return res['instruments']
+        markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
+        instruments = {}
+        for market in markets['tickers']:
+            symbol = market['symbol']
+            self.tickers.update({symbol: market})
+            if 'PF_' not in symbol.upper():
+                continue
+            coin = market['pair'].split(':')[0]
+            step_size = self.get_stepsize(market)
+            quantity_precision = self.get_quantity_precision(step_size)
+            tick_size = self.precises[symbol]['tickSize']
+            price_precision = self.get_price_precision(tick_size)
+            instruments.update({symbol: {'coin': coin,
+                                         'tick_size': tick_size,
+                                         'quantity_precision': quantity_precision,
+                                         'step_size': step_size,
+                                         'price_precision': price_precision
+                                         }})
+        return instruments
 
+    @staticmethod
     @try_exc_regular
-    def get_sizes_for_symbol(self, symbol):
-        for ticker in self.tickers:
-            if ticker.get('symbol'):
-                if ticker['symbol'].upper() == symbol.upper():
-                    values = [ticker.get('askSize', None),
-                              ticker.get('vol24h', None),
-                              ticker.get('lastSize', None),
-                              ticker.get('bidSize', None)]
+    def get_price_precision(tick_size):
+        if '.' in str(tick_size):
+            price_precision = len(str(tick_size).split('.')[1])
+        elif 'e' in str(tick_size):
+            price_precision = int((str(tick_size).split('-')[1])) - 1
+        else:
+            price_precision = 0
+        return price_precision
 
+    @staticmethod
+    @try_exc_regular
+    def get_quantity_precision(step_size):
+        if '.' in str(step_size):
+            quantity_precision = len(str(step_size).split('.')[1])
+        else:
+            quantity_precision = 0
+        return quantity_precision
+
+    @staticmethod
+    @try_exc_regular
+    def get_stepsize(market):
+        values = [market.get('askSize', None),
+                  market.get('vol24h', None),
+                  market.get('lastSize', None),
+                  market.get('bidSize', None)]
         max_value = 0
         for value in values:
             if not value:
@@ -95,21 +125,16 @@ class KrakenClient(BaseClient):
             step_size = float('0.' + '0' * (max_value - 1) + str(1))
         else:
             step_size = 1
-        for instrument in self.instruments:
-            if symbol.upper() == instrument['symbol'].upper():
-                tick_size = instrument['tickSize']
-                break
-        if '.' in str(step_size):
-            quantity_precision = len(str(step_size).split('.')[1])
-        else:
-            quantity_precision = 0
-        if '.' in str(tick_size):
-            price_precision = len(str(tick_size).split('.')[1])
-        elif 'e' in str(tick_size):
-            price_precision = int((str(tick_size).split('-')[1])) - 1
-        else:
-            price_precision = 0
-        return tick_size, step_size, price_precision, quantity_precision,
+        return step_size
+
+    @try_exc_regular
+    def get_precises(self):
+        url_path = "/derivatives/api/v3/instruments"
+        res = requests.get(url=self.BASE_URL + url_path).json()
+        precises = {}
+        for instrument in res['instruments']:
+            precises.update({instrument['symbol']: instrument})
+        return precises
 
     @try_exc_regular
     def get_available_balance(self):
@@ -178,14 +203,11 @@ class KrakenClient(BaseClient):
 
     @try_exc_regular
     def get_markets(self):
-        markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
-        self.tickers = markets['tickers']
-        for market in markets['tickers']:
+        for market in self.tickers.values():
             if market.get('tag') is not None:
                 if (market['tag'] == 'perpetual') & (market['pair'].split(":")[1] == 'USD') & (not market['postOnly']):
                     coin = market['pair'].split(":")[0]
                     self.markets.update({coin: market['symbol']})
-        return self.markets
 
     @try_exc_regular
     def get_balance(self) -> float:
@@ -552,7 +574,11 @@ class KrakenClient(BaseClient):
 
     @try_exc_regular
     def fit_sizes(self, amount, price, symbol):
-        tick_size, step_size, price_precision, quantity_precision = self.get_sizes_for_symbol(symbol)
+        instr = self.instruments[symbol.upper()]
+        tick_size = instr['tick_size']
+        step_size = instr['step_size']
+        price_precision = instr['price_precision']
+        quantity_precision = instr['quantity_precision']
         rounded_amount = round(amount / step_size) * step_size
         self.amount = round(rounded_amount, quantity_precision)
         rounded_price = round(price / tick_size) * tick_size
@@ -803,7 +829,7 @@ if __name__ == '__main__':
             ob = client.get_orderbook('pf_dashusd')
             price = ob['bids'][0][0]
             client.get_markets()
-            client.fit_sizes(28.9, price, 'pf_dashusd')
+            client.fit_sizes(1, price, 'pf_dashusd')
             data = await client.create_order('pf_dashusd',
                                              'sell',
                                              session,
@@ -816,9 +842,14 @@ if __name__ == '__main__':
     # #
     # #
     # time.sleep(5)
-    # while True:
-    #     time.sleep(5)
+    print(client.tickers)
+    print('\n\n\n\n')
+    print(client.instruments)
     asyncio.run(test_order())
-    time.sleep(5)
+
+    while True:
+        time.sleep(5)
+
+    # time.sleep(5)
 
         # print(client.get_all_tops())

@@ -71,7 +71,7 @@ class DydxClient(BaseClient):
         self.keys = keys
         self.user = self.client.private.get_user().data
         self.account = self.client.private.get_account().data
-        self.instruments = self.client.public.get_markets().data
+        self.instruments = self.get_instruments()
         self.leverage = leverage
 
         self.get_real_balance()
@@ -138,7 +138,7 @@ class DydxClient(BaseClient):
     def get_markets(self):
         # NECESSARY
         # markets = requests.get(url=self.urlMarkets, headers=self.headers).json()
-        for market, value in self.instruments['markets'].items():
+        for market, value in self.instruments.items():
             if value['quoteAsset'] == 'USD' and value['status'] == 'ONLINE':
                 coin = value['baseAsset']
                 self.markets.update({coin: market})
@@ -304,26 +304,46 @@ class DydxClient(BaseClient):
             return orders
 
     @try_exc_regular
-    def get_sizes_for_symbol(self, symbol):
-        tick_size = float(self.instruments['markets'][symbol]['tickSize'])
-        step_size = float(self.instruments['markets'][symbol]['stepSize'])
-        quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
-        return tick_size, step_size, quantity_precision
+    def get_instruments(self):
+        raw_data = self.client.public.get_markets().data
+        instruments = {}
+        for symbol, instrument in raw_data['markets'].items():
+            tick_size = float(instrument['tickSize'])
+            step_size = float(instrument['stepSize'])
+            quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
+            price_precision = self.get_price_precision(tick_size)
+            instruments.update({symbol: {'tick_size': tick_size,
+                                         'step_size': step_size,
+                                         'quantity_precision': quantity_precision,
+                                         'price_precision': price_precision,
+                                         'quoteAsset': instrument['quoteAsset'],
+                                         'status': instrument['status'],
+                                         'baseAsset': instrument['baseAsset']}})
+        return instruments
+
+    @staticmethod
+    @try_exc_regular
+    def get_price_precision(tick_size):
+        if '.' in str(tick_size):
+            price_precision = len(str(tick_size).split('.')[1])
+        elif '-' in str(tick_size):
+            price_precision = int(str(tick_size).split('-')[1])
+        else:
+            price_precision = 0
+        return price_precision
 
     @try_exc_regular
     def fit_sizes(self, amount, price, symbol):
         # NECESSARY
-        tick_size, step_size, quantity_precision = self.get_sizes_for_symbol(symbol)
+        instr = self.instruments[symbol]
+        tick_size = instr['tick_size']
+        step_size = instr['step_size']
+        quantity_precision = instr['quantity_precision']
+        price_precision = instr['price_precision']
         rounded_amount = round(amount / step_size) * step_size
         self.amount = round(rounded_amount, quantity_precision)
-        if '.' in str(tick_size):
-            round_price_len = len(str(tick_size).split('.')[1])
-        elif '-' in str(tick_size):
-            round_price_len = int(str(tick_size).split('-')[1])
-        else:
-            round_price_len = 0
         rounded_price = round(price / tick_size) * tick_size
-        self.price = round(rounded_price, round_price_len)
+        self.price = round(rounded_price, price_precision)
         return self.price, self.amount
 
     @try_exc_async
@@ -982,20 +1002,22 @@ if __name__ == '__main__':
     client = DydxClient(keys=config['DYDX'],
                         leverage=float(config['SETTINGS']['LEVERAGE']),
                         max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
-                        markets_list=['RUNE'])
+                        markets_list=['RUNE', 'ETH'])
     client.run_updater()
-    client.get_available_balance()
+    time.sleep(1)
+    print(client.instruments)
+    # client.get_available_balance()
     # client.get_real_balance()
     # print(client.get_balance())
     # client.run_updater()
-    fills = client.client.private.get_fills().data#market='1INCH-USD')
-    for fill in fills['fills'][::-1]:
-        print(f"MARKET: {fill['market']}")
-        print(f"TIME: {fill['createdAt']}")
-        print(f"SIDE: {fill['side']}")
-        print(f"PRICE: {fill['price']}")
-        print(f"SIZE: {fill['size']}")
-        print(f"LIQUIDITY: {fill['liquidity']}\n")
+    # fills = client.client.private.get_fills().data#market='1INCH-USD')
+    # for fill in fills['fills'][::-1]:
+    #     print(f"MARKET: {fill['market']}")
+    #     print(f"TIME: {fill['createdAt']}")
+    #     print(f"SIDE: {fill['side']}")
+    #     print(f"PRICE: {fill['price']}")
+    #     print(f"SIZE: {fill['size']}")
+    #     print(f"LIQUIDITY: {fill['liquidity']}\n")
     # time.sleep(3)
     # print(client.get_balance())
     # print()
@@ -1004,24 +1026,24 @@ if __name__ == '__main__':
     # print(client.new_get_available_balance())
 
 
-    # async def test_order():
-    #     async with aiohttp.ClientSession() as session:
-    #         ob = client.get_orderbook('RUNE-USD')
-    #         price = ob['asks'][5][0]
-    #         # client.get_markets()
-    #         client.fit_sizes(10, price, 'RUNE-USD')
-    #         data = await client.create_order('RUNE-USD',
-    #                                          'buy',
-    #                                          session=session,
-    #                                          client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-    #         # print(data)
-    # #         print(data)
-    # #         client.cancel_all_orders()
+    async def test_order():
+        async with aiohttp.ClientSession() as session:
+            ob = client.get_orderbook('ETH-USD')
+            price = ob['bids'][5][0]
+            # client.get_markets()
+            client.fit_sizes(0.012, price, 'ETH-USD')
+            data = await client.create_order('ETH-USD',
+                                             'sell',
+                                             session=session,
+                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+            # print(data)
+            print(data)
+            client.cancel_all_orders()
     # #
     # time.sleep(5)
-    # asyncio.run(test_order())
-    # while True:
-    #     time.sleep(5)
+    asyncio.run(test_order())
+    while True:
+        time.sleep(5)
     #     print(client.get_all_tops())
     #     print(client.get_balance())
     # while True:
