@@ -368,21 +368,16 @@ class OkxClient(BaseClient):
         return price_precision
 
     @try_exc_regular
-    def fit_sizes(self, amount, price, symbol):
+    def fit_sizes(self, price, symbol):
         instr = self.instruments[symbol]
         tick_size = instr['tick_size']
-        step_size = instr['step_size']
         quantity_precision = instr['quantity_precision']
         price_precision = instr['price_precision']
         contract_value = instr['contract_value']
-        min_size = instr['min_size']
-        self.amount = round(round(amount / step_size) * step_size, quantity_precision)
-        if min_size > amount * contract_value:
-            print(f"\n\nOKEX {symbol} ORDER LESS THAN MIN SIZE: {min_size}\n\n")
-        self.amount_contracts = round(amount * contract_value)
+        self.amount = round(self.amount, quantity_precision)
+        self.amount_contracts = round(self.amount * contract_value)
         rounded_price = round(price / tick_size) * tick_size
         self.price = round(rounded_price, price_precision)
-        return self.price, self.amount
 
     @try_exc_async
     async def create_order(self, symbol, side, session, expire=100, client_id=None) -> dict:

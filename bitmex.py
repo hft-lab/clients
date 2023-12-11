@@ -367,19 +367,15 @@ class BitmexClient(BaseClient):
         return self.data['order']
 
     @try_exc_regular
-    def fit_sizes(self, amount, price, symbol):
+    def fit_sizes(self, price, symbol):
         instr = self.instruments[symbol]
-        print(instr)
         tick_size = instr['tick_size']
-        step_size = instr['step_size']
         contract_value = instr['contract_value']
         quantity_precision = instr['quantity_precision']
-        rounded_amount = round(round(amount / step_size) * step_size, quantity_precision)
-        self.amount_contracts = round(rounded_amount * contract_value)
-        self.amount = rounded_amount
+        self.amount = round(self.amount, quantity_precision)
+        self.amount_contracts = round(self.amount * contract_value)
         rounded_price = round(price / tick_size) * tick_size
         self.price = round(rounded_price, instr['price_precision'])
-        return self.price, self.amount
 
     @try_exc_async
     async def create_order(self, symbol, side, session, expire=100, client_id=None):

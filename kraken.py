@@ -573,17 +573,14 @@ class KrakenClient(BaseClient):
         self.balance['timestamp'] = round(datetime.utcnow().timestamp())
 
     @try_exc_regular
-    def fit_sizes(self, amount, price, symbol):
+    def fit_sizes(self, price, symbol):
         instr = self.instruments[symbol.upper()]
         tick_size = instr['tick_size']
-        step_size = instr['step_size']
         price_precision = instr['price_precision']
         quantity_precision = instr['quantity_precision']
-        rounded_amount = round(amount / step_size) * step_size
-        self.amount = round(rounded_amount, quantity_precision)
+        self.amount = round(self.amount, quantity_precision)
         rounded_price = round(price / tick_size) * tick_size
         self.price = round(rounded_price, price_precision)
-        return self.price, self.amount
 
     @try_exc_async
     async def create_order(self, symbol, side, session, expire=5000, client_id=None):
