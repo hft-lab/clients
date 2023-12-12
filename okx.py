@@ -349,6 +349,8 @@ class OkxClient(BaseClient):
         instruments = {}
         for instrument in resp:
             contract_value = float(instrument['ctVal'])
+            if instrument['ctType'] == 'linear':
+                contract_value = 1 / contract_value
             step_size = float(instrument['lotSz']) / contract_value
             quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
             price_precision = self.get_price_precision(float(instrument['tickSz']))
@@ -359,7 +361,8 @@ class OkxClient(BaseClient):
                                                        'step_size': step_size,
                                                        'contract_value': contract_value,
                                                        'quantity_precision': quantity_precision,
-                                                       'price_precision': price_precision}})
+                                                       'price_precision': price_precision,
+                                                       'contract_type': instrument['ctType']}})
         return instruments
 
     @staticmethod
