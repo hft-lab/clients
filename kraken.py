@@ -377,7 +377,6 @@ class KrakenClient(BaseClient):
     async def get_all_orders(self, symbol, session) -> list:
         all_orders = await self.__get_all_orders(session)
         res_orders = {}
-
         for elements in all_orders['elements']:
             for event in ['OrderPlaced', 'OrderCancelled']:
                 # print(elements)
