@@ -590,19 +590,19 @@ class OkxClient(BaseClient):
         headers.update({'instId': symbol})
         async with session.get(url=self.BASE_URL + way, headers=headers) as resp:
             res = await resp.json()
-            if len(res['data']):
-                order = res['data'][0]
-                return {
-                    'exchange_order_id': order_id,
-                    'exchange': self.EXCHANGE_NAME,
-                    'status': OrderStatus.FULLY_EXECUTED if order.get(
-                        'state') == 'filled' else OrderStatus.NOT_EXECUTED,
-                    'factual_price': float(order['avgPx']) if order['avgPx'] else 0,
-                    'factual_amount_coin': float(order['fillSz']) if order['avgPx'] else 0,
-                    'factual_amount_usd': float(order['fillSz']) * float(order['avgPx']) if order['avgPx'] else 0,
-                    'datetime_update': datetime.utcnow(),
-                    'ts_update': int(datetime.utcnow().timestamp() * 1000)
-                }
+            if res.get('data'):
+                for order in res['data']:
+                    return {
+                        'exchange_order_id': order_id,
+                        'exchange': self.EXCHANGE_NAME,
+                        'status': OrderStatus.FULLY_EXECUTED if order.get(
+                            'state') == 'filled' else OrderStatus.NOT_EXECUTED,
+                        'factual_price': float(order['avgPx']) if order['avgPx'] else 0,
+                        'factual_amount_coin': float(order['fillSz']) if order['avgPx'] else 0,
+                        'factual_amount_usd': float(order['fillSz']) * float(order['avgPx']) if order['avgPx'] else 0,
+                        'datetime_update': datetime.utcnow(),
+                        'ts_update': int(datetime.utcnow().timestamp() * 1000)
+                    }
             else:
                 print(f"ERROR>GET ORDER BY ID RES: {res}")
                 return {
