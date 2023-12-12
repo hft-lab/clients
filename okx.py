@@ -22,6 +22,7 @@ from core.wrappers import try_exc_regular, try_exc_async
 class OkxClient(BaseClient):
     URI_WS_AWS = "wss://wsaws.okx.com:8443/ws/v5/public"
     URI_WS_PRIVATE = "wss://wsaws.okx.com:8443/ws/v5/private"
+    BASE_URL = 'https://www.okx.com'
     headers = {'Content-Type': 'application/json'}
     EXCHANGE_NAME = 'OKX'
 
@@ -48,6 +49,7 @@ class OkxClient(BaseClient):
         self.markets = self.get_markets()
         self.error_info = None
         self.LAST_ORDER_ID = 'default'
+        self.change_leverage()
 
         self.price = 0
         self.amount_contracts = 0
@@ -58,6 +60,10 @@ class OkxClient(BaseClient):
         self.balance = {'free': 0, 'total': 0, 'timestamp': 0}
         self.start_time = int(datetime.utcnow().timestamp())
         self.time_sent = datetime.utcnow().timestamp()
+
+    def change_leverage(self):
+        for symbol in self.markets_list:
+            self.set_leverage(self.markets[symbol])
 
     @staticmethod
     @try_exc_regular
@@ -220,9 +226,9 @@ class OkxClient(BaseClient):
     @try_exc_regular
     def get_position(self):
         self.positions = {}
-        way = 'https://www.okx.com/api/v5/account/positions'
-        headers = self.get_private_headers('GET', '/api/v5/account/positions')
-        resp = requests.get(url=way, headers=headers).json()
+        way = '/api/v5/account/positions'
+        headers = self.get_private_headers('GET', way)
+        resp = requests.get(url=self.BASE_URL + way, headers=headers).json()
         for pos in resp['data']:
             side = 'LONG' if float(pos['pos']) > 0 else 'SHORT'
             amount_usd = float(pos['notionalUsd'])
@@ -390,8 +396,8 @@ class OkxClient(BaseClient):
                                'side': side,
                                'expire': expire})
         while not self.create_order_response:
-            if datetime.utcnow().timestamp() - (self.time_sent / 1000) > 5:
-                break
+            if datetime.utcnow().timestamp() - (self.time_sent / 1000) > 2:
+                return self.create_http_order(symbol, side, expire=expire, client_id=client_id)
             time.sleep(0.01)
         return self.get_order_response()
 
@@ -507,10 +513,10 @@ class OkxClient(BaseClient):
 
     @try_exc_regular
     def get_real_balance(self):
-        way = 'https://www.okx.com/api/v5/account/balance?ccy=USDT'
-        headers = self.get_private_headers('GET', '/api/v5/account/balance?ccy=USDT')
+        way = '/api/v5/account/balance?ccy=USDT'
+        headers = self.get_private_headers('GET', way)
         headers.update(self.headers)
-        resp = requests.get(url=way, headers=headers).json()
+        resp = requests.get(url=self.BASE_URL + way, headers=headers).json()
         # print(resp)
         if resp.get('code') == '0':
             self.balance = {'free': float(resp['data'][0]['details'][0]['availBal']),
@@ -525,6 +531,17 @@ class OkxClient(BaseClient):
         #      'spotIsoBal': '0', 'stgyEq': '0', 'twap': '0', 'uTime': '1698244053657', 'upl': '0', 'uplLiab': ''}],
         #                         'imr': '', 'isoEq': '0', 'mgnRatio': '', 'mmr': '', 'notionalUsd': '', 'ordFroz': '',
         #                         'totalEq': '500.25821050503714', 'uTime': '1698245152624'}], 'msg': ''}
+
+    def set_leverage(self, symbol):
+        way = '/api/v5/account/set-leverage'
+        body = {"instId": symbol,
+                "lever": "5",
+                "mgnMode": "cross"
+                }
+        body_json = json.dumps(body)
+        headers = self.get_private_headers('POST', way, body_json)
+        resp = requests.post(url=self.BASE_URL + way, headers=headers, data=body_json).json()
+        print(resp)
 
     @try_exc_regular
     def get_orderbook(self, symbol):
@@ -543,35 +560,32 @@ class OkxClient(BaseClient):
 
     @try_exc_async
     async def get_all_orders(self, symbol=None, session=None):
-        base_way = 'https://www.okx.com'
         way = '/api/v5/trade/orders-pending?'
         for coin in self.markets_list:
             way += self.markets[coin] + '&'
         way = way[:-1]
         headers = self.get_private_headers('GET', way)
         async with aiohttp.ClientSession() as session:
-            async with session.get(url=base_way + way, headers=headers) as resp:
+            async with session.get(url=self.BASE_URL + way, headers=headers) as resp:
                 data = await resp.json()
                 return self.reformat_orders(data)
 
     @try_exc_regular
     def _get_all_orders(self):
-        base_way = 'https://www.okx.com'
         way = '/api/v5/trade/orders-pending?'
         for coin in self.markets_list:
             way += self.markets[coin] + '&'
         way = way[:-1]
         headers = self.get_private_headers('GET', way)
-        data = requests.get(url=base_way + way, headers=headers).json()
+        data = requests.get(url=self.BASE_URL + way, headers=headers).json()
         return self.reformat_orders(data)
 
     @try_exc_async
     async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession):
-        base_way = 'https://www.okx.com'
         way = '/api/v5/trade/order' + '?' + 'ordId=' + order_id + '&' + 'instId=' + symbol
         headers = self.get_private_headers('GET', way)
         headers.update({'instId': symbol})
-        async with session.get(url=base_way + way, headers=headers) as resp:
+        async with session.get(url=self.BASE_URL + way, headers=headers) as resp:
             res = await resp.json()
             if len(res['data']):
                 order = res['data'][0]
@@ -668,7 +682,6 @@ class OkxClient(BaseClient):
 
     @try_exc_regular
     def cancel_all_orders(self):
-        base_way = 'https://www.okx.com'
         way = '/api/v5/trade/cancel-batch-orders'
         orders = self._get_all_orders()
         time.sleep(0.1)
@@ -677,7 +690,7 @@ class OkxClient(BaseClient):
             body.append({'instId': order['instId'], 'ordId': order['ordId']})
         body_json = json.dumps(body)
         headers = self.get_private_headers('POST', way, body_json)
-        resp = requests.post(url=base_way + way, headers=headers, data=body_json).json()
+        resp = requests.post(url=self.BASE_URL + way, headers=headers, data=body_json).json()
         for order in resp['data']:
             if order['sCode'] == '0':
                 print(f"ORDER {order['ordId']} SUCCESSFULLY CANCELED")
@@ -686,9 +699,9 @@ class OkxClient(BaseClient):
 
     @try_exc_async
     async def get_orderbook_by_symbol(self, symbol):
-        way = f'https://www.okx.com/api/v5/market/books?instId={symbol}&sz=10'
+        way = f'/api/v5/market/books?instId={symbol}&sz=10'
         async with aiohttp.ClientSession() as session:
-            async with session.get(url=way, headers=self.headers) as resp:
+            async with session.get(url=self.BASE_URL + way, headers=self.headers) as resp:
                 data = await resp.json()
                 orderbook = data['data'][0]
                 contract = self.get_contract_value(symbol)
@@ -701,7 +714,6 @@ class OkxClient(BaseClient):
 
     @try_exc_regular
     def create_http_order(self, symbol, side, expire=100, client_id=None):
-        base_way = 'https://www.okx.com'
         way = '/api/v5/trade/order'
         body = {
             "instId": symbol,
@@ -713,7 +725,7 @@ class OkxClient(BaseClient):
         }
         json_body = json.dumps(body)
         headers = self.get_private_headers('POST', way, json_body)
-        resp = requests.post(url=base_way + way, headers=headers, data=json_body).json()
+        resp = requests.post(url=self.BASE_URL + way, headers=headers, data=json_body).json()
         print(f"OKEX RESPONSE: {resp}")
         if resp['code'] == '0':
             self.LAST_ORDER_ID = resp['data'][0]['ordId']
@@ -759,10 +771,10 @@ if __name__ == '__main__':
                        markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
 
     client.run_updater()
+
+
     # client.get_real_balance()
     time.sleep(1)
-    for symbol, instr in client.instruments.items():
-        print(symbol, instr)
 
     # print(client.get_orderbook('XRP-USDT-SWAP'))
     # print(client.get_available_balance())
@@ -775,7 +787,12 @@ if __name__ == '__main__':
     # client.get_real_balance()
     # print(client.balance)
     # print(client.get_orderbook_by_symbol('XRP-USDT-SWAP'))
-    # client.create_http_order('SOL-USDT-SWAP', 'buy')
+    # client.amount_contracts = 400
+    # client.price = 0.831
+    # print(client.instruments['MATIC-USDT-SWAP'])
+    # client.set_leverage('MATIC-USDT-SWAP')
+    # data = client.create_http_order('MATIC-USDT-SWAP', 'buy')
+    # print(data)
     # # print(client.get_available_balance())
     #
     # async def test_order():
@@ -792,7 +809,7 @@ if __name__ == '__main__':
     # time.sleep(1)
     # asyncio.run(test_order())
     # time.sleep(1)
-    client.cancel_all_orders()
+    # client.cancel_all_orders()
     # time.sleep(1)
     #
     # print(client.get_all_tops())
