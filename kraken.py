@@ -219,8 +219,8 @@ class KrakenClient(BaseClient):
     def get_orderbook(self, symbol) -> dict:
         snap = self.orderbook[symbol.upper()]
         orderbook = {'timestamp': self.orderbook[symbol.upper()]['timestamp'],
-                     'asks': [[x, snap['sell'][x]] for x in sorted(snap['sell'])],
-                     'bids': [[x, snap['buy'][x]] for x in sorted(snap['buy'])][::-1]}
+                     'asks': [[x, snap['sell'][x]] for x in sorted(snap['sell']) if snap['sell'].get(x)],
+                     'bids': [[x, snap['buy'][x]] for x in sorted(snap['buy']) if snap['buy'].get(x)][::-1]}
         return orderbook
 
     @try_exc_regular
