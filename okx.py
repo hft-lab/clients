@@ -169,13 +169,7 @@ class OkxClient(BaseClient):
     @try_exc_regular
     def _run_ws_forever(self, type, loop):
         while True:
-            try:
-                loop.run_until_complete(self._run_ws_loop(type))
-            except Exception as e:
-                traceback.print_exc()
-                print(f"Line 100. Error: {e}")
-            finally:
-                print(f"WS loop {type} completed. Restarting")
+            loop.run_until_complete(self._run_ws_loop(type))
 
     @try_exc_async
     async def _run_ws_loop(self, type):
@@ -718,14 +712,12 @@ class OkxClient(BaseClient):
     @try_exc_regular
     def create_http_order(self, symbol, side, expire=100, client_id=None):
         way = '/api/v5/trade/order'
-        body = {
-            "instId": symbol,
-            "tdMode": "cross",
-            "side": side,
-            "ordType": "limit",
-            "px": self.price,
-            "sz": self.amount_contracts
-        }
+        body = {"instId": symbol,
+                "tdMode": "cross",
+                "side": side,
+                "ordType": "limit",
+                "px": self.price,
+                "sz": self.amount_contracts}
         json_body = json.dumps(body)
         headers = self.get_private_headers('POST', way, json_body)
         resp = requests.post(url=self.BASE_URL + way, headers=headers, data=json_body).json()
@@ -733,20 +725,16 @@ class OkxClient(BaseClient):
         if resp['code'] == '0':
             self.LAST_ORDER_ID = resp['data'][0]['ordId']
             exchange_order_id = resp['data'][0]['ordId']
-            return {
-                'exchange_name': self.EXCHANGE_NAME,
-                'exchange_order_id': exchange_order_id,
-                'timestamp': int(resp['inTime']),
-                'status': ResponseStatus.SUCCESS
-            }
+            return {'exchange_name': self.EXCHANGE_NAME,
+                    'exchange_order_id': exchange_order_id,
+                    'timestamp': int(resp['inTime']),
+                    'status': ResponseStatus.SUCCESS}
         else:
             self.error_info = str(resp['data'])
-            return {
-                'exchange_name': self.EXCHANGE_NAME,
-                'exchange_order_id': None,
-                'timestamp': int(round((datetime.utcnow().timestamp()) * 1000)),
-                'status': ResponseStatus.ERROR
-            }
+            return {'exchange_name': self.EXCHANGE_NAME,
+                    'exchange_order_id': None,
+                    'timestamp': int(round((datetime.utcnow().timestamp()) * 1000)),
+                    'status': ResponseStatus.ERROR}
 
     @try_exc_regular
     def get_all_tops(self):
@@ -775,29 +763,14 @@ if __name__ == '__main__':
 
     client.run_updater()
 
-
-    # client.get_real_balance()
     time.sleep(1)
 
-    # print(client.get_orderbook('XRP-USDT-SWAP'))
-    # print(client.get_available_balance())
-    # print(client.get_orderbook('SOL-USDT-SWAP'))
     # price = client.get_orderbook('SOL-USDT-SWAP')['bids'][4][0]
-    # price = 1
     # client.fit_sizes(2.1223566, price, 'SOL-USDT-SWAP')
-    # client.get_position()
-    # print(client.positions)
-    # client.get_real_balance()
-    # print(client.balance)
     # print(client.get_orderbook_by_symbol('XRP-USDT-SWAP'))
     # client.amount_contracts = 400
     # client.price = 0.831
-    # print(client.instruments['MATIC-USDT-SWAP'])
-    # client.set_leverage('MATIC-USDT-SWAP')
     # data = client.create_http_order('MATIC-USDT-SWAP', 'buy')
-    # print(data)
-    # # print(client.get_available_balance())
-    #
     # async def test_order():
     #     async with aiohttp.ClientSession() as session:
     #         data = await client.create_order('SOL-USDT-SWAP',
@@ -806,81 +779,4 @@ if __name__ == '__main__':
     #                                          client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
     #         await client.get_all_orders()
     #         await client.get_order_by_id(order_id='637752702231269376', symbol='SOL-USDT-SWAP', session=session)
-            # print(data)
-    # #
-    # #
-    # time.sleep(1)
-    # asyncio.run(test_order())
-    # time.sleep(1)
-    # client.cancel_all_orders()
-    # time.sleep(1)
-    #
-    # print(client.get_all_tops())
-    #
-    # # client.get_position()
-    # while True:
-    #     time.sleep(5)
-    # client.get_markets()
 
-# import asyncio
-# import aiohttp
-#
-# class WebSocketClient:
-#     def __init__(self, url):
-#         self.url = url
-#         self.ws = None
-#         self.lock = asyncio.Lock()
-#         self.connected = asyncio.Event()
-#
-#     async def connect(self):
-#         async with self.lock:
-#             self.ws = await aiohttp.ClientSession().ws_connect(self.url)
-#             self.connected.set()
-#
-#     async def disconnect(self):
-#         async with self.lock:
-#             if self.ws:
-#                 await self.ws.close()
-#                 self.connected.clear()
-#
-#     async def send_message(self, message):
-#         async with self.lock:
-#             if not self.connected.is_set():
-#                 await self.connect()
-#             await self.ws.send_str(message)
-#
-#     async def receive_messages(self):
-#         while True:
-#             try:
-#                 async with self.lock:
-#                     if not self.connected.is_set():
-#                         await self.connect()
-#                     msg = await self.ws.receive()
-#                     if msg.type == aiohttp.WSMsgType.TEXT:
-#                         print(f"Received: {msg.data}")
-#                     elif msg.type == aiohttp.WSMsgType.CLOSED:
-#                         print("WebSocket closed by the server.")
-#                         await self.disconnect()
-#                         break
-#                     elif msg.type == aiohttp.WSMsgType.ERROR:
-#                         print("WebSocket error occurred.")
-#                         await self.disconnect()
-#                         break
-#             except Exception as e:
-#                 print(f"WebSocket error: {e}")
-#                 await self.disconnect()
-#
-# async def main():
-#     url = "wss://example.com/ws"  # Replace with your WebSocket URL
-#     client = WebSocketClient(url)
-#
-#     while True:
-#         try:
-#             await client.receive_messages()
-#         except KeyboardInterrupt:
-#             break
-#         except Exception as e:
-#             print(f"Error in main loop: {e}")
-#
-# if __name__ == "__main__":
-#     asyncio.run(main())

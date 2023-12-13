@@ -203,17 +203,15 @@ class DydxClient(BaseClient):
         async with session.get(url=self.BASE_URL + path, headers=headers, data=json.dumps(remove_nones(data))) as resp:
             res = await resp.json()
             if res := res.get('order'):
-                return {
-                    'exchange_order_id': order_id,
-                    'exchange': self.EXCHANGE_NAME,
-                    'status': OrderStatus.FULLY_EXECUTED if res.get(
-                        'status') == ClientsOrderStatuses.FILLED else OrderStatus.NOT_EXECUTED,
-                    'factual_price': float(res['price']),
-                    'factual_amount_coin': float(res['size']),
-                    'factual_amount_usd': float(res['size']) * float(res['price']),
-                    'datetime_update': datetime.utcnow(),
-                    'ts_update': int(datetime.utcnow().timestamp() * 1000)
-                }
+                return {'exchange_order_id': order_id,
+                        'exchange': self.EXCHANGE_NAME,
+                        'status': OrderStatus.FULLY_EXECUTED if res.get(
+                            'status') == ClientsOrderStatuses.FILLED else OrderStatus.NOT_EXECUTED,
+                        'factual_price': float(res['price']),
+                        'factual_amount_coin': float(res['size']),
+                        'factual_amount_usd': float(res['size']) * float(res['price']),
+                        'datetime_update': datetime.utcnow(),
+                        'ts_update': int(datetime.utcnow().timestamp() * 1000)}
 
     @try_exc_regular
     def get_order_status(self, order):
@@ -240,33 +238,30 @@ class DydxClient(BaseClient):
                 ts = order['createdAt']
                 timestamp = int(datetime.timestamp(datetime.strptime(ts, '%Y-%m-%dT%H:%M:%S.%fZ')) * 1000)
                 orders.append(
-                    {
-                        'id': uuid.uuid4(),
-                        'datetime': timestamp,
-                        'ts': int(time.time()),
-                        'context': 'web-interface' if 'api_' not in order['clientId'] else order['clientId'].split('_')[1],
-                        'parent_id': uuid.uuid4(),
-                        'exchange_order_id': order['id'],
-                        'type': order['timeInForce'],
-                        'status': status,
-                        'exchange': self.EXCHANGE_NAME,
-                        'side': order['side'].lower(),
-                        'symbol': symbol,
-                        'expect_price': float(order['price']),
-                        'expect_amount_coin': float(order['size']),
-                        'expect_amount_usd': float(order['price']) * float(order['size']),
-                        'expect_fee': self.taker_fee,
-                        'factual_price': float(order['price']),
-                        'factual_amount_coin': float(order['size']),
-                        'factual_amount_usd': float(order['size']) * float(order['price']),
-                        'factual_fee': self.taker_fee,
-                        'order_place_time': 0,
-                        'env': '-',
-                        'datetime_update': datetime.utcnow(),
-                        'ts_update': int(time.time()),
-                        'client_id': order['clientId']
-                    }
-                )
+                    {'id': uuid.uuid4(),
+                     'datetime': timestamp,
+                     'ts': int(time.time()),
+                     'context': 'web-interface' if 'api_' not in order['clientId'] else order['clientId'].split('_')[1],
+                     'parent_id': uuid.uuid4(),
+                     'exchange_order_id': order['id'],
+                     'type': order['timeInForce'],
+                     'status': status,
+                     'exchange': self.EXCHANGE_NAME,
+                     'side': order['side'].lower(),
+                     'symbol': symbol,
+                     'expect_price': float(order['price']),
+                     'expect_amount_coin': float(order['size']),
+                     'expect_amount_usd': float(order['price']) * float(order['size']),
+                     'expect_fee': self.taker_fee,
+                     'factual_price': float(order['price']),
+                     'factual_amount_coin': float(order['size']),
+                     'factual_amount_usd': float(order['size']) * float(order['price']),
+                     'factual_fee': self.taker_fee,
+                     'order_place_time': 0,
+                     'env': '-',
+                     'datetime_update': datetime.utcnow(),
+                     'ts_update': int(time.time()),
+                     'client_id': order['clientId']})
             return orders
 
     @try_exc_regular
@@ -311,38 +306,34 @@ class DydxClient(BaseClient):
 
     @try_exc_regular
     def get_order_to_sign(self, expire_date, symbol, side, client_id):
-        order_to_sign = SignableOrder(
-            network_id=NETWORK_ID_MAINNET,
-            position_id=self.position_id,
-            client_id=client_id,
-            market=symbol,
-            side=side.upper(),
-            human_size=str(self.amount),
-            human_price=str(self.price),
-            limit_fee='0.0008',
-            expiration_epoch_seconds=expire_date,
-        )
+        order_to_sign = SignableOrder(network_id=NETWORK_ID_MAINNET,
+                                      position_id=self.position_id,
+                                      client_id=client_id,
+                                      market=symbol,
+                                      side=side.upper(),
+                                      human_size=str(self.amount),
+                                      human_price=str(self.price),
+                                      limit_fee='0.0008',
+                                      expiration_epoch_seconds=expire_date)
         return order_to_sign
 
     @try_exc_regular
     def get_order_data(self, symbol, side, expiration, client_id, order_to_sign):
-        data = {
-            'market': symbol,
-            'side': side.upper(),
-            'type': 'LIMIT',
-            'timeInForce': 'GTT',
-            'size': str(self.amount),
-            'price': str(self.price),
-            'limitFee': '0.0008',
-            'expiration': expiration,
-            'postOnly': False,
-            'clientId': client_id,
-            'signature': order_to_sign.sign(self.keys['PRIVATE_KEY']),
-            'cancelId': None,
-            'triggerPrice': None,
-            'trailingPercent': None,
-            'reduceOnly': None
-        }
+        data = {'market': symbol,
+                'side': side.upper(),
+                'type': 'LIMIT',
+                'timeInForce': 'GTT',
+                'size': str(self.amount),
+                'price': str(self.price),
+                'limitFee': '0.0008',
+                'expiration': expiration,
+                'postOnly': False,
+                'clientId': client_id,
+                'signature': order_to_sign.sign(self.keys['PRIVATE_KEY']),
+                'cancelId': None,
+                'triggerPrice': None,
+                'trailingPercent': None,
+                'reduceOnly': None}
         return data
 
     @try_exc_async

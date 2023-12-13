@@ -83,8 +83,7 @@ class KrakenClient(BaseClient):
                                          'tick_size': tick_size,
                                          'quantity_precision': quantity_precision,
                                          'step_size': step_size,
-                                         'price_precision': price_precision
-                                         }})
+                                         'price_precision': price_precision}})
         return instruments
 
     @staticmethod
@@ -218,16 +217,11 @@ class KrakenClient(BaseClient):
 
     @try_exc_regular
     def get_orderbook(self, symbol) -> dict:
-        while True:
-            snap = self.orderbook[symbol.upper()]
-            orderbook = {'timestamp': self.orderbook[symbol.upper()]['timestamp']}
-            try:
-                orderbook['asks'] = [[x, snap['sell'][x]] for x in sorted(snap['sell'])]
-                orderbook['bids'] = [[x, snap['buy'][x]] for x in sorted(snap['buy'])][::-1]
-            except:
-                continue
-            # print(f"Orderbook fetch time: {time.time() - time_start}")
-            return orderbook
+        snap = self.orderbook[symbol.upper()]
+        orderbook = {'timestamp': self.orderbook[symbol.upper()]['timestamp'],
+                     'asks': [[x, snap['sell'][x]] for x in sorted(snap['sell'])],
+                     'bids': [[x, snap['buy'][x]] for x in sorted(snap['buy'])][::-1]}
+        return orderbook
 
     @try_exc_regular
     def get_all_tops(self):
@@ -247,10 +241,9 @@ class KrakenClient(BaseClient):
     async def get_multi_orderbook(self, symbol):
         async with aiohttp.ClientSession() as session:
             async with session.get(url=self.urlOrderbooks + symbol) as response:
-                full_response = await response.json()
-                ob = full_response['orderBook']
-                ts_exchange = int(
-                    datetime.strptime(full_response['serverTime'], "%Y-%m-%dT%H:%M:%S.%fZ").timestamp() * 1000)
+                resp = await response.json()
+                ob = resp['orderBook']
+                ts_exchange = int(datetime.strptime(resp['serverTime'], "%Y-%m-%dT%H:%M:%S.%fZ").timestamp() * 1000)
                 return {'top_bid': ob['bids'][0][0], 'top_ask': ob['asks'][0][0],
                         'bid_vol': ob['bids'][0][1], 'ask_vol': ob['asks'][0][1],
                         'ts_exchange': ts_exchange}
@@ -286,8 +279,7 @@ class KrakenClient(BaseClient):
     async def get_orderbook_by_symbol(self, symbol):
         async with aiohttp.ClientSession() as session:
             url_path = "/derivatives/api/v3/orderbook"
-            async with session.get(
-                    url=self.BASE_URL + url_path + f'?symbol={symbol}') as resp:
+            async with session.get(url=self.BASE_URL + url_path + f'?symbol={symbol}') as resp:
                 res = await resp.json()
                 orderbook = {}
                 orderbook.update({'bids': res['orderBook']['bids']})
@@ -312,46 +304,46 @@ class KrakenClient(BaseClient):
             # self.markets_list = list(self.markets.keys())[:10]
             for symbol in self.markets_list:
                 if market := self.markets.get(symbol):
-                    await ws.send_str(orjson.dumps({
-                        "event": "subscribe",
-                        "feed": "book",
-                        'snapshot': False,
-                        "product_ids": [
-                            market.upper(),
-                        ]
-                    }).decode('utf-8'))
-
+                    await ws.send_str(orjson.dumps({"event": "subscribe",
+                                                    "feed": "book",
+                                                    'snapshot': False,
+                                                    "product_ids": [market.upper()]}).decode('utf-8'))
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     payload = orjson.loads(msg.data)
                     if not payload.get('event'):
                         if payload.get('feed') == 'book_snapshot':
-                            symbol = payload['product_id']
-                            self.orderbook[symbol] = {
-                                'sell': {x['price']: x['qty'] for x in payload['asks']},
-                                'buy': {x['price']: x['qty'] for x in payload['bids']},
-                                'timestamp': payload['timestamp']
-                            }
-                            self.max_bid = max(self.orderbook[symbol]['buy'].keys())
-                            self.min_ask = min(self.orderbook[symbol]['sell'].keys())
-                            self.count_flag = True
+                            self.update_orderbook_snapshot(payload)
                         elif payload.get('feed') == 'book':
-                            symbol = payload['product_id']
-                            res = self.orderbook[symbol][payload['side']]
-                            if res.get(payload['price']) and not payload['qty']:
-                                del res[payload['price']]
-                            else:
-                                self.orderbook[symbol][payload['side']][payload['price']] = payload['qty']
-                                self.orderbook[symbol]['timestamp'] = payload['timestamp']
-                            if payload['side'] == 'sell':
-                                if payload['price'] < self.min_ask:
-                                    self.min_ask = payload['price']
-                                    self.count_flag = True
-                            else:
-                                if payload['price'] > self.max_bid:
-                                    self.max_bid = payload['price']
-                                    self.count_flag = True
+                            self.update_orderbook(payload)
 
+    @try_exc_regular
+    def update_orderbook(self, payload):
+        symbol = payload['product_id']
+        res = self.orderbook[symbol][payload['side']]
+        if res.get(payload['price']) and not payload['qty']:
+            del res[payload['price']]
+        else:
+            self.orderbook[symbol][payload['side']][payload['price']] = payload['qty']
+            self.orderbook[symbol]['timestamp'] = payload['timestamp']
+        if payload['side'] == 'sell':
+            if payload['price'] < self.min_ask:
+                self.min_ask = payload['price']
+                self.count_flag = True
+        else:
+            if payload['price'] > self.max_bid:
+                self.max_bid = payload['price']
+                self.count_flag = True
+
+    @try_exc_regular
+    def update_orderbook_snapshot(self, payload):
+        symbol = payload['product_id']
+        self.orderbook[symbol] = {'sell': {x['price']: x['qty'] for x in payload['asks']},
+                                  'buy': {x['price']: x['qty'] for x in payload['bids']},
+                                  'timestamp': payload['timestamp']}
+        self.max_bid = max(self.orderbook[symbol]['buy'].keys())
+        self.min_ask = min(self.orderbook[symbol]['sell'].keys())
+        self.count_flag = True
     # PRIVATE ----------------------------------------------------------------------------------------------------------
 
     @try_exc_async
@@ -421,15 +413,10 @@ class KrakenClient(BaseClient):
     async def __get_all_orders(self, session) -> dict:
         url_path = '/api/history/v3/orders'
         nonce = str(int(time.time() * 1000))
-
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
-            "Nonce": nonce,
-            "APIKey": self.__api_key,
-            "Authent": self.get_kraken_futures_signature(
-                url_path, '', nonce
-            ).decode('utf-8')
-        }
+        headers = {"Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+                   "Nonce": nonce,
+                   "APIKey": self.__api_key,
+                   "Authent": self.get_kraken_futures_signature(url_path, '', nonce).decode('utf-8')}
         async with session.get(headers=headers, url=self.BASE_URL + url_path) as resp:
             return await resp.json()
 
@@ -442,16 +429,14 @@ class KrakenClient(BaseClient):
             for fill in fills_orders.get('fills', []):
                 if fill['order_id'] == order_id:
                     if fill['fillType'] == 'taker':
-                        return {
-                            'exchange_order_id': order_id,
-                            'exchange': self.EXCHANGE_NAME,
-                            'status': OrderStatus.FULLY_EXECUTED,
-                            'factual_price': fill['price'],
-                            'factual_amount_coin': fill['size'],
-                            'factual_amount_usd': fill['size'] * fill['price'],
-                            'datetime_update': datetime.utcnow(),
-                            'ts_update': int(time.time() * 1000)
-                        }
+                        return {'exchange_order_id': order_id,
+                                'exchange': self.EXCHANGE_NAME,
+                                'status': OrderStatus.FULLY_EXECUTED,
+                                'factual_price': fill['price'],
+                                'factual_amount_coin': fill['size'],
+                                'factual_amount_usd': fill['size'] * fill['price'],
+                                'datetime_update': datetime.utcnow(),
+                                'ts_update': int(time.time() * 1000)}
                     elif fill['fillType'] == 'maker':
                         prices.append(fill['price'])
                         sizes.append(fill['size'])
@@ -459,16 +444,14 @@ class KrakenClient(BaseClient):
             if sizes and prices:
                 sizes = sum(sizes)
                 price = sum(prices) / len(prices)
-                return {
-                    'exchange_order_id': order_id,
-                    'exchange': self.EXCHANGE_NAME,
-                    'status': OrderStatus.FULLY_EXECUTED,
-                    'factual_price': price,
-                    'factual_amount_coin': sizes,
-                    'factual_amount_usd': sizes * price,
-                    'datetime_update': datetime.utcnow(),
-                    'ts_update': int(time.time() * 1000)
-                }
+                return {'exchange_order_id': order_id,
+                        'exchange': self.EXCHANGE_NAME,
+                        'status': OrderStatus.FULLY_EXECUTED,
+                        'factual_price': price,
+                        'factual_amount_coin': sizes,
+                        'factual_amount_usd': sizes * price,
+                        'datetime_update': datetime.utcnow(),
+                        'ts_update': int(time.time() * 1000)}
         return await self.__get_order_by_all_orders(session, order_id)
 
     @try_exc_async
@@ -489,26 +472,22 @@ class KrakenClient(BaseClient):
                             amount = float(last_update['newOrder']['filled'])
                         elif rsn in ['cancelled_by_user', 'cancelled_by_admin', 'not_enough_margin']:
                             stts = OrderStatus.NOT_EXECUTED
-                        return {
-                            'exchange_order_id': last_update['oldOrder']['uid'],
-                            'exchange': self.EXCHANGE_NAME,
-                            'status': stts,
-                            'factual_price': price,
-                            'factual_amount_coin': amount,
-                            'factual_amount_usd': amount * price,
-                            'datetime_update': datetime.utcnow(),
-                            'ts_update': int(time.time() * 1000)
-                        }
-            return {
-                'exchange_order_id': order_id,
-                'exchange': self.EXCHANGE_NAME,
-                'status': OrderStatus.NOT_EXECUTED,
-                'factual_price': 0,
-                'factual_amount_coin': 0,
-                'factual_amount_usd': 0,
-                'datetime_update': datetime.utcnow(),
-                'ts_update': int(time.time() * 1000)
-            }
+                        return {'exchange_order_id': last_update['oldOrder']['uid'],
+                                'exchange': self.EXCHANGE_NAME,
+                                'status': stts,
+                                'factual_price': price,
+                                'factual_amount_coin': amount,
+                                'factual_amount_usd': amount * price,
+                                'datetime_update': datetime.utcnow(),
+                                'ts_update': int(time.time() * 1000)}
+            return {'exchange_order_id': order_id,
+                    'exchange': self.EXCHANGE_NAME,
+                    'status': OrderStatus.NOT_EXECUTED,
+                    'factual_price': 0,
+                    'factual_amount_coin': 0,
+                    'factual_amount_usd': 0,
+                    'datetime_update': datetime.utcnow(),
+                    'ts_update': int(time.time() * 1000)}
 
     @try_exc_regular
     def _sign_message(self, api_path: str, data: dict) -> str:
@@ -536,10 +515,7 @@ class KrakenClient(BaseClient):
         sha256_hash.update((data + nonce + endpoint).encode("utf8"))
 
         return base64.b64encode(
-            hmac.new(
-                base64.b64decode(self.__secret_key), sha256_hash.digest(), hashlib.sha512
-            ).digest()
-        )
+            hmac.new(base64.b64decode(self.__secret_key), sha256_hash.digest(), hashlib.sha512).digest())
 
     @try_exc_regular
     def __cancel_open_orders(self):
