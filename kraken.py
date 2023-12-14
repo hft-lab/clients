@@ -2,6 +2,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import json
 
 import threading
 import time
@@ -147,9 +148,6 @@ class KrakenClient(BaseClient):
                 position_value += position['amount_usd']
                 position_value_abs += abs(position['amount_usd'])
                 if position['amount_usd'] < 0:
-                    available_balances.update({symbol: {'buy': avl_margin_per_market + position['amount_usd'],
-                                                        'sell': avl_margin_per_market - position['amount_usd']}})
-                else:
                     available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
                                                         'sell': avl_margin_per_market + position['amount_usd']}})
         if position_value_abs < available_margin:
@@ -159,11 +157,9 @@ class KrakenClient(BaseClient):
             for symbol, position in self.positions.items():
                 if position.get('amount_usd'):
                     if position['amount_usd'] < 0:
-                        available_balances.update({symbol: {'buy': abs(position['amount_usd']),
-                                                            'sell': 0}})
+                        available_balances.update({symbol: {'buy': abs(position['amount_usd']),'sell': 0}})
                     else:
-                        available_balances.update({symbol: {'buy': 0,
-                                                            'sell': position['amount_usd']}})
+                        available_balances.update({symbol: {'buy': 0,'sell': position['amount_usd']}})
             available_balances['buy'] = 0
             available_balances['sell'] = 0
         return available_balances

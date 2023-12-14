@@ -714,9 +714,6 @@ class DydxClient(BaseClient):
                 position_value += position['amount_usd']
                 position_value_abs += abs(position['amount_usd'])
                 if position['amount_usd'] < 0:
-                    available_balances.update({symbol: {'buy': avl_margin_per_market + position['amount_usd'],
-                                                        'sell': avl_margin_per_market - position['amount_usd']}})
-                else:
                     available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
                                                         'sell': avl_margin_per_market + position['amount_usd']}})
         if position_value_abs < available_margin:

@@ -6,7 +6,6 @@ import sys
 config = configparser.ConfigParser()
 config.read(sys.argv[1], "utf-8")
 
-
 class BaseClient(ABC):
     BASE_URL = None
     BASE_WS = None
