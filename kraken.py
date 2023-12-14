@@ -84,6 +84,7 @@ class KrakenClient(BaseClient):
                                          'tick_size': tick_size,
                                          'quantity_precision': quantity_precision,
                                          'step_size': step_size,
+                                         'min_size': step_size,
                                          'price_precision': price_precision}})
         return instruments
 

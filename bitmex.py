@@ -109,6 +109,7 @@ class BitmexClient(BaseClient):
             instr_list.update({instr['symbol']: {'tick_size': instr['tickSize'],
                                                  'price_precision': price_precision,
                                                  'step_size': instr['lotSize'] / contract_value,
+                                                 'min_size': instr['lotSize'] / contract_value,
                                                  'quantity_precision': quantity_precision,
                                                  'contract_value': contract_value,
                                                  'coin': instr['rootSymbol']

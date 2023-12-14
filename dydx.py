@@ -279,6 +279,7 @@ class DydxClient(BaseClient):
                                          'price_precision': price_precision,
                                          'quoteAsset': instrument['quoteAsset'],
                                          'status': instrument['status'],
+                                         'min_size': float(instrument['minOrderSize']),
                                          'baseAsset': instrument['baseAsset']}})
         return instruments
 
