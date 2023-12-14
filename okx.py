@@ -342,7 +342,6 @@ class OkxClient(BaseClient):
         resp = self.request_instruments()
         instruments = {}
         for instrument in resp:
-            print(instrument)
             contract_value = float(instrument['ctVal'])
             if instrument['ctType'] == 'linear':
                 contract_value = 1 / contract_value
