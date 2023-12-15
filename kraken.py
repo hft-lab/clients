@@ -60,6 +60,7 @@ class KrakenClient(BaseClient):
         self.max_bid = 0
         self.min_ask = 10000000
         self.positions = {}
+        self.get_position()
         self.get_real_balance()
         self.orderbook = {}
         self.pings = []

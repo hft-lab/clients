@@ -92,7 +92,7 @@ class DydxClient(BaseClient):
         # NECESSARY
         self.positions = {}
         for pos in self.client.private.get_positions().data.get('positions', []):
-            if pos['status'] != 'CLOSED':
+            if pos['status'] == 'OPEN':
                 self.positions.update({pos['market']: {
                     'side': pos['side'],
                     'amount_usd': float(pos['size']) * float(pos['entryPrice']),
@@ -813,7 +813,7 @@ if __name__ == '__main__':
             client.cancel_all_orders()
     # #
     # time.sleep(5)
-    asyncio.run(test_order())
+    # asyncio.run(test_order())
     while True:
         time.sleep(5)
     #     print(client.get_all_tops())

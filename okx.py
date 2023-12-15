@@ -15,7 +15,7 @@ import queue
 import uuid
 
 from clients.base_client import BaseClient
-from clients.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
+from clients.enums import ResponseStatus, OrderStatus
 from core.wrappers import try_exc_regular, try_exc_async
 
 
@@ -38,6 +38,7 @@ class OkxClient(BaseClient):
         self.secret_key = keys['API_SECRET']
         self.passphrase = keys['PASSPHRASE']
         self.positions = {}
+        self.get_position()
         self._loop_public = asyncio.new_event_loop()
         self._loop_private = asyncio.new_event_loop()
         self.queue = queue.Queue()
@@ -241,27 +242,18 @@ class OkxClient(BaseClient):
     def _update_positions(self, obj):
         if not obj['data']:
             return
-        if obj['data'][0]['pos'] != '0':
-            side = 'LONG' if float(obj['data'][0]['pos']) > 0 else 'SHORT'
-            amount_usd = float(obj['data'][0]['notionalUsd'])
-            if side == 'SHORT':
-                amount_usd = -amount_usd
-            amount = amount_usd / float(obj['data'][0]['markPx'])
-            self.positions.update({obj['arg']['instId']: {'side': side,
-                                                          'amount_usd': amount_usd,
-                                                          'amount': amount,
-                                                          'entry_price': float(obj['data'][0]['avgPx']),
-                                                          'unrealized_pnl_usd': float(obj['data'][0]['upl']),
-                                                          'realized_pnl_usd': 0,
-                                                          'lever': self.leverage}})
-        else:
-            self.positions.update({obj['arg']['instId']: {'side': 'LONG',
-                                                          'amount_usd': 0,
-                                                          'amount': 0,
-                                                          'entry_price': 0,
-                                                          'unrealized_pnl_usd': 0,
-                                                          'realized_pnl_usd': 0,
-                                                          'lever': self.leverage}})
+        side = 'LONG' if float(obj['data'][0]['pos']) > 0 else 'SHORT'
+        amount_usd = float(obj['data'][0]['notionalUsd'])
+        if side == 'SHORT':
+            amount_usd = -amount_usd
+        amount = amount_usd / float(obj['data'][0]['markPx'])
+        self.positions.update({obj['arg']['instId']: {'side': side,
+                                                      'amount_usd': amount_usd,
+                                                      'amount': amount,
+                                                      'entry_price': float(obj['data'][0]['avgPx']),
+                                                      'unrealized_pnl_usd': float(obj['data'][0]['upl']),
+                                                      'realized_pnl_usd': 0,
+                                                      'lever': self.leverage}})
         # print(self.positions)
         # for one in obj['data'][0]:
         #     if obj['data'][0][one]:
@@ -760,8 +752,8 @@ if __name__ == '__main__':
                        markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
 
     client.run_updater()
-
-    time.sleep(1)
+    while True:
+        time.sleep(1)
 
     # price = client.get_orderbook('SOL-USDT-SWAP')['bids'][4][0]
     # client.fit_sizes(2.1223566, price, 'SOL-USDT-SWAP')
