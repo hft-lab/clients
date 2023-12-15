@@ -216,6 +216,8 @@ class KrakenClient(BaseClient):
     @try_exc_regular
     def get_orderbook(self, symbol) -> dict:
         snap = self.orderbook[symbol.upper()]
+        if snap.get('asks'):
+            return snap
         orderbook = {'timestamp': self.orderbook[symbol.upper()]['timestamp'],
                      'asks': [[x, snap['sell'][x]] for x in sorted(snap['sell']) if snap['sell'].get(x)],
                      'bids': [[x, snap['buy'][x]] for x in sorted(snap['buy']) if snap['buy'].get(x)][::-1]}
@@ -628,6 +630,7 @@ class KrakenClient(BaseClient):
         res = requests.get((self.BASE_URL + url_path), headers=headers).json()
         if isinstance(res, dict):
             for payload in res.get('openPositions', []):
+                print('HTTP', payload)
                 if float(payload['size']):
                     side = PositionSideEnum.LONG if payload['side'] == 'long' else PositionSideEnum.SHORT
                     amount_usd = payload['size'] * payload['price']
@@ -694,6 +697,7 @@ class KrakenClient(BaseClient):
 
                         elif msg_data.get('feed') == 'open_positions':
                             for position in msg_data.get('positions', []):
+                                print(position)
                                 side = PositionSideEnum.LONG if position['balance'] >= 0 else PositionSideEnum.SHORT
                                 amount_usd = position['balance'] * position['mark_price']
                                 self.positions.update({position['instrument'].upper(): {
@@ -813,10 +817,10 @@ if __name__ == '__main__':
     # #
     # #
     # time.sleep(5)
-    print(client.tickers)
-    print('\n\n\n\n')
-    print(client.instruments)
-    asyncio.run(test_order())
+    # print(client.tickers)
+    # print('\n\n\n\n')
+    # print(client.instruments)
+    # asyncio.run(test_order())
 
     while True:
         time.sleep(5)
