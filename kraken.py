@@ -630,7 +630,6 @@ class KrakenClient(BaseClient):
         res = requests.get((self.BASE_URL + url_path), headers=headers).json()
         if isinstance(res, dict):
             for payload in res.get('openPositions', []):
-                print('HTTP', payload)
                 if float(payload['size']):
                     side = PositionSideEnum.LONG if payload['side'] == 'long' else PositionSideEnum.SHORT
                     amount_usd = payload['size'] * payload['price']
@@ -697,7 +696,6 @@ class KrakenClient(BaseClient):
 
                         elif msg_data.get('feed') == 'open_positions':
                             for position in msg_data.get('positions', []):
-                                print(position)
                                 side = PositionSideEnum.LONG if position['balance'] >= 0 else PositionSideEnum.SHORT
                                 amount_usd = position['balance'] * position['mark_price']
                                 self.positions.update({position['instrument'].upper(): {
