@@ -15,8 +15,8 @@ import aiohttp
 import orjson
 import requests
 
-from clients.base_client import BaseClient
-from clients.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, PositionSideEnum
+from clients.core.base_client import BaseClient
+from clients.core.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, PositionSideEnum
 from core.wrappers import try_exc_regular, try_exc_async
 
 

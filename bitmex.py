@@ -10,9 +10,9 @@ from bravado.client import SwaggerClient
 from bravado.requests_client import RequestsClient
 
 # from config import Config
-from clients.base_client import BaseClient
-from clients.enums import ResponseStatus, OrderStatus
-from tools.APIKeyAuthenticator import APIKeyAuthenticator as auth
+from clients.core.base_client import BaseClient
+from clients.core.enums import ResponseStatus, OrderStatus
+from clients.core.APIKeyAuthenticator import APIKeyAuthenticator as auth
 from core.wrappers import try_exc_regular, try_exc_async
 
 

@@ -12,8 +12,8 @@ import aiohttp
 
 import requests
 # from config import Config
-from clients.base_client import BaseClient
-from clients.enums import ConnectMethodEnum, EventTypeEnum, PositionSideEnum, ResponseStatus, OrderStatus, \
+from clients.core.base_client import BaseClient
+from clients.core.enums import ConnectMethodEnum, EventTypeEnum, PositionSideEnum, ResponseStatus, OrderStatus, \
     ClientsOrderStatuses
 from core.wrappers import try_exc_regular, try_exc_async
 

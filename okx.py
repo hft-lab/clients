@@ -14,8 +14,8 @@ import random
 import queue
 import uuid
 
-from clients.base_client import BaseClient
-from clients.enums import ResponseStatus, OrderStatus
+from clients.core.base_client import BaseClient
+from clients.core.enums import ResponseStatus, OrderStatus
 from core.wrappers import try_exc_regular, try_exc_async
 
 

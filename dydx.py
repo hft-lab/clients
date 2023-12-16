@@ -18,8 +18,8 @@ from dydx3.starkex.order import SignableOrder
 from web3 import Web3
 
 # from config import Config
-from clients.base_client import BaseClient
-from clients.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
+from clients.core.base_client import BaseClient
+from clients.core.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
 from core.wrappers import try_exc_regular, try_exc_async
 
 
