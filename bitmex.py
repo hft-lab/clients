@@ -1,5 +1,4 @@
 import asyncio
-import traceback
 from datetime import datetime
 import json
 import threading
@@ -13,7 +12,7 @@ from bravado.requests_client import RequestsClient
 from clients.core.base_client import BaseClient
 from clients.core.enums import ResponseStatus, OrderStatus
 from clients.core.APIKeyAuthenticator import APIKeyAuthenticator as auth
-from core.wrappers import try_exc_regular, try_exc_async
+from multibot.clients.core.temp.wrappers import try_exc_regular, try_exc_async
 
 
 # Naive implementation of connecting to BitMEX websocket for streaming realtime data.
@@ -534,9 +533,8 @@ class BitmexClient(BaseClient):
             if position.get('amount_usd'):
                 position_value += position['amount_usd']
                 position_value_abs += abs(position['amount_usd'])
-                if position['amount_usd'] < 0:
-                    available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
-                                                        'sell': avl_margin_per_market + position['amount_usd']}})
+                available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
+                                                    'sell': avl_margin_per_market + position['amount_usd']}})
 
         if position_value_abs < available_margin:
             available_balances['buy'] = available_margin - position_value

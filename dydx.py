@@ -17,10 +17,14 @@ from dydx3.helpers.request_helpers import remove_nones
 from dydx3.starkex.order import SignableOrder
 from web3 import Web3
 
-# from config import Config
-from clients.core.base_client import BaseClient
-from clients.core.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
-from core.wrappers import try_exc_regular, try_exc_async
+from core.base_client import BaseClient
+from core.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
+from core.temp.wrappers import try_exc_regular, try_exc_async
+
+
+# from clients.core.base_client import BaseClient
+# from clients.core.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
+# from core.wrappers import try_exc_regular, try_exc_async
 
 
 class DydxClient(BaseClient):
@@ -714,9 +718,8 @@ class DydxClient(BaseClient):
             if position.get('amount_usd'):
                 position_value += position['amount_usd']
                 position_value_abs += abs(position['amount_usd'])
-                if position['amount_usd'] < 0:
-                    available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
-                                                        'sell': avl_margin_per_market + position['amount_usd']}})
+                available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
+                                                    'sell': avl_margin_per_market + position['amount_usd']}})
         if position_value_abs < available_margin:
             available_balances['buy'] = available_margin - position_value
             available_balances['sell'] = available_margin + position_value
@@ -794,12 +797,14 @@ if __name__ == '__main__':
                         max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
                         markets_list=['RUNE', 'ETH', 'SNX'])
     client.run_updater()
-    time.sleep(1)
 
+    time.sleep(1)
     async def test_order():
         async with aiohttp.ClientSession() as session:
             ob = client.get_orderbook('SNX-USD')
-            price = ob['bids'][5][0]
+
+            print(ob)
+            input('SYOP')
             # # client.get_markets()
             # client.fit_sizes(0.012, price, 'ETH-USD')
             client.amount = 1.9
@@ -811,13 +816,12 @@ if __name__ == '__main__':
             await client.get_all_orders('SNX-USD', session)
             print(data)
             client.cancel_all_orders()
-    # #
-    # time.sleep(5)
-    # asyncio.run(test_order())
+
+
+    asyncio.run(test_order())
+
     while True:
         time.sleep(5)
     #     print(client.get_all_tops())
     #     print(client.get_balance())
-    # while True:
-    #     time.sleep(5)
-    #     asyncio.run(test_order())
+
