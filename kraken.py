@@ -16,7 +16,7 @@ import requests
 
 from clients.core.base_client import BaseClient
 from clients.core.enums import ConnectMethodEnum, ResponseStatus, OrderStatus, PositionSideEnum
-from multibot.clients.core.temp.wrappers import try_exc_regular, try_exc_async
+from core.wrappers import try_exc_regular, try_exc_async
 
 
 class KrakenClient(BaseClient):

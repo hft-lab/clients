@@ -12,7 +12,7 @@ from bravado.requests_client import RequestsClient
 from clients.core.base_client import BaseClient
 from clients.core.enums import ResponseStatus, OrderStatus
 from clients.core.APIKeyAuthenticator import APIKeyAuthenticator as auth
-from multibot.clients.core.temp.wrappers import try_exc_regular, try_exc_async
+from core.wrappers import try_exc_regular, try_exc_async
 
 
 # Naive implementation of connecting to BitMEX websocket for streaming realtime data.

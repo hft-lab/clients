@@ -11,11 +11,11 @@ from urllib.parse import urlencode
 import aiohttp
 
 import requests
-# from config import Config
+
 from clients.core.base_client import BaseClient
 from clients.core.enums import ConnectMethodEnum, EventTypeEnum, PositionSideEnum, ResponseStatus, OrderStatus, \
     ClientsOrderStatuses
-from multibot.clients.core.temp.wrappers import try_exc_regular, try_exc_async
+from core.wrappers import try_exc_regular, try_exc_async
 
 
 import orjson
