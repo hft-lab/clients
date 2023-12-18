@@ -477,8 +477,8 @@ class DydxClient(BaseClient):
             if float(bid['size']) > 0:
                 self.orderbook[symbol]['bids'].append([float(bid['price']), float(bid['size']), int(bid['offset'])])
             self.offsets[bid['price']] = int(bid['offset'])
-        self.orderbook[symbol]['asks'] = sorted(self.orderbook[symbol]['asks'])[:10]
-        self.orderbook[symbol]['bids'] = sorted(self.orderbook[symbol]['bids'])[::-10]
+        self.orderbook[symbol]['asks'] = sorted(self.orderbook[symbol]['asks'])
+        self.orderbook[symbol]['bids'] = sorted(self.orderbook[symbol]['bids'])[::-1]
         self.orderbook[symbol].update({'timestamp': int(time.time() * 1000)})
         self.count_flag = True
 
@@ -521,12 +521,8 @@ class DydxClient(BaseClient):
         symbol = ob['id']
         if len(ob['contents']['bids']):
             self._append_new_order(ob, 'bids')
-            if len(self.orderbook[symbol]['asks']) > 10:
-                self.orderbook[symbol]['asks'] = self.orderbook[symbol]['asks'][:10]
         if len(ob['contents']['asks']):
             self._append_new_order(ob, 'asks')
-            if len(self.orderbook[symbol]['bids']) > 10:
-                self.orderbook[symbol]['bids'] = self.orderbook[symbol]['bids'][:10]
         self.orderbook[symbol]['timestamp'] = int(datetime.utcnow().timestamp() * 1000)
 
     @try_exc_regular
