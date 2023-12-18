@@ -97,10 +97,10 @@ class DydxClient(BaseClient):
         self.positions = {}
         for pos in self.client.private.get_positions().data.get('positions', []):
             if pos['status'] == 'OPEN':
-                mark_price = self.get_mark_price(pos['market'])
+                amount_usd = (float(pos['size']) * float(pos['entryPrice'])) + float(pos['unrealizedPnl'])
                 self.positions.update({pos['market']: {
                     'side': pos['side'],
-                    'amount_usd': float(pos['size']) * mark_price,
+                    'amount_usd': amount_usd,
                     'amount': float(pos['size']),
                     'entry_price': float(pos['entryPrice']),
                     'unrealized_pnl_usd': float(pos['unrealizedPnl']),
@@ -541,21 +541,12 @@ class DydxClient(BaseClient):
                 self.orderbook[symbol]['bids'].remove(top_bid)
 
     @try_exc_regular
-    def get_mark_price(self, symbol):
-        if self.orderbook.get(symbol):
-            ob = self.orderbook[symbol]
-        else:
-            ob = asyncio.run(self.get_orderbook_by_symbol(symbol))
-        mark_price = (ob['asks'][0][0] + ob['bids'][0][0]) / 2
-        return mark_price
-
-    @try_exc_regular
     def _append_format_pos(self, position):
-        mark_price = self.get_mark_price(position['market'])
+        amount_usd = (float(position['size']) * float(position['entryPrice'])) + float(position['unrealizedPnl'])
         position.update({'timestamp': int(time.time()),
                          'entry_price': float(position['entryPrice']),
                          'amount': float(position['size']),
-                         'amount_usd': float(position['size']) * mark_price})
+                         'amount_usd': amount_usd})
         return position
 
     @try_exc_regular
