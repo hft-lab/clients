@@ -3,8 +3,11 @@ from abc import ABC, abstractmethod
 import telebot
 import configparser
 import sys
+# from core.wrappers import try_exc_regular, try_exc_async
+
 config = configparser.ConfigParser()
 config.read(sys.argv[1], "utf-8")
+
 
 class BaseClient(ABC):
     BASE_URL = None
@@ -22,40 +25,29 @@ class BaseClient(ABC):
         self.telegram_bot = telebot.TeleBot(self.alert_token)
 
     @abstractmethod
-    def get_available_balance(self):
-        """
-        Amount available to trade in certain direction in USD
-
-        :param side: SELL/BUY side for check balance
-        :return: float
-        """
+    # @try_exc_regular
+    def get_available_balance(self, leverage, max_pos_part, positions: dict, balance: dict ):
         available_balances = {}
         position_value = 0
         position_value_abs = 0
-        available_margin = self.balance['total'] * self.leverage
-        avl_margin_per_market = available_margin / 100 * self.max_pos_part
-        for symbol, position in self.positions.items():
+        available_margin = balance['total'] * leverage
+        avl_margin_per_market = available_margin / 100 * max_pos_part
+        for symbol, position in positions.items():
             if position.get('amount_usd'):
                 position_value += position['amount_usd']
                 position_value_abs += abs(position['amount_usd'])
-                if position['amount_usd'] < 0:
-                    available_balances.update({symbol: {'buy': avl_margin_per_market + position['amount_usd'],
-                                                        'sell': avl_margin_per_market - position['amount_usd']}})
-                else:
-                    available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
-                                                        'sell': avl_margin_per_market + position['amount_usd']}})
+                available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
+                                                    'sell': avl_margin_per_market + position['amount_usd']}})
         if position_value_abs < available_margin:
             available_balances['buy'] = available_margin - position_value
             available_balances['sell'] = available_margin + position_value
         else:
-            for symbol, position in self.positions.items():
+            for symbol, position in positions.items():
                 if position.get('amount_usd'):
                     if position['amount_usd'] < 0:
-                        available_balances.update({symbol: {'buy': abs(position['amount_usd']),
-                                                            'sell': 0}})
+                        available_balances.update({symbol: {'buy': abs(position['amount_usd']), 'sell': 0}})
                     else:
-                        available_balances.update({symbol: {'buy': 0,
-                                                            'sell': position['amount_usd']}})
+                        available_balances.update({symbol: {'buy': 0, 'sell': position['amount_usd']}})
             available_balances['buy'] = 0
             available_balances['sell'] = 0
         return available_balances
@@ -90,7 +82,7 @@ class BaseClient(ABC):
 
     @abstractmethod
     def get_real_balance(self) -> float:
-       pass
+        pass
 
     @abstractmethod
     def get_orderbook(self) -> dict:

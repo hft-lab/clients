@@ -139,54 +139,11 @@ class KrakenClient(BaseClient):
 
     @try_exc_regular
     def get_available_balance(self):
-        available_balances = {}
-        position_value = 0
-        position_value_abs = 0
-        available_margin = self.balance['total'] * self.leverage
-        avl_margin_per_market = available_margin / 100 * self.max_pos_part
-        for symbol, position in self.positions.items():
-            if position.get('amount_usd'):
-                position_value += position['amount_usd']
-                position_value_abs += abs(position['amount_usd'])
-                available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
-                                                    'sell': avl_margin_per_market + position['amount_usd']}})
-        if position_value_abs < available_margin:
-            available_balances['buy'] = available_margin - position_value
-            available_balances['sell'] = available_margin + position_value
-        else:
-            for symbol, position in self.positions.items():
-                if position.get('amount_usd'):
-                    if position['amount_usd'] < 0:
-                        available_balances.update({symbol: {'buy': abs(position['amount_usd']),'sell': 0}})
-                    else:
-                        available_balances.update({symbol: {'buy': 0,'sell': position['amount_usd']}})
-            available_balances['buy'] = 0
-            available_balances['sell'] = 0
-        return available_balances
-
-    # def get_available_balance(self, side: str) -> float:
-    #     position_value = 0
-    #     position_value_abs = 0
-    #     for symbol, position in self.positions.items():
-    #         if position.get('amount_usd'):
-    #             position_value += position['amount_usd']
-    #             position_value_abs += abs(position['amount_usd'])
-    #     available_margin = self.balance['total'] * self.leverage
-    #     if position_value_abs > available_margin:
-    #         if position_value > 0:
-    #             if side == 'buy':
-    #                 return available_margin - position_value
-    #             elif side == 'sell':
-    #                 return available_margin + position_value
-    #         else:
-    #             if side == 'buy':
-    #                 return available_margin + abs(position_value)
-    #             elif side == 'sell':
-    #                 return available_margin - abs(position_value)
-    #     if side == 'buy':
-    #         return available_margin - position_value
-    #     elif side == 'sell':
-    #         return available_margin + position_value
+        return super().get_available_balance(
+            leverage=self.leverage,
+            max_pos_part=self.max_pos_part,
+            positions=self.positions,
+            balance=self.balance)
 
     @try_exc_regular
     def cancel_all_orders(self, orderID=None) -> dict:
@@ -224,7 +181,8 @@ class KrakenClient(BaseClient):
     @try_exc_regular
     def get_all_tops(self):
         orderbooks = dict()
-        [orderbooks.update({self.markets[x]: self.get_orderbook(self.markets[x])}) for x in self.markets_list if self.markets.get(x)]
+        [orderbooks.update({self.markets[x]: self.get_orderbook(self.markets[x])}) for x in self.markets_list if
+         self.markets.get(x)]
         tops = {}
         for symbol, orderbook in orderbooks.items():
             coin = symbol.upper().split('_')[1].split('USD')[0]
@@ -342,6 +300,7 @@ class KrakenClient(BaseClient):
         self.max_bid = max(self.orderbook[symbol]['buy'].keys())
         self.min_ask = min(self.orderbook[symbol]['sell'].keys())
         self.count_flag = True
+
     # PRIVATE ----------------------------------------------------------------------------------------------------------
 
     @try_exc_async
@@ -786,6 +745,8 @@ if __name__ == '__main__':
     client.markets_list = ['ETH', 'RUNE', 'SNX', 'ENJ', 'DOT', 'LINK', 'ETC', 'DASH', 'XLM', 'WAVES']
     client.run_updater()
     time.sleep(3)
+
+
     # print(client.get_balance())
     # print()
     # print(client.positions)
@@ -810,6 +771,8 @@ if __name__ == '__main__':
             print()
 
             # client.cancel_all_orders()
+
+
     # #
     # #
     # time.sleep(5)
@@ -823,4 +786,4 @@ if __name__ == '__main__':
 
     # time.sleep(5)
 
-        # print(client.get_all_tops())
+    # print(client.get_all_tops())
