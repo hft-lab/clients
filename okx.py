@@ -242,18 +242,21 @@ class OkxClient(BaseClient):
     def _update_positions(self, obj):
         if not obj['data']:
             return
-        side = 'LONG' if float(obj['data'][0]['pos']) > 0 else 'SHORT'
-        amount_usd = float(obj['data'][0]['notionalUsd'])
-        if side == 'SHORT':
-            amount_usd = -amount_usd
-        amount = amount_usd / float(obj['data'][0]['markPx'])
-        self.positions.update({obj['arg']['instId']: {'side': side,
-                                                      'amount_usd': amount_usd,
-                                                      'amount': amount,
-                                                      'entry_price': float(obj['data'][0]['avgPx']),
-                                                      'unrealized_pnl_usd': float(obj['data'][0]['upl']),
-                                                      'realized_pnl_usd': 0,
-                                                      'lever': self.leverage}})
+        for position in obj['data']:
+            if not position.get('notionalUsd'):
+                continue
+            side = 'LONG' if float(position['pos']) > 0 else 'SHORT'
+            amount_usd = float(position['notionalUsd'])
+            if side == 'SHORT':
+                amount_usd = -amount_usd
+            amount = amount_usd / float(position['markPx'])
+            self.positions.update({obj['arg']['instId']: {'side': side,
+                                                          'amount_usd': amount_usd,
+                                                          'amount': amount,
+                                                          'entry_price': float(position['avgPx']),
+                                                          'unrealized_pnl_usd': float(position['upl']),
+                                                          'realized_pnl_usd': 0,
+                                                          'lever': self.leverage}})
         # print(self.positions)
         # for one in obj['data'][0]:
         #     if obj['data'][0][one]:
