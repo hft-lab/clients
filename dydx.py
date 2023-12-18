@@ -97,9 +97,10 @@ class DydxClient(BaseClient):
         self.positions = {}
         for pos in self.client.private.get_positions().data.get('positions', []):
             if pos['status'] == 'OPEN':
+                mark_price = self.get_mark_price(pos['market'])
                 self.positions.update({pos['market']: {
                     'side': pos['side'],
-                    'amount_usd': float(pos['size']) * float(pos['entryPrice']),
+                    'amount_usd': float(pos['size']) * mark_price,
                     'amount': float(pos['size']),
                     'entry_price': float(pos['entryPrice']),
                     'unrealized_pnl_usd': float(pos['unrealizedPnl']),
@@ -476,8 +477,8 @@ class DydxClient(BaseClient):
             if float(bid['size']) > 0:
                 self.orderbook[symbol]['bids'].append([float(bid['price']), float(bid['size']), int(bid['offset'])])
             self.offsets[bid['price']] = int(bid['offset'])
-        self.orderbook[symbol]['asks'] = sorted(self.orderbook[symbol]['asks'])
-        self.orderbook[symbol]['bids'] = sorted(self.orderbook[symbol]['bids'])[::-1]
+        self.orderbook[symbol]['asks'] = sorted(self.orderbook[symbol]['asks'])[:10]
+        self.orderbook[symbol]['bids'] = sorted(self.orderbook[symbol]['bids'])[::-10]
         self.orderbook[symbol].update({'timestamp': int(time.time() * 1000)})
         self.count_flag = True
 
@@ -518,16 +519,15 @@ class DydxClient(BaseClient):
     @try_exc_regular
     def _channel_orderbook_update(self, ob: dict):
         symbol = ob['id']
-        last_ob_ask = self.orderbook[symbol]['asks'][0][0]
-        last_ob_bid = self.orderbook[symbol]['bids'][0][0]
         if len(ob['contents']['bids']):
             self._append_new_order(ob, 'bids')
+            if len(self.orderbook[symbol]['asks']) > 10:
+                self.orderbook[symbol]['asks'] = self.orderbook[symbol]['asks'][:10]
         if len(ob['contents']['asks']):
             self._append_new_order(ob, 'asks')
+            if len(self.orderbook[symbol]['bids']) > 10:
+                self.orderbook[symbol]['bids'] = self.orderbook[symbol]['bids'][:10]
         self.orderbook[symbol]['timestamp'] = int(datetime.utcnow().timestamp() * 1000)
-        if last_ob_ask != self.orderbook[symbol]['asks'][0][0] or last_ob_bid != self.orderbook[symbol]['bids'][0][0]:
-            self.count_flag = True
-        # print(f"\n\nDYDX NEW OB APPEND TIME: {time.time() - time_start} sec\n\n")
 
     @try_exc_regular
     def _check_for_error(self, symbol):
@@ -540,20 +540,30 @@ class DydxClient(BaseClient):
             else:
                 self.orderbook[symbol]['bids'].remove(top_bid)
 
-    @staticmethod
     @try_exc_regular
-    def _append_format_pos(position):
+    def get_mark_price(self, symbol):
+        if self.orderbook.get(symbol):
+            ob = self.orderbook[symbol]
+        else:
+            ob = asyncio.run(self.get_orderbook_by_symbol(symbol))
+        mark_price = (ob['asks'][0][0] + ob['bids'][0][0]) / 2
+        return mark_price
+
+    @try_exc_regular
+    def _append_format_pos(self, position):
+        mark_price = self.get_mark_price(position['market'])
         position.update({'timestamp': int(time.time()),
                          'entry_price': float(position['entryPrice']),
                          'amount': float(position['size']),
-                         'amount_usd': float(position['size']) * float(position['entryPrice'])})
+                         'amount_usd': float(position['size']) * mark_price})
         return position
 
     @try_exc_regular
     def _update_positions(self, positions):
         for position in positions:
-            position = self._append_format_pos(position)
-            self.positions.update({position['market']: position})
+            if position['market'].split('-')[0] in self.markets_list:
+                position = self._append_format_pos(position)
+                self.positions.update({position['market']: position})
             # position_example = [{'id': '312711e6-d172-5e5b-9dc8-362101e94756',
             # 'accountId': 'f47ae945-06ae-5c47-aaad-450c0ffc6164', 'market': 'SNX-USD',
             # 'side': 'LONG/SHORT',
@@ -692,8 +702,9 @@ class DydxClient(BaseClient):
                         'total': float(account['equity']),
                         'timestamp': round(datetime.utcnow().timestamp())}
         for market, position in account['openPositions'].items():
-            position = self._append_format_pos(position)
-            self.positions[market] = position
+            if market.split('-')[0] in self.markets_list:
+                position = self._append_format_pos(position)
+                self.positions[market] = position
 
     @try_exc_regular
     def get_last_price(self, market, side):
@@ -759,9 +770,6 @@ class DydxClient(BaseClient):
     @try_exc_regular
     def get_orderbook(self, symbol):
         # NECESSARY
-        while not self.orderbook.get(symbol):
-            print(f"{self.EXCHANGE_NAME}: CAN'T GET OB {symbol}")
-            time.sleep(0.01)
         return self.orderbook[symbol]
 
 
@@ -773,30 +781,31 @@ if __name__ == '__main__':
     client = DydxClient(keys=config['DYDX'],
                         leverage=float(config['SETTINGS']['LEVERAGE']),
                         max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
-                        markets_list=['RUNE', 'ETH', 'SNX'])
+                        markets_list=['RUNE', 'ETH', 'SNX', 'LINK', 'ENJ', 'XLM'])
     client.run_updater()
 
     time.sleep(1)
-    async def test_order():
-        async with aiohttp.ClientSession() as session:
-            ob = client.get_orderbook('SNX-USD')
+    print(client.get_available_balance())
+    # async def test_order():
+    #     async with aiohttp.ClientSession() as session:
+    #         ob = client.get_orderbook('SNX-USD')
+    #
+    #         print(ob)
+    #         input('SYOP')
+    #         # # client.get_markets()
+    #         # client.fit_sizes(0.012, price, 'ETH-USD')
+    #         client.amount = 1.9
+    #         client.price = price
+    #         data = await client.create_order('SNX-USD',
+    #                                          'buy',
+    #                                          session=session,
+    #                                          client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
+    #         await client.get_all_orders('SNX-USD', session)
+    #         print(data)
+    #         client.cancel_all_orders()
 
-            print(ob)
-            input('SYOP')
-            # # client.get_markets()
-            # client.fit_sizes(0.012, price, 'ETH-USD')
-            client.amount = 1.9
-            client.price = price
-            data = await client.create_order('SNX-USD',
-                                             'buy',
-                                             session=session,
-                                             client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-            await client.get_all_orders('SNX-USD', session)
-            print(data)
-            client.cancel_all_orders()
 
-
-    asyncio.run(test_order())
+    # asyncio.run(test_order())
 
     while True:
         time.sleep(5)
