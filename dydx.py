@@ -97,7 +97,7 @@ class DydxClient(BaseClient):
         self.positions = {}
         for pos in self.client.private.get_positions().data.get('positions', []):
             if pos['status'] == 'OPEN':
-                amount_usd = (float(pos['size']) * float(pos['entryPrice'])) + float(pos['unrealizedPnl'])
+                amount_usd = (float(pos['size']) * float(pos['entryPrice'])) + float(pos.get('unrealizedPnl', 0))
                 self.positions.update({pos['market']: {
                     'side': pos['side'],
                     'amount_usd': amount_usd,
@@ -538,7 +538,7 @@ class DydxClient(BaseClient):
 
     @try_exc_regular
     def _append_format_pos(self, position):
-        amount_usd = (float(position['size']) * float(position['entryPrice'])) + float(position['unrealizedPnl'])
+        amount_usd = (float(position['size']) * float(position['entryPrice'])) + float(position.get('unrealizedPnl', 0))
         position.update({'timestamp': int(time.time()),
                          'entry_price': float(position['entryPrice']),
                          'amount': float(position['size']),
