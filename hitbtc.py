@@ -5,21 +5,24 @@ import requests
 from datetime import datetime
 import asyncio
 import threading
+from core.wrappers import try_exc_regular, try_exc_async
 
 
 class HitbtcClient:
     PUBLIC_WS_ENDPOINT = 'wss://api.hitbtc.com/api/3/ws/public'
     EXCHANGE_NAME = 'HITBTC'
 
-    def __init__(self):
+    def __init__(self, keys, leverage, markets_list=[], max_pos_part=20):
         self.headers = {'Content-Type': 'application/json'}
         self.markets = self.get_markets()
         self._loop_public = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=[self._loop_public])
+        self.requestLimit = 1200
         self.orderbook = {}
         self.taker_fee = 0.0007
 
+    @try_exc_regular
     def get_markets(self):
         way = "https://api.hitbtc.com/api/3/public/symbol"
         resp = requests.get(url=way, headers=self.headers).json()
@@ -29,6 +32,7 @@ class HitbtcClient:
                 markets.update({market['underlying']: symbol})
         return markets
 
+    @try_exc_regular
     def get_all_tops(self):
         tops = {}
         for symbol, orderbook in self.orderbook.items():
@@ -40,10 +44,12 @@ class HitbtcClient:
                     'ts_exchange': orderbook['timestamp']}})
         return tops
 
+    @try_exc_regular
     def _run_ws_forever(self, loop):
         while True:
             loop.run_until_complete(self._run_ws_loop())
 
+    @try_exc_async
     async def _run_ws_loop(self):
         async with aiohttp.ClientSession() as s:
             async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
@@ -53,9 +59,11 @@ class HitbtcClient:
                 async for msg in ws:
                     self.update_orderbook(json.loads(msg.data))
 
+    @try_exc_regular
     def get_orderbook(self, symbol):
         return self.orderbook[symbol]
 
+    @try_exc_async
     async def subscribe_orderbooks(self):
         method = {
             "method": "subscribe",
@@ -66,6 +74,7 @@ class HitbtcClient:
         await self._connected.wait()
         await self._ws_public.send_json(method)
 
+    @try_exc_regular
     def update_orderbook(self, data):
         if not data.get('data'):
             return
@@ -76,10 +85,10 @@ class HitbtcClient:
                                            'bids': [[float(x[0]), float(x[1])] for x in orders['b']],
                                            'timestamp': datetime.utcnow().timestamp()})
 
+    @try_exc_regular
     def run_updater(self):
         self.wst_public.daemon = True
         self.wst_public.start()
-
 
 
 if __name__ == '__main__':
