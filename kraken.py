@@ -173,9 +173,12 @@ class KrakenClient(BaseClient):
         snap = self.orderbook[symbol.upper()]
         if snap.get('asks'):
             return snap
-        orderbook = {'timestamp': self.orderbook[symbol.upper()]['timestamp'],
-                     'asks': [[x, snap['sell'][x]] for x in sorted(snap['sell']) if snap['sell'].get(x)],
-                     'bids': [[x, snap['buy'][x]] for x in sorted(snap['buy']) if snap['buy'].get(x)][::-1]}
+        try:
+            orderbook = {'timestamp': self.orderbook[symbol.upper()]['timestamp'],
+                         'asks': [[x, snap['sell'][x]] for x in sorted(snap['sell']) if snap['sell'].get(x)],
+                         'bids': [[x, snap['buy'][x]] for x in sorted(snap['buy']) if snap['buy'].get(x)][::-1]}
+        except:
+            return self.get_orderbook(symbol)
         return orderbook
 
     @try_exc_regular
