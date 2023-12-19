@@ -26,22 +26,21 @@ class BaseClient(ABC):
 
     @abstractmethod
     # @try_exc_regular
-    def get_available_balance(self, leverage, max_pos_part, positions: dict, balance: dict ):
+    def get_available_balance(self, leverage, max_pos_part, positions: dict, balance: dict):
         available_balances = {}
-        position_value = 0
         position_value_abs = 0
         available_margin = balance['total'] * leverage
         avl_margin_per_market = available_margin / 100 * max_pos_part
         for symbol, position in positions.items():
             if position.get('amount_usd'):
-                position_value += position['amount_usd']
+                # position_value += position['amount_usd']
                 position_value_abs += abs(position['amount_usd'])
                 available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
                                                     'sell': avl_margin_per_market + position['amount_usd']}})
-        if position_value_abs < available_margin:
+        if position_value_abs <= available_margin:
             # Это по сути доступный баланс для открытия новых позиций
-            available_balances['buy'] = available_margin - position_value
-            available_balances['sell'] = available_margin + position_value
+            available_balances['buy'] = available_margin - position_value_abs
+            available_balances['sell'] = available_margin - position_value_abs
         else:
             for symbol, position in positions.items():
                 if position.get('amount_usd'):

@@ -5,6 +5,7 @@ from datetime import datetime
 import json
 import threading
 import time
+import requests
 
 import aiohttp
 from dydx3 import Client
@@ -20,7 +21,6 @@ from web3 import Web3
 # from core.base_client import BaseClient
 # from core.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
 # from core.temp.wrappers import try_exc_regular, try_exc_async
-
 
 from clients.core.base_client import BaseClient
 from clients.core.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
@@ -200,23 +200,45 @@ class DydxClient(BaseClient):
                              'tranId': 'hasNoTranId'})
             return fundings
 
-    @try_exc_async
-    async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession):
-        data = {}
+    @try_exc_regular
+    def get_http_fills(self):
+        path = f'/v3/fills'
+        headers = self.get_headers(path, 'GET', {})
+        resp = requests.get(url=self.BASE_URL + path, headers=headers, data=json.dumps(remove_nones({})))
+        return resp.json()
+
+    @try_exc_regular
+    def get_http_order(self, order_id):
         path = f'/v3/orders/{order_id}'
-        headers = self.get_headers(path, 'GET', data)
-        async with session.get(url=self.BASE_URL + path, headers=headers, data=json.dumps(remove_nones(data))) as resp:
-            res = await resp.json()
-            if res := res.get('order'):
-                return {'exchange_order_id': order_id,
-                        'exchange': self.EXCHANGE_NAME,
-                        'status': OrderStatus.FULLY_EXECUTED if res.get(
-                            'status') == ClientsOrderStatuses.FILLED else OrderStatus.NOT_EXECUTED,
-                        'factual_price': float(res['price']),
-                        'factual_amount_coin': float(res['size']),
-                        'factual_amount_usd': float(res['size']) * float(res['price']),
-                        'datetime_update': datetime.utcnow(),
-                        'ts_update': int(datetime.utcnow().timestamp() * 1000)}
+        headers = self.get_headers(path, 'GET', {})
+        resp = requests.get(url=self.BASE_URL + path, headers=headers, data=json.dumps(remove_nones({})))
+        return resp.json()
+
+    @try_exc_regular
+    def get_order_by_id(self, order_id: str):
+        fills = self.get_http_fills()
+        av_price = 0
+        real_size_coin = 0
+        real_size_usd = 0
+        for fill in fills:
+            if fill['orderId'] == order_id:
+                if av_price:
+                    real_size_usd = av_price * real_size_coin + float(fill['size']) * float(fill['price'])
+                    av_price = real_size_usd / (real_size_coin + float(fill['size']))
+                else:
+                    real_size_usd = float(fill['size']) * float(fill['price'])
+                    av_price = float(fill['price'])
+                real_size_coin += float(fill['size'])
+        order = self.get_http_order(order_id)
+        return {'exchange_order_id': order_id,
+                'exchange': self.EXCHANGE_NAME,
+                'status': OrderStatus.FULLY_EXECUTED if order.get(
+                    'status') == ClientsOrderStatuses.FILLED else OrderStatus.NOT_EXECUTED,
+                'factual_price': av_price,
+                'factual_amount_coin': real_size_coin,
+                'factual_amount_usd': real_size_usd,
+                'datetime_update': datetime.utcnow(),
+                'ts_update': int(datetime.utcnow().timestamp() * 1000)}
 
     @try_exc_regular
     def get_order_status(self, order):
@@ -361,12 +383,10 @@ class DydxClient(BaseClient):
             exchange_order_id = res.get('order', {'id': 'default'})['id']
             status, timestamp = self.get_order_response_status(res)
             self.ping_processing(timestamp, time_sent)
-            return {
-                'exchange_name': self.EXCHANGE_NAME,
-                'exchange_order_id': exchange_order_id,
-                'timestamp': timestamp,
-                'status': status
-            }
+            return {'exchange_name': self.EXCHANGE_NAME,
+                    'exchange_order_id': exchange_order_id,
+                    'timestamp': timestamp,
+                    'status': status}
 
     @try_exc_regular
     def ping_processing(self, timestamp, time_sent):
@@ -611,7 +631,7 @@ class DydxClient(BaseClient):
                     'exchange': self.EXCHANGE_NAME,
                     'status': status,
                     'factual_price': real_price,
-                    'factual_amount_coin':  executed_size,
+                    'factual_amount_coin': executed_size,
                     'factual_amount_usd': executed_size_usd,
                     'datetime_update': datetime.utcnow(),
                     'ts_update': int(time.time() * 1000)
@@ -772,13 +792,12 @@ if __name__ == '__main__':
     client.run_updater()
 
     time.sleep(1)
-    print(client.get_available_balance())
+
+
     # async def test_order():
     #     async with aiohttp.ClientSession() as session:
     #         ob = client.get_orderbook('SNX-USD')
-    #
-    #         print(ob)
-    #         input('SYOP')
+    #         price = ob['asks'][5][0]
     #         # # client.get_markets()
     #         # client.fit_sizes(0.012, price, 'ETH-USD')
     #         client.amount = 1.9
@@ -787,15 +806,18 @@ if __name__ == '__main__':
     #                                          'buy',
     #                                          session=session,
     #                                          client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
-    #         await client.get_all_orders('SNX-USD', session)
+    #         # orders = await client.get_all_orders('SNX-USD', session)
+    #         time.sleep(1)
     #         print(data)
-    #         client.cancel_all_orders()
-
-
+    #         order = client.get_order_by_id(data['exchange_order_id'])
+    #         print(order)
+    #         # client.cancel_all_orders()
+    #
+    #
     # asyncio.run(test_order())
+    client.get_order_by_id('exchange_order_id')
 
     while True:
         time.sleep(5)
     #     print(client.get_all_tops())
     #     print(client.get_balance())
-
