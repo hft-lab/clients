@@ -306,8 +306,8 @@ class KrakenClient(BaseClient):
 
     # PRIVATE ----------------------------------------------------------------------------------------------------------
 
-    @try_exc_async
-    async def get_fills(self, session) -> dict:
+    @try_exc_regular
+    def get_fills(self) -> dict:
         url_path = '/derivatives/api/v3/fills'
         nonce = str(int(time.time() * 1000))
         params = {
@@ -322,12 +322,12 @@ class KrakenClient(BaseClient):
                 url_path, '', nonce
             ).decode('utf-8')
         }
-        async with session.get(headers=headers, url=self.BASE_URL + url_path, data=params) as resp:
-            return await resp.json()
+        resp = requests.get(headers=headers, url=self.BASE_URL + url_path, data=params)
+        return resp.json()
 
     @try_exc_async
     async def get_all_orders(self, symbol, session) -> list:
-        all_orders = await self.__get_all_orders(session)
+        all_orders = self.__get_all_orders()
         res_orders = {}
         for elements in all_orders['elements']:
             for event in ['OrderPlaced', 'OrderCancelled']:
@@ -366,88 +366,92 @@ class KrakenClient(BaseClient):
                                 'ts_update': int(time.time() * 1000),
                                 'client_id': order['clientId']
                             }})
-
         return [x for x in res_orders.values()]
 
-    @try_exc_async
-    async def __get_all_orders(self, session) -> dict:
+    @try_exc_regular
+    def __get_all_orders(self) -> dict:
         url_path = '/api/history/v3/orders'
         nonce = str(int(time.time() * 1000))
         headers = {"Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
                    "Nonce": nonce,
                    "APIKey": self.__api_key,
                    "Authent": self.get_kraken_futures_signature(url_path, '', nonce).decode('utf-8')}
-        async with session.get(headers=headers, url=self.BASE_URL + url_path) as resp:
-            return await resp.json()
+        resp = requests.get(headers=headers, url=self.BASE_URL + url_path)
+        return resp.json()
 
-    @try_exc_async
-    async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession) -> dict:
-        fills_orders = await self.get_fills(session)
-        if type(fills_orders) == dict and fills_orders.get('result') == 'success':
-            prices = []
-            sizes = []
-            for fill in fills_orders.get('fills', []):
-                if fill['order_id'] == order_id:
-                    if fill['fillType'] == 'taker':
-                        return {'exchange_order_id': order_id,
-                                'exchange': self.EXCHANGE_NAME,
-                                'status': OrderStatus.FULLY_EXECUTED,
-                                'factual_price': fill['price'],
-                                'factual_amount_coin': fill['size'],
-                                'factual_amount_usd': fill['size'] * fill['price'],
-                                'datetime_update': datetime.utcnow(),
-                                'ts_update': int(time.time() * 1000)}
-                    elif fill['fillType'] == 'maker':
-                        prices.append(fill['price'])
-                        sizes.append(fill['size'])
+    @try_exc_regular
+    def get_order_status(self, order_id):
+        orders = self.__get_all_orders()
+        status = OrderStatus.NOT_EXECUTED
+        for order in orders['elements']:
+            if order_id in str(order) and 'OrderUpdated' in str(order):
+                if order['event']['OrderUpdated']['newOrder']['quantity'] == '0.0':
+                    status = OrderStatus.FULLY_EXECUTED
+                    break
+                elif order['event']['OrderUpdated']['newOrder']['filled'] != '0.0':
+                    status = OrderStatus.PARTIALLY_EXECUTED
+                    break
+        return status
 
-            if sizes and prices:
-                sizes = sum(sizes)
-                price = sum(prices) / len(prices)
-                return {'exchange_order_id': order_id,
-                        'exchange': self.EXCHANGE_NAME,
-                        'status': OrderStatus.FULLY_EXECUTED,
-                        'factual_price': price,
-                        'factual_amount_coin': sizes,
-                        'factual_amount_usd': sizes * price,
-                        'datetime_update': datetime.utcnow(),
-                        'ts_update': int(time.time() * 1000)}
-        return await self.__get_order_by_all_orders(session, order_id)
+    @try_exc_regular
+    def get_order_by_id(self, order_id: str) -> dict:
+        fills_orders = self.get_fills()
+        status = self.get_order_status(order_id)
+        av_price = 0
+        real_size_coin = 0
+        real_size_usd = 0
+        for fill in fills_orders.get('fills', []):
+            if fill['order_id'] == order_id:
+                if av_price:
+                    real_size_usd = av_price * real_size_coin + float(fill['size']) * float(fill['price'])
+                    av_price = real_size_usd / (real_size_coin + float(fill['size']))
+                else:
+                    real_size_usd = float(fill['size']) * float(fill['price'])
+                    av_price = float(fill['price'])
+                real_size_coin += float(fill['size'])
+        return {'exchange_order_id': order_id,
+                'exchange': self.EXCHANGE_NAME,
+                'status': status,
+                'factual_price': av_price,
+                'factual_amount_coin': real_size_coin,
+                'factual_amount_usd': real_size_usd,
+                'datetime_update': datetime.utcnow(),
+                'ts_update': int(datetime.utcnow().timestamp() * 1000)}
 
-    @try_exc_async
-    async def __get_order_by_all_orders(self, session, order_id):
-        all_orders = await self.__get_all_orders(session)
-        if type(all_orders) == dict and all_orders.get('elements'):
-            for order in all_orders['elements']:
-                stts = OrderStatus.PROCESSING
-                price = 0
-                amount = 0
-                if last_update := order['event'].get('OrderUpdated'):
-                    if last_update['newOrder']['uid'] == order_id:
-                        # print(f"KRAKEN {order=}")
-                        rsn = last_update['reason']
-                        if rsn in ['full_fill', 'partial_fill']:
-                            stts = OrderStatus.FULLY_EXECUTED if rsn == 'full_fill' else OrderStatus.PARTIALLY_EXECUTED
-                            price = float(last_update['newOrder']['limitPrice'])
-                            amount = float(last_update['newOrder']['filled'])
-                        elif rsn in ['cancelled_by_user', 'cancelled_by_admin', 'not_enough_margin']:
-                            stts = OrderStatus.NOT_EXECUTED
-                        return {'exchange_order_id': last_update['oldOrder']['uid'],
-                                'exchange': self.EXCHANGE_NAME,
-                                'status': stts,
-                                'factual_price': price,
-                                'factual_amount_coin': amount,
-                                'factual_amount_usd': amount * price,
-                                'datetime_update': datetime.utcnow(),
-                                'ts_update': int(time.time() * 1000)}
-            return {'exchange_order_id': order_id,
-                    'exchange': self.EXCHANGE_NAME,
-                    'status': OrderStatus.NOT_EXECUTED,
-                    'factual_price': 0,
-                    'factual_amount_coin': 0,
-                    'factual_amount_usd': 0,
-                    'datetime_update': datetime.utcnow(),
-                    'ts_update': int(time.time() * 1000)}
+    # @try_exc_regular
+    # def __get_order_by_all_orders(self, order_id):
+    #     all_orders = self.__get_all_orders()
+    #     if type(all_orders) == dict and all_orders.get('elements'):
+    #         for order in all_orders['elements']:
+    #             stts = OrderStatus.PROCESSING
+    #             price = 0
+    #             amount = 0
+    #             if last_update := order['event'].get('OrderUpdated'):
+    #                 if last_update['newOrder']['uid'] == order_id:
+    #                     # print(f"KRAKEN {order=}")
+    #                     rsn = last_update['reason']
+    #                     if rsn in ['full_fill', 'partial_fill']:
+    #                         stts = OrderStatus.FULLY_EXECUTED if rsn == 'full_fill' else OrderStatus.PARTIALLY_EXECUTED
+    #                         price = float(last_update['newOrder']['limitPrice'])
+    #                         amount = float(last_update['newOrder']['filled'])
+    #                     elif rsn in ['cancelled_by_user', 'cancelled_by_admin', 'not_enough_margin']:
+    #                         stts = OrderStatus.NOT_EXECUTED
+    #                     return {'exchange_order_id': last_update['oldOrder']['uid'],
+    #                             'exchange': self.EXCHANGE_NAME,
+    #                             'status': stts,
+    #                             'factual_price': price,
+    #                             'factual_amount_coin': amount,
+    #                             'factual_amount_usd': amount * price,
+    #                             'datetime_update': datetime.utcnow(),
+    #                             'ts_update': int(time.time() * 1000)}
+    #         return {'exchange_order_id': order_id,
+    #                 'exchange': self.EXCHANGE_NAME,
+    #                 'status': OrderStatus.NOT_EXECUTED,
+    #                 'factual_price': 0,
+    #                 'factual_amount_coin': 0,
+    #                 'factual_amount_usd': 0,
+    #                 'datetime_update': datetime.utcnow(),
+    #                 'ts_update': int(time.time() * 1000)}
 
     @try_exc_regular
     def _sign_message(self, api_path: str, data: dict) -> str:
@@ -762,16 +766,16 @@ if __name__ == '__main__':
         async with aiohttp.ClientSession() as session:
             # print(client.orderbook)
             ob = client.get_orderbook('pf_dashusd')
-            price = ob['bids'][0][0]
-            client.get_markets()
-            client.fit_sizes(1, price, 'pf_dashusd')
+            price = ob['bids'][5][0]
+            client.price = price
+            client.amount = 1
+            # client.fit_sizes(1, price, 'pf_dashusd')
             data = await client.create_order('pf_dashusd',
-                                             'sell',
+                                             'buy',
                                              session,
                                              client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
             # data = client.get_balance()
-            print(data)
-            print()
+            print(client.get_order_by_id(data['exchange_order_id']))
 
             # client.cancel_all_orders()
 
@@ -782,7 +786,7 @@ if __name__ == '__main__':
     # print(client.tickers)
     # print('\n\n\n\n')
     # print(client.instruments)
-    # asyncio.run(test_order())
+    asyncio.run(test_order())
 
     while True:
         time.sleep(5)
