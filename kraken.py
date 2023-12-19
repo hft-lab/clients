@@ -394,7 +394,7 @@ class KrakenClient(BaseClient):
         return status
 
     @try_exc_regular
-    def get_order_by_id(self, order_id: str) -> dict:
+    def get_order_by_id(self, symbol, order_id: str) -> dict:
         fills_orders = self.get_fills()
         status = self.get_order_status(order_id)
         av_price = 0

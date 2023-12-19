@@ -548,38 +548,37 @@ class OkxClient(BaseClient):
         data = requests.get(url=self.BASE_URL + way, headers=headers).json()
         return self.reformat_orders(data)
 
-    @try_exc_async
-    async def get_order_by_id(self, symbol, order_id: str, session: aiohttp.ClientSession):
+    @try_exc_regular
+    def get_order_by_id(self, symbol, order_id: str):
         way = '/api/v5/trade/order' + '?' + 'ordId=' + order_id + '&' + 'instId=' + symbol
         headers = self.get_private_headers('GET', way)
         headers.update({'instId': symbol})
-        async with session.get(url=self.BASE_URL + way, headers=headers) as resp:
-            res = await resp.json()
-            if res.get('data'):
-                for order in res['data']:
-                    return {
-                        'exchange_order_id': order_id,
-                        'exchange': self.EXCHANGE_NAME,
-                        'status': OrderStatus.FULLY_EXECUTED if order.get(
-                            'state') == 'filled' else OrderStatus.NOT_EXECUTED,
-                        'factual_price': float(order['avgPx']) if order['avgPx'] else 0,
-                        'factual_amount_coin': float(order['fillSz']) if order['avgPx'] else 0,
-                        'factual_amount_usd': float(order['fillSz']) * float(order['avgPx']) if order['avgPx'] else 0,
-                        'datetime_update': datetime.utcnow(),
-                        'ts_update': int(datetime.utcnow().timestamp() * 1000)
-                    }
-            else:
-                print(f"ERROR>GET ORDER BY ID RES: {res}")
+        res = requests.get(url=self.BASE_URL + way, headers=headers).json()
+        if res.get('data'):
+            for order in res['data']:
                 return {
                     'exchange_order_id': order_id,
                     'exchange': self.EXCHANGE_NAME,
-                    'status': OrderStatus.NOT_EXECUTED,
-                    'factual_price': 0,
-                    'factual_amount_coin': 0,
-                    'factual_amount_usd': 0,
+                    'status': OrderStatus.FULLY_EXECUTED if order.get(
+                        'state') == 'filled' else OrderStatus.NOT_EXECUTED,
+                    'factual_price': float(order['avgPx']) if order['avgPx'] else 0,
+                    'factual_amount_coin': float(order['fillSz']) if order['avgPx'] else 0,
+                    'factual_amount_usd': float(order['fillSz']) * float(order['avgPx']) if order['avgPx'] else 0,
                     'datetime_update': datetime.utcnow(),
                     'ts_update': int(datetime.utcnow().timestamp() * 1000)
                 }
+        else:
+            print(f"ERROR>GET ORDER BY ID RES: {res}")
+            return {
+                'exchange_order_id': order_id,
+                'exchange': self.EXCHANGE_NAME,
+                'status': OrderStatus.NOT_EXECUTED,
+                'factual_price': 0,
+                'factual_amount_coin': 0,
+                'factual_amount_usd': 0,
+                'datetime_update': datetime.utcnow(),
+                'ts_update': int(datetime.utcnow().timestamp() * 1000)
+            }
 
     @try_exc_regular
     def get_order_status(self, order, req_type):
@@ -733,15 +732,17 @@ if __name__ == '__main__':
                        markets_list=['ETH', 'BTC', 'LTC', 'BCH', 'SOL', 'MINA', 'XRP', 'PEPE', 'CFX', 'FIL'])
 
     client.run_updater()
-    while True:
-        time.sleep(1)
+
 
     # price = client.get_orderbook('SOL-USDT-SWAP')['bids'][4][0]
     # client.fit_sizes(2.1223566, price, 'SOL-USDT-SWAP')
     # print(client.get_orderbook_by_symbol('XRP-USDT-SWAP'))
-    # client.amount_contracts = 400
-    # client.price = 0.831
-    # data = client.create_http_order('MATIC-USDT-SWAP', 'buy')
+    client.amount_contracts = 3
+    client.price = 9.2
+    data = client.create_http_order('ICP-USDT-SWAP', 'buy')
+    print(client.get_order_by_id('ICP-USDT-SWAP', data['exchange_order_id']))
+    while True:
+        time.sleep(1)
     # async def test_order():
     #     async with aiohttp.ClientSession() as session:
     #         data = await client.create_order('SOL-USDT-SWAP',

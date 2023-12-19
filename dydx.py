@@ -215,7 +215,7 @@ class DydxClient(BaseClient):
         return resp.json()
 
     @try_exc_regular
-    def get_order_by_id(self, order_id: str):
+    def get_order_by_id(self, symbol, order_id: str):
         fills = self.get_http_fills()
         av_price = 0
         real_size_coin = 0
