@@ -40,8 +40,8 @@ class BaseClient(ABC):
                                                     'sell': avl_margin_per_market + position['amount_usd']}})
         if position_value_abs < available_margin:
             # Это по сути доступный баланс для открытия новых позиций
-            available_balances['buy'] = available_margin - position_value_abs
-            available_balances['sell'] = available_margin - position_value_abs
+            available_balances['buy'] = available_margin - position_value
+            available_balances['sell'] = available_margin + position_value
         else:
             for symbol, position in positions.items():
                 if position.get('amount_usd'):
