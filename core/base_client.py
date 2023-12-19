@@ -39,17 +39,19 @@ class BaseClient(ABC):
                 available_balances.update({symbol: {'buy': avl_margin_per_market - position['amount_usd'],
                                                     'sell': avl_margin_per_market + position['amount_usd']}})
         if position_value_abs < available_margin:
-            available_balances['buy'] = available_margin - position_value
-            available_balances['sell'] = available_margin + position_value
+            # Это по сути доступный баланс для открытия новых позиций
+            available_balances['buy'] = available_margin - position_value_abs
+            available_balances['sell'] = available_margin - position_value_abs
         else:
             for symbol, position in positions.items():
                 if position.get('amount_usd'):
                     if position['amount_usd'] < 0:
                         available_balances.update({symbol: {'buy': abs(position['amount_usd']), 'sell': 0}})
                     else:
-                        available_balances.update({symbol: {'buy': 0, 'sell': position['amount_usd']}})
+                        available_balances.update({symbol: {'buy': 0, 'sell': abs(position['amount_usd'])}})
             available_balances['buy'] = 0
             available_balances['sell'] = 0
+        available_balances['balance'] = balance['total']
         return available_balances
 
     @abstractmethod
