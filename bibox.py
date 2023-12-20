@@ -17,7 +17,8 @@ class BiboxClient:
 
     def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20):
         self.headers = {'Content-Type': 'application/json'}
-        self.markets = self.get_markets()
+        self.markets = self.get_markets() # coin:symbol
+        self.markets_symbol_coin ={value: key for key, value in self.markets.items()} #symbol:coin
         self._loop_public = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=[self._loop_public])
@@ -38,7 +39,7 @@ class BiboxClient:
     def get_all_tops(self):
         tops = {}
         for symbol, orderbook in self.orderbook.items():
-            coin = symbol.upper().split('USD')[0]
+            coin = self.markets_symbol_coin[symbol]
             if len(orderbook['bids']) and len(orderbook['asks']):
                 tops.update({self.EXCHANGE_NAME + '__' + coin: {
                     'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
@@ -126,7 +127,8 @@ if __name__ == '__main__':
     client = BiboxClient()
     # print(client.get_markets())
     client.run_updater()
-    while True:
-        time.sleep(5)
-        print(client.get_all_tops())
+    time.sleep(5)
+    print(json.dumps(client.orderbook,indent=2))
+    print(json.dumps(client.get_markets(), indent=2))
+    print(json.dumps(client.get_all_tops(),indent=2))
 
