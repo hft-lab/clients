@@ -6,6 +6,7 @@ from clients.kraken import KrakenClient
 from clients.okx import OkxClient
 from clients.hitbtc import HitbtcClient
 from clients.bibox import BiboxClient
+from clients.bitmake import BitmakeClient
 
 ALL_CLIENTS = {
     'BITMEX': BitmexClient,
@@ -15,5 +16,6 @@ ALL_CLIENTS = {
     'OKX': OkxClient,
     'KRAKEN': KrakenClient,
     'HITBTC': HitbtcClient,
-    'BIBOX': BiboxClient
+    'BIBOX': BiboxClient,
+    'BITMAKE': BitmakeClient
 }
