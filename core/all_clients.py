@@ -8,6 +8,7 @@ from clients.hitbtc import HitbtcClient
 from clients.bibox import BiboxClient
 from clients.bitmake import BitmakeClient
 from clients.globederivative import GlobeClient
+from clients.bit import BitClient
 
 ALL_CLIENTS = {
     'BITMEX': BitmexClient,
@@ -18,6 +19,7 @@ ALL_CLIENTS = {
     'KRAKEN': KrakenClient,
     'HITBTC': HitbtcClient,
     'BIBOX': BiboxClient,
-    'BITMAKE': BitmakeClient
-    'GLOBE': GlobeClient
+    'BITMAKE': BitmakeClient,
+    'GLOBE': GlobeClient,
+    'BIT': BitClient
 }
