@@ -1,0 +1,99 @@
+import time
+import aiohttp
+import json
+import requests
+from datetime import datetime
+import asyncio
+import threading
+from core.wrappers import try_exc_regular, try_exc_async
+
+
+class GlobeClient:
+    PUBLIC_WS_ENDPOINT = 'wss://globe.exchange/api/v1/ws'
+    EXCHANGE_NAME = 'GLOBE'
+
+    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20):
+        self.headers = {'Content-Type': 'application/json'}
+        self.markets = self.get_markets()
+        self._loop_public = asyncio.new_event_loop()
+        self._connected = asyncio.Event()
+        self.wst_public = threading.Thread(target=self._run_ws_forever, args=[self._loop_public])
+        self.requestLimit = 1200
+        self.orderbook = {}
+        self.taker_fee = 0.0005
+
+    @try_exc_regular
+    def get_markets(self):
+        way = "https://globe.exchange/api/v1/ticker/contracts"
+        resp = requests.get(url=way, headers=self.headers).json()
+        markets = {}
+        for market in resp:
+            if market['product_type'] == 'perpetual' and market['product_status'] == 'Active':
+                markets.update({market['base_symbol']: market['instrument']})
+        return markets
+
+    @try_exc_regular
+    def get_all_tops(self):
+        tops = {}
+        for symbol, orderbook in self.orderbook.items():
+            coin = symbol.upper().split('-')[0]
+            if len(orderbook['bids']) and len(orderbook['asks']):
+                tops.update({self.EXCHANGE_NAME + '__' + coin: {
+                    'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
+                    'bid_vol': orderbook['bids'][0][1], 'ask_vol': orderbook['asks'][0][1],
+                    'ts_exchange': orderbook['timestamp']}})
+        return tops
+
+    @try_exc_regular
+    def _run_ws_forever(self, loop):
+        while True:
+            loop.run_until_complete(self._run_ws_loop())
+
+    @try_exc_async
+    async def _run_ws_loop(self):
+        async with aiohttp.ClientSession() as s:
+            async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
+                self._connected.set()
+                self._ws_public = ws
+                for symbol in self.markets.values():
+                    self._loop_public.create_task(self.subscribe_orderbooks(symbol))
+                async for msg in ws:
+                    self.update_orderbook(json.loads(msg.data))
+
+    @try_exc_regular
+    def get_orderbook(self, symbol):
+        return self.orderbook[symbol]
+
+    @try_exc_async
+    async def subscribe_orderbooks(self, symbol):
+        method = {"command": "subscribe",
+                  "channel": "depth",
+                  "instrument": symbol}
+        await self._connected.wait()
+        await self._ws_public.send_json(method)
+
+    @try_exc_regular
+    def update_orderbook(self, data):
+        if not data.get('data'):
+            return
+        market = data['subscription']['instrument']
+        if not self.orderbook.get(market):
+            self.orderbook.update({market: {'asks': [], 'bids': []}})
+        self.orderbook[market].update({'asks': [[x['price'], x['volume']] for x in data['data']['asks']],
+                                       'bids': [[x['price'], x['volume']] for x in data['data']['bids']],
+                                       'timestamp': data['data']['timestamp']})
+
+    @try_exc_regular
+    def run_updater(self):
+        self.wst_public.daemon = True
+        self.wst_public.start()
+
+
+if __name__ == '__main__':
+    client = GlobeClient()
+    # print(client.get_markets())
+    client.run_updater()
+    while True:
+        time.sleep(5)
+        print(client.get_all_tops())
+

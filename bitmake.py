@@ -21,7 +21,7 @@ class BitmakeClient:
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=[self._loop_public])
         self.requestLimit = 1200
         self.orderbook = {}
-        self.taker_fee = 0.0007
+        self.taker_fee = 0.0006
 
     @try_exc_regular
     def get_markets(self):
