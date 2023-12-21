@@ -6,7 +6,7 @@ from datetime import datetime
 import asyncio
 import threading
 import zlib
-# from core.wrappers import try_exc_regular, try_exc_async
+from core.wrappers import try_exc_regular, try_exc_async
 
 
 class BitmakeClient:
@@ -23,7 +23,7 @@ class BitmakeClient:
         self.orderbook = {}
         self.taker_fee = 0.0006
 
-    # @try_exc_regular
+    @try_exc_regular
     def get_markets(self):
         way = "https://api.bitmake.com/u/v1/base/symbols"
         resp = requests.get(url=way, headers=self.headers).json()
@@ -33,11 +33,11 @@ class BitmakeClient:
                 markets.update({market['baseToken']: market['symbol']})
         return markets
 
-    # @try_exc_regular
+    @try_exc_regular
     def get_all_tops(self):
         tops = {}
-        for symbol, orderbook in self.orderbook.items():
-            coin = symbol.upper().split('USD')[0]
+        for coin, symbol in self.markets.items():
+            orderbook = self.get_orderbook(symbol)
             if len(orderbook['bids']) and len(orderbook['asks']):
                 tops.update({self.EXCHANGE_NAME + '__' + coin: {
                     'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
@@ -45,12 +45,12 @@ class BitmakeClient:
                     'ts_exchange': orderbook['timestamp']}})
         return tops
 
-    # @try_exc_regular
+    @try_exc_regular
     def _run_ws_forever(self, loop):
         while True:
             loop.run_until_complete(self._run_ws_loop())
 
-    # @try_exc_async
+    @try_exc_async
     async def _run_ws_loop(self):
         async with aiohttp.ClientSession() as s:
             async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
@@ -60,12 +60,12 @@ class BitmakeClient:
                     self._loop_public.create_task(self.subscribe_orderbooks(symbol))
                 async for msg in ws:
                     data = json.loads(self.decode_gzip_data(msg.data))
-                    # print(data)
-                    if data.get('d'):
+                    if data.get('d') and data['f']:
+                        self.update_orderbook_snapshot(data)
+                    if data.get('d') and not data['f']:
                         self.update_orderbook(data)
-
     @staticmethod
-    # @try_exc_regular
+    @try_exc_regular
     def decode_gzip_data(data):
         # Decompress the Gzip data
         decompressed_data = zlib.decompress(data, 16 + zlib.MAX_WBITS)
@@ -74,11 +74,7 @@ class BitmakeClient:
         string_data = decompressed_data.decode('utf-8')
         return string_data
 
-    # @try_exc_regular
-    def get_orderbook(self, symbol):
-        return self.orderbook[symbol]
-
-    # @try_exc_async
+    @try_exc_async
     async def subscribe_orderbooks(self, symbol):
         method = {"tp": "diffMergedDepth",
                   "e": "sub",
@@ -87,38 +83,41 @@ class BitmakeClient:
         await self._connected.wait()
         await self._ws_public.send_json(method)
 
-    # @try_exc_regular
+    @try_exc_regular
     def update_orderbook(self, data):
-        for ob in data['d']:
-            print(ob)
-            if data['f']:
-                self.orderbook.update({ob['s']: {'asks': [[float(x[0]), float(x[1])] for x in ob['a']],
-                                                 'bids': [[float(x[0]), float(x[1])] for x in ob['b']],
-                                                 'timestamp': ob['t']}})
+        ob = data['d'][0]
+        symbol = ob['s']
+        for new_bid in ob['b']:
+            res = self.orderbook[symbol]['bids']
+            if res.get(new_bid[0]) and new_bid[1] == '0':
+                del res[new_bid[0]]
             else:
-                for new_bid in ob['b']:
-                    for old_bid in self.orderbook[ob['s']]['bids']:
-                        if float(new_bid[0]) == old_bid[0] and new_bid[1] != '0':
-                            ind = self.orderbook[ob['s']]['bids'].index(old_bid)
-                            self.orderbook[ob['s']]['bids'][ind] = [float(new_bid[0]), float(new_bid[1])]
-                        elif float(new_bid[0]) > old_bid[0]:
-                            ind = self.orderbook[ob['s']]['bids'].index(old_bid)
-                            self.orderbook[ob['s']]['bids'].insert(ind, [float(new_bid[0]), float(new_bid[1])])
-                        elif float(new_bid[0]) == old_bid[0] and new_bid[1] == '0':
-                            self.orderbook[ob['s']]['bids'].remove(old_bid)
-                for new_ask in ob['a']:
-                    for old_ask in self.orderbook[ob['s']]['asks']:
-                        if float(new_ask[0]) == old_ask[0] and new_ask[1] != '0':
-                            ind = self.orderbook[ob['s']]['asks'].index(old_ask)
-                            self.orderbook[ob['s']]['asks'][ind] = [float(new_ask[0]), float(new_ask[1])]
-                        elif float(new_ask[0]) < old_ask[0]:
-                            ind = self.orderbook[ob['s']]['asks'].index(old_ask)
-                            self.orderbook[ob['s']]['asks'].insert(ind, [float(new_ask[0]), float(new_ask[1])])
-                        elif float(new_ask[0]) == old_ask[0] and new_ask[1] == '0':
-                            self.orderbook[ob['s']]['asks'].remove(old_ask)
-                self.orderbook[ob['s']]['timestamp'] = ob['t']
+                self.orderbook[symbol]['bids'][new_bid[0]] = new_bid[1]
+        for new_ask in ob['a']:
+            res = self.orderbook[symbol]['asks']
+            if res.get(new_ask[0]) and new_ask[1] == '0':
+                del res[new_ask[0]]
+            else:
+                self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
+        self.orderbook[symbol]['timestamp'] = ob['t']
 
-    # @try_exc_regular
+    @try_exc_regular
+    def update_orderbook_snapshot(self, data):
+        ob = data['d'][0]
+        symbol = ob['s']
+        self.orderbook[symbol] = {'asks': {x[0]: x[1] for x in ob['a']},
+                                  'bids': {x[0]: x[1] for x in ob['b']},
+                                  'timestamp': ob['t']}
+
+    @try_exc_regular
+    def get_orderbook(self, symbol) -> dict:
+        snap = self.orderbook[symbol]
+        ob = {'timestamp': self.orderbook[symbol.upper()]['timestamp'],
+              'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks']) if snap['asks'].get(x)],
+              'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids']) if snap['bids'].get(x)][::-1]}
+        return ob
+
+    @try_exc_regular
     def run_updater(self):
         self.wst_public.daemon = True
         self.wst_public.start()
