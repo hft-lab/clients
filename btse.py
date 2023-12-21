@@ -63,10 +63,6 @@ class BtseClient:
                     elif data.get('data') and data['data']['type'] == 'delta':
                         self.update_orderbook(data)
 
-    @try_exc_regular
-    # def get_orderbook(self, symbol):
-    #     return self.orderbook[symbol]
-
     @try_exc_async
     async def subscribe_orderbooks(self):
         args = [f"update:{x}_0" for x in self.markets.values()]
@@ -75,6 +71,7 @@ class BtseClient:
         await self._connected.wait()
         await self._ws_public.send_json(method)
 
+    @try_exc_regular
     def update_orderbook(self, data):
         symbol = data['data']['symbol']
         for new_bid in data['data']['bids']:
@@ -97,6 +94,8 @@ class BtseClient:
         self.orderbook[symbol] = {'asks': {x[0]: x[1] for x in data['data']['asks']},
                                   'bids': {x[0]: x[1] for x in data['data']['bids']},
                                   'timestamp': data['data']['timestamp']}
+
+    @try_exc_regular
 
     def get_orderbook(self, symbol) -> dict:
         snap = self.orderbook[symbol]
