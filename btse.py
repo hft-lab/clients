@@ -96,7 +96,6 @@ class BtseClient:
                                   'timestamp': data['data']['timestamp']}
 
     @try_exc_regular
-
     def get_orderbook(self, symbol) -> dict:
         snap = self.orderbook[symbol]
         orderbook = {'timestamp': self.orderbook[symbol.upper()]['timestamp'],
