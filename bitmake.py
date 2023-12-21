@@ -6,7 +6,7 @@ from datetime import datetime
 import asyncio
 import threading
 import zlib
-from core.wrappers import try_exc_regular, try_exc_async
+# from core.wrappers import try_exc_regular, try_exc_async
 
 
 class BitmakeClient:
@@ -23,7 +23,7 @@ class BitmakeClient:
         self.orderbook = {}
         self.taker_fee = 0.0006
 
-    @try_exc_regular
+    # @try_exc_regular
     def get_markets(self):
         way = "https://api.bitmake.com/u/v1/base/symbols"
         resp = requests.get(url=way, headers=self.headers).json()
@@ -33,7 +33,7 @@ class BitmakeClient:
                 markets.update({market['baseToken']: market['symbol']})
         return markets
 
-    @try_exc_regular
+    # @try_exc_regular
     def get_all_tops(self):
         tops = {}
         for symbol, orderbook in self.orderbook.items():
@@ -45,12 +45,12 @@ class BitmakeClient:
                     'ts_exchange': orderbook['timestamp']}})
         return tops
 
-    @try_exc_regular
+    # @try_exc_regular
     def _run_ws_forever(self, loop):
         while True:
             loop.run_until_complete(self._run_ws_loop())
 
-    @try_exc_async
+    # @try_exc_async
     async def _run_ws_loop(self):
         async with aiohttp.ClientSession() as s:
             async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
@@ -60,11 +60,12 @@ class BitmakeClient:
                     self._loop_public.create_task(self.subscribe_orderbooks(symbol))
                 async for msg in ws:
                     data = json.loads(self.decode_gzip_data(msg.data))
+                    # print(data)
                     if data.get('d'):
                         self.update_orderbook(data)
 
     @staticmethod
-    @try_exc_regular
+    # @try_exc_regular
     def decode_gzip_data(data):
         # Decompress the Gzip data
         decompressed_data = zlib.decompress(data, 16 + zlib.MAX_WBITS)
@@ -73,11 +74,11 @@ class BitmakeClient:
         string_data = decompressed_data.decode('utf-8')
         return string_data
 
-    @try_exc_regular
+    # @try_exc_regular
     def get_orderbook(self, symbol):
         return self.orderbook[symbol]
 
-    @try_exc_async
+    # @try_exc_async
     async def subscribe_orderbooks(self, symbol):
         method = {"tp": "diffMergedDepth",
                   "e": "sub",
@@ -86,9 +87,10 @@ class BitmakeClient:
         await self._connected.wait()
         await self._ws_public.send_json(method)
 
-    @try_exc_regular
+    # @try_exc_regular
     def update_orderbook(self, data):
         for ob in data['d']:
+            print(ob)
             if data['f']:
                 self.orderbook.update({ob['s']: {'asks': [[float(x[0]), float(x[1])] for x in ob['a']],
                                                  'bids': [[float(x[0]), float(x[1])] for x in ob['b']],
@@ -99,6 +101,9 @@ class BitmakeClient:
                         if float(new_bid[0]) == old_bid[0] and new_bid[1] != '0':
                             ind = self.orderbook[ob['s']]['bids'].index(old_bid)
                             self.orderbook[ob['s']]['bids'][ind] = [float(new_bid[0]), float(new_bid[1])]
+                        elif float(new_bid[0]) > old_bid[0]:
+                            ind = self.orderbook[ob['s']]['bids'].index(old_bid)
+                            self.orderbook[ob['s']]['bids'].insert(ind, [float(new_bid[0]), float(new_bid[1])])
                         elif float(new_bid[0]) == old_bid[0] and new_bid[1] == '0':
                             self.orderbook[ob['s']]['bids'].remove(old_bid)
                 for new_ask in ob['a']:
@@ -106,19 +111,23 @@ class BitmakeClient:
                         if float(new_ask[0]) == old_ask[0] and new_ask[1] != '0':
                             ind = self.orderbook[ob['s']]['asks'].index(old_ask)
                             self.orderbook[ob['s']]['asks'][ind] = [float(new_ask[0]), float(new_ask[1])]
+                        elif float(new_ask[0]) < old_ask[0]:
+                            ind = self.orderbook[ob['s']]['asks'].index(old_ask)
+                            self.orderbook[ob['s']]['asks'].insert(ind, [float(new_ask[0]), float(new_ask[1])])
                         elif float(new_ask[0]) == old_ask[0] and new_ask[1] == '0':
                             self.orderbook[ob['s']]['asks'].remove(old_ask)
+                self.orderbook[ob['s']]['timestamp'] = ob['t']
 
-    @try_exc_regular
+    # @try_exc_regular
     def run_updater(self):
         self.wst_public.daemon = True
         self.wst_public.start()
 
 
-# if __name__ == '__main__':
-#     client = BitmakeClient()
-#     # print(client.get_markets())
-#     client.run_updater()
-#     while True:
-#         time.sleep(5)
-#         print(client.get_all_tops())
+if __name__ == '__main__':
+    client = BitmakeClient()
+    # print(client.get_markets())
+    client.run_updater()
+    while True:
+        time.sleep(5)
+        print(client.get_all_tops())
