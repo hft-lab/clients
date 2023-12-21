@@ -9,6 +9,7 @@ from clients.bibox import BiboxClient
 from clients.bitmake import BitmakeClient
 from clients.globederivative import GlobeClient
 from clients.bit import BitClient
+from clients.btse import BtseClient
 
 ALL_CLIENTS = {
     'BITMEX': BitmexClient,
@@ -21,5 +22,6 @@ ALL_CLIENTS = {
     'BIBOX': BiboxClient,
     'BITMAKE': BitmakeClient,
     'GLOBE': GlobeClient,
-    'BIT': BitClient
+    'BIT': BitClient,
+    'BTSE': BtseClient
 }
