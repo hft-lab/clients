@@ -10,7 +10,7 @@ import hmac
 import hashlib
 
 
-class WhiteBit:
+class WhiteBitClient:
     PUBLIC_WS_ENDPOINT = 'wss://api.whitebit.com/ws'
     BASE_URL = 'https://globe.exchange'
     EXCHANGE_NAME = 'WHITEBIT'
@@ -82,7 +82,7 @@ class WhiteBit:
                 tops.update({self.EXCHANGE_NAME + '__' + coin: {
                     'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
                     'bid_vol': orderbook['bids'][0][1], 'ask_vol': orderbook['asks'][0][1],
-                    'ts_exchange': orderbook['timestamp']}})
+                    'ts_exchange': orderbook['timestamp']*1000}})
         return tops
 
     # @try_exc_regular
@@ -130,7 +130,7 @@ class WhiteBit:
 
 
 if __name__ == '__main__':
-    client = WhiteBit()
+    client = WhiteBitClient()
     # print(client.get_markets())
     # print(len(client.get_markets()))
     client.run_updater()
