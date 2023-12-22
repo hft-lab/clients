@@ -60,12 +60,15 @@ class BtseClient:
                 await self._loop_public.create_task(self.subscribe_orderbooks())
                 async for msg in ws:
                     data = json.loads(msg.data)
-                    if data['data']['symbol'] == self.now_getting:
-                        while self.getting_ob.is_set():
-                            time.sleep(0.00001)
                     if data.get('data') and data['data']['type'] == 'snapshot':
+                        if data['data']['symbol'] == self.now_getting:
+                            while self.getting_ob.is_set():
+                                time.sleep(0.00001)
                         self.update_orderbook_snapshot(data)
                     elif data.get('data') and data['data']['type'] == 'delta':
+                        if data['data']['symbol'] == self.now_getting:
+                            while self.getting_ob.is_set():
+                                time.sleep(0.00001)
                         self.update_orderbook(data)
 
     @try_exc_async
