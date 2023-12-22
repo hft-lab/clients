@@ -10,6 +10,7 @@ from clients.bitmake import BitmakeClient
 from clients.globederivative import GlobeClient
 from clients.bit import BitClient
 from clients.btse import BtseClient
+from clients.whitebit import WhiteBit
 
 ALL_CLIENTS = {
     'BITMEX': BitmexClient,
@@ -23,5 +24,6 @@ ALL_CLIENTS = {
     'BITMAKE': BitmakeClient,
     'GLOBE': GlobeClient,
     'BIT': BitClient,
-    'BTSE': BtseClient
+    'BTSE': BtseClient,
+    'WHITEBIT': WhiteBit
 }
