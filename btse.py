@@ -17,6 +17,8 @@ class BtseClient:
         self.markets = self.get_markets()
         self._loop_public = asyncio.new_event_loop()
         self._connected = asyncio.Event()
+        self.getting_ob = asyncio.Event()
+        self.now_getting = ''
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=[self._loop_public])
         self.requestLimit = 1200
         self.orderbook = {}
@@ -55,9 +57,12 @@ class BtseClient:
             async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
                 self._connected.set()
                 self._ws_public = ws
-                self._loop_public.create_task(self.subscribe_orderbooks())
+                await self._loop_public.create_task(self.subscribe_orderbooks())
                 async for msg in ws:
                     data = json.loads(msg.data)
+                    if data['data']['symbol'] == self.now_getting:
+                        while self.getting_ob.is_set():
+                            time.sleep(0.00001)
                     if data.get('data') and data['data']['type'] == 'snapshot':
                         self.update_orderbook_snapshot(data)
                     elif data.get('data') and data['data']['type'] == 'delta':
@@ -99,10 +104,14 @@ class BtseClient:
     def get_orderbook(self, symbol) -> dict:
         if not self.orderbook.get(symbol):
             return {}
+        self.getting_ob.set()
+        self.now_getting = symbol
         snap = self.orderbook[symbol]
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
               'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks']) if snap['asks'].get(x)],
               'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids']) if snap['bids'].get(x)][::-1]}
+        self.now_getting = ''
+        self.getting_ob.clear()
         return ob
 
     @try_exc_regular
