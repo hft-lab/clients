@@ -6,7 +6,9 @@ from datetime import datetime
 import asyncio
 import threading
 import zlib
-from core.wrappers import try_exc_regular, try_exc_async
+
+
+# from core.wrappers import try_exc_regular, try_exc_async
 
 
 class BiboxClient:
@@ -24,7 +26,7 @@ class BiboxClient:
         self.orderbook = {}
         self.taker_fee = 0.001
 
-    @try_exc_regular
+    # @try_exc_regular
     def get_markets(self):
         way = "https://api.bibox.com/api/v4/cbu/marketdata/pairs"
         resp = requests.get(url=way, headers=self.headers).json()
@@ -33,7 +35,7 @@ class BiboxClient:
             markets.update({market['base']: market['symbol']})
         return markets
 
-    @try_exc_regular
+    # @try_exc_regular
     def get_all_tops(self):
         tops = {}
         for symbol, orderbook in self.orderbook.items():
@@ -45,12 +47,12 @@ class BiboxClient:
                     'ts_exchange': orderbook['timestamp']}})
         return tops
 
-    @try_exc_regular
+    # @try_exc_regular
     def _run_ws_forever(self, loop):
         while True:
             loop.run_until_complete(self._run_ws_loop())
 
-    @try_exc_async
+    # @try_exc_async
     async def _run_ws_loop(self):
         async with aiohttp.ClientSession() as s:
             async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
@@ -62,7 +64,6 @@ class BiboxClient:
                     self.update_orderbook(self.decode_data(msg.data))
 
     @staticmethod
-    @try_exc_regular
     def decode_data(message):
         if message[0] == '\x01' or message[0] == 1:
             message = message[1:]
@@ -75,17 +76,17 @@ class BiboxClient:
             jmsgs = json.loads(message)
         return jmsgs
 
-    @try_exc_regular
+    # @try_exc_regular
     def get_orderbook(self, symbol):
         return self.orderbook[symbol]
 
-    @try_exc_async
+    # @try_exc_async
     async def subscribe_orderbooks(self, orderbook):
         method = {"sub": orderbook}
         await self._connected.wait()
         await self._ws_public.send_json(method)
 
-    @try_exc_regular
+    # @try_exc_regular
     def update_orderbook(self, data):
         if not data.get('d'):
             return
@@ -116,7 +117,7 @@ class BiboxClient:
                         self.orderbook[market]['bids'].remove(to_delete)
             self.orderbook[market]['timestamp'] = datetime.utcnow().timestamp()
 
-    @try_exc_regular
+    # @try_exc_regular
     def run_updater(self):
         self.wst_public.daemon = True
         self.wst_public.start()

@@ -97,6 +97,8 @@ class BtseClient:
 
     @try_exc_regular
     def get_orderbook(self, symbol) -> dict:
+        if not self.orderbook.get(symbol):
+            return {}
         snap = self.orderbook[symbol]
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
               'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks']) if snap['asks'].get(x)],
