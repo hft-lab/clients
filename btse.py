@@ -37,7 +37,7 @@ class BtseClient:
         tops = {}
         for coin, symbol in self.markets.items():
             orderbook = self.get_orderbook(symbol)
-            if len(orderbook['bids']) and len(orderbook['asks']):
+            if orderbook and orderbook['bids'] and orderbook['asks']:
                 tops.update({self.EXCHANGE_NAME + '__' + coin: {
                     'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
                     'bid_vol': orderbook['bids'][0][1], 'ask_vol': orderbook['asks'][0][1],
@@ -98,10 +98,10 @@ class BtseClient:
     @try_exc_regular
     def get_orderbook(self, symbol) -> dict:
         snap = self.orderbook[symbol]
-        orderbook = {'timestamp': self.orderbook[symbol.upper()]['timestamp'],
-                     'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks']) if snap['asks'].get(x)],
-                     'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids']) if snap['bids'].get(x)][::-1]}
-        return orderbook
+        ob = {'timestamp': self.orderbook[symbol]['timestamp'],
+              'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks']) if snap['asks'].get(x)],
+              'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids']) if snap['bids'].get(x)][::-1]}
+        return ob
 
     @try_exc_regular
     def run_updater(self):
