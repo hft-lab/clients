@@ -20,6 +20,8 @@ class BitmakeClient:
         self._connected = asyncio.Event()
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=[self._loop_public])
         self.requestLimit = 1200
+        self.getting_ob = asyncio.Event()
+        self.now_getting = ''
         self.orderbook = {}
         self.taker_fee = 0.0006
 
@@ -61,8 +63,14 @@ class BitmakeClient:
                 async for msg in ws:
                     data = json.loads(self.decode_gzip_data(msg.data))
                     if data.get('d') and data['f']:
+                        if data['d'][0]['s'] == self.now_getting:
+                            while self.getting_ob.is_set():
+                                time.sleep(0.00001)
                         self.update_orderbook_snapshot(data)
                     if data.get('d') and not data['f']:
+                        if data['d'][0]['s'] == self.now_getting:
+                            while self.getting_ob.is_set():
+                                time.sleep(0.00001)
                         self.update_orderbook(data)
     @staticmethod
     @try_exc_regular
@@ -111,10 +119,16 @@ class BitmakeClient:
 
     @try_exc_regular
     def get_orderbook(self, symbol) -> dict:
+        if not self.orderbook.get(symbol):
+            return {}
+        self.getting_ob.set()
+        self.now_getting = symbol
         snap = self.orderbook[symbol]
-        ob = {'timestamp': self.orderbook[symbol.upper()]['timestamp'],
+        ob = {'timestamp': self.orderbook[symbol]['timestamp'],
               'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks']) if snap['asks'].get(x)],
               'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids']) if snap['bids'].get(x)][::-1]}
+        self.now_getting = ''
+        self.getting_ob.clear()
         return ob
 
     @try_exc_regular

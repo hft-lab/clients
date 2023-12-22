@@ -6,13 +6,19 @@ from datetime import datetime
 import asyncio
 import threading
 from core.wrappers import try_exc_regular, try_exc_async
+import hmac
+import hashlib
 
 
 class GlobeClient:
     PUBLIC_WS_ENDPOINT = 'wss://globe.exchange/api/v1/ws'
+    BASE_URL = 'https://globe.exchange'
     EXCHANGE_NAME = 'GLOBE'
 
     def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20):
+        if keys:
+            self.api_key = keys['API_KEY']
+            self.api_secret = keys['API_SECRET']
         self.headers = {'Content-Type': 'application/json'}
         self.markets = self.get_markets()
         self._loop_public = asyncio.new_event_loop()
@@ -56,7 +62,7 @@ class GlobeClient:
                 self._connected.set()
                 self._ws_public = ws
                 for symbol in self.markets.values():
-                    self._loop_public.create_task(self.subscribe_orderbooks(symbol))
+                    await self._loop_public.create_task(self.subscribe_orderbooks(symbol))
                 async for msg in ws:
                     self.update_orderbook(json.loads(msg.data))
 
@@ -82,6 +88,10 @@ class GlobeClient:
         self.orderbook[market].update({'asks': [[x['price'], x['volume']] for x in data['data']['asks']],
                                        'bids': [[x['price'], x['volume']] for x in data['data']['bids']],
                                        'timestamp': data['data']['timestamp']})
+
+    @try_exc_regular
+    def __generate_signature(self, data):
+        return hmac.new(self.api_secret.encode(), data.encode(), hashlib.sha256).hexdigest()
 
     @try_exc_regular
     def run_updater(self):
