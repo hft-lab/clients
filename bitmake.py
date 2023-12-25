@@ -59,7 +59,7 @@ class BitmakeClient:
                 self._connected.set()
                 self._ws_public = ws
                 for symbol in self.markets.values():
-                    self._loop_public.create_task(self.subscribe_orderbooks(symbol))
+                    await self._loop_public.create_task(self.subscribe_orderbooks(symbol))
                 async for msg in ws:
                     data = json.loads(self.decode_gzip_data(msg.data))
                     if data.get('d') and data['f']:

@@ -185,17 +185,17 @@ class OkxClient(BaseClient):
                 # try:
                 if type == 'private':
                     self._ws_private = ws
-                    self._loop_private.create_task(self._login(ws, self._connected))
+                    await self._loop_private.create_task(self._login(ws, self._connected))
                     async for msg in ws:
                         if json.loads(msg.data).get('event'):
                             break
-                    self._loop_private.create_task(self._subscribe_account())
-                    self._loop_private.create_task(self._subscribe_positions())
-                    self._loop_private.create_task(self._subscribe_orders())
+                    await self._loop_private.create_task(self._subscribe_account())
+                    await self._loop_private.create_task(self._subscribe_positions())
+                    await self._loop_private.create_task(self._subscribe_orders())
                 else:
                     self._ws_public = ws
-                    self._loop_public.create_task(self._login(ws, self._connected))
-                    self._loop_public.create_task(self._subscribe_orderbooks())
+                    await self._loop_public.create_task(self._login(ws, self._connected))
+                    await self._loop_public.create_task(self._subscribe_orderbooks())
                 async for msg in ws:
                     try:
                         args = self.queue.get_nowait()
