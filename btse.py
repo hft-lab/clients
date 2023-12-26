@@ -360,6 +360,7 @@ class BtseClient(BaseClient):
         #      'feeCurrency': 'USDT', 'base': 'ETHPFC', 'quote': 'USD', 'maker': False, 'timestamp': 1703580743141,
         #      'tradeId': 'd6201931-446d-4a1c-ab83-e3ebdcf2f077'}]}
 
+    @try_exc_regular
     def update_positions(self, data):
         for pos in data['data']:
             market = pos['marketName'].split('-')[0]
@@ -413,6 +414,7 @@ class BtseClient(BaseClient):
         await self._connected.wait()
         await self._ws_public.send_json(method)
 
+    @try_exc_regular
     def get_wss_auth(self):
         url = "/ws/futures"
         headers = self.get_private_headers(url)
@@ -422,6 +424,7 @@ class BtseClient(BaseClient):
                          headers["request-sign"]]}
         return data
 
+    @try_exc_async
     async def subscribe_privates(self):
         method_pos = {"op": "subscribe",
                       "args": ["allPosition"]}
@@ -483,6 +486,7 @@ class BtseClient(BaseClient):
         self.getting_ob.clear()
         return ob
 
+    @try_exc_async
     async def get_orderbook_by_symbol(self, symbol):
         async with aiohttp.ClientSession() as session:
             path = f'/api/v2.1/orderbook'
