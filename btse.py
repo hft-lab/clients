@@ -32,6 +32,8 @@ class BtseClient(BaseClient):
 
     def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20):
         super().__init__()
+        self.max_pos_part = max_pos_part
+        self.leverage = leverage
         if keys:
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
@@ -41,6 +43,8 @@ class BtseClient(BaseClient):
         self.instruments = {}
         self.markets = self.get_markets()
         self.balance = {}
+        self.get_real_balance()
+        self.get_position()
         self.error_info = None
         self._loop_public = asyncio.new_event_loop()
         self._loop_private = asyncio.new_event_loop()
