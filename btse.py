@@ -7,24 +7,37 @@ import asyncio
 import threading
 import hmac
 import hashlib
-import base64
 
 from clients.core.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
 from core.wrappers import try_exc_regular, try_exc_async
+from clients.core.base_client import BaseClient
 
 
-class BtseClient:
+class BtseClient(BaseClient):
     PUBLIC_WS_ENDPOINT = 'wss://ws.btse.com/ws/oss/futures'
     PRIVATE_WS_ENDPOINT = 'wss://ws.btse.com/ws/futures'
     BASE_URL = f"https://api.btse.com/futures"
     EXCHANGE_NAME = 'BTSE'
+    order_statuses = {2: 'Order Inserted',
+                      3: 'Order Transacted',
+                      4: 'Order Fully Transacted',
+                      5: 'Order Partially Transacted',
+                      6: 'Order Cancelled',
+                      7: 'Order Refunded',
+                      9: 'Trigger Inserted',
+                      10: 'Trigger Activated',
+                      15: 'Order Rejected',
+                      16: 'Order Not Found',
+                      17: 'Request failed'}
 
     def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20):
+        super().__init__()
         if keys:
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
         self.headers = {"Accept": "application/json;charset=UTF-8",
                         "Content-Type": "application/json"}
+        self.positions = {}
         self.instruments = {}
         self.markets = self.get_markets()
         self.balance = {}
@@ -40,7 +53,10 @@ class BtseClient:
         self.amount = 0
         self.requestLimit = 1200
         self.orderbook = {}
+        self.orders = {}
+        self.last_price = {}
         self.taker_fee = 0.0005
+        self.orig_sizes = {}
 
     @staticmethod
     @try_exc_regular
@@ -64,13 +80,13 @@ class BtseClient:
                 price_precision = self.get_price_precision(market['minPriceIncrement'])
                 step_size = market['minSizeIncrement'] * market['contractSize']
                 quantity_precision = len(str(step_size).split('.')[1]) if '.' in str(step_size) else 1
+                min_size = market['minOrderSize'] * market['contractSize']
                 self.instruments.update({market['symbol']: {'contract_value': market['contractSize'],
                                                             'tick_size': market['minPriceIncrement'],
                                                             'step_size': step_size,
                                                             'quantity_precision': quantity_precision,
                                                             'price_precision': price_precision,
-                                                            'minsize': market['minOrderSize'] * market[
-                                                                'contractSize']}})
+                                                            'min_size': min_size}})
         return markets
 
     @try_exc_regular
@@ -127,32 +143,32 @@ class BtseClient:
         data = {"timeout": 10}
         headers = self.get_private_headers(path, data)
         response = requests.post(self.BASE_URL + path, headers=headers, json=data)
-        return response
-
-    @try_exc_regular
-    def get_order_by_id(self, order_id):
-        url = f"https://api.btse.com/futures/api/v2.1/order/{order_id}"
-        response = requests.get(url, headers=self.headers)
-        return response.json()
+        return response.text
 
     @try_exc_regular
     def get_position(self):
-        url = "https://api.btse.com/futures/api/v2.1/positions"
-        response = requests.get(url, headers=self.headers)
-        return response.json()
+        path = "/api/v2.1/user/positions"
+        headers = self.get_private_headers(path)
+        response = requests.get(self.BASE_URL + path, headers=headers)
+        if '200' in str(response):
+            for pos in response.json():
+                contract_value = self.instruments[pos['symbol']]['contract_value']
+                if pos['side'] == 'BUY':
+                    size_usd = pos['orderValue']
+                    size_coin = pos['size'] * contract_value
+                else:
+                    size_usd = -pos['orderValue']
+                    size_coin = -pos['size'] * contract_value
+                self.positions.update({pos['symbol']: {'timestamp': int(datetime.utcnow().timestamp()),
+                                                       'entry_price': pos['entryPrice'],
+                                                       'amount': size_coin,
+                                                       'amount_usd': size_usd}})
+        else:
+            return response.text
 
     @try_exc_regular
     def get_order_response_status(self, response):
-        statuses = {2: 'Order Inserted',
-                    3: 'Order Transacted',
-                    4: 'Order Fully Transacted',
-                    5: 'Order Partially Transacted',
-                    6: 'Order Cancelled',
-                    7: 'Order Refunded',
-                    15: 'Order Rejected',
-                    16: 'Order Not Found',
-                    17: 'Request failed'}
-        api_resp = statuses[response[0]['status']]
+        api_resp = self.order_statuses.get(response[0]['status'], None)
         timestamp = 0000000000000
         if api_resp in ['Order Refunded', 'Order Rejected', 'Order Not Found', 'Request failed']:
             status = ResponseStatus.ERROR
@@ -165,17 +181,31 @@ class BtseClient:
         return status, timestamp
 
     @try_exc_regular
+    def fit_sizes(self, price, symbol):
+        # NECESSARY
+        instr = self.instruments[symbol]
+        tick_size = instr['tick_size']
+        quantity_precision = instr['quantity_precision']
+        price_precision = instr['price_precision']
+        self.amount = round(self.amount, quantity_precision)
+        rounded_price = round(price / tick_size) * tick_size
+        self.price = round(rounded_price, price_precision)
+
+    @try_exc_regular
     async def create_order(self, symbol, side, session=None, expire=10000, client_id=None, expiration=None):
         path = '/api/v2.1/order'
+        contract_value = self.instruments[symbol]['contract_value']
         body = {"symbol": symbol,
                 "side": side.upper(),
                 "price": self.price,
                 "type": "LIMIT",
-                'size': self.amount}
+                'size': int(self.amount / contract_value)}
         headers = self.get_private_headers(path, body)
         async with session.post(url=self.BASE_URL + path, headers=headers, json=body) as resp:
             res = await resp.json()
+            print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {res}")
             status, timestamp = self.get_order_response_status(res)
+            self.orig_sizes.update({res[0]['orderID']: res[0]['originalSize']})
             return {'exchange_name': self.EXCHANGE_NAME,
                     'exchange_order_id': res[0]['orderID'],
                     'timestamp': timestamp,
@@ -188,6 +218,74 @@ class BtseClient:
             #             'remainingSize': 1, 'orderDetailType': None, 'positionMode': 'ONE_WAY',
             #             'positionDirection': None, 'positionId': 'BTCPFC-USD', 'time_in_force': 'GTC'}]
 
+    @try_exc_regular
+    def get_status_of_order(self, stat_num):
+        if api_status := self.order_statuses.get(stat_num):
+            if api_status == 'Order Fully Transacted':
+                return OrderStatus.FULLY_EXECUTED
+            elif api_status in ['Order Transacted', 'Order Partially Transacted']:
+                return OrderStatus.PARTIALLY_EXECUTED
+            elif api_status == 'Order Inserted':
+                return OrderStatus.PROCESSING
+            else:
+                return OrderStatus.NOT_EXECUTED
+
+    @try_exc_regular
+    def get_order_by_id(self, order_id=None, cl_order_id=None):
+        if order_id is None and cl_order_id is None:
+            raise ValueError("Either orderID or clOrderID must be provided")
+        params = {}
+        path = "/api/v2.1/order"
+        if order_id:
+            params['orderID'] = order_id
+            final_path = f"/api/v2.1/order?orderID={order_id}"
+        else:
+            params['clOrderID'] = cl_order_id
+            final_path = f"/api/v2.1/order?clOrderID={cl_order_id}"
+        headers = self.get_private_headers(path, {})  # Assuming authentication is required
+        response = requests.get(url=self.BASE_URL + final_path, headers=headers)
+        order_data = response.json()
+        symbol = order_data.get('symbol').replace('-PERP', 'PFC')
+        c_v = self.instruments[symbol]['contract_value']
+        return {'exchange_order_id': order_data.get('orderID'),
+                'exchange': self.EXCHANGE_NAME,
+                'status': self.get_status_of_order(order_data.get('status', 0)),
+                'factual_price': order_data.get('avgFilledPrice'),
+                'factual_amount_coin': order_data.get('filledSize', 0) * c_v,
+                'factual_amount_usd': order_data.get('filledSize', 0) * c_v * order_data.get('avgFilledPrice', 0),
+                'datetime_update': datetime.utcnow(),
+                'ts_update': int(datetime.utcnow().timestamp() * 1000)}
+        # get_order_example = {'orderType': 76, 'price': 42424.8, 'size': 1, 'side': 'BUY', 'filledSize': 1,
+        #                      'orderValue': 424.248, 'pegPriceMin': 0, 'pegPriceMax': 0, 'pegPriceDeviation': 1,
+        #                      'timestamp': 1703584934116, 'orderID': 'fab9af76-8c8f-4fd3-b006-d7da8557d462',
+        #                      'stealth': 1, 'triggerOrder': False, 'triggered': False, 'triggerPrice': 0,
+        #                      'triggerOriginalPrice': 0, 'triggerOrderType': 0, 'triggerTrailingStopDeviation': 0,
+        #                      'triggerStopPrice': 0, 'symbol': 'ETH-PERP', 'trailValue': 0, 'remainingSize': 0,
+        #                      'clOrderID': '', 'reduceOnly': False, 'status': 4, 'triggerUseLastPrice': False,
+        #                      'avgFilledPrice': 2224.66, 'timeInForce': 'GTC', 'closeOrder': False}
+
+    @try_exc_regular
+    def get_positions(self):
+        # NECESSARY
+        return self.positions
+
+    @try_exc_regular
+    def get_orders(self):
+        # NECESSARY
+        return self.orders
+
+    @try_exc_regular
+    def get_balance(self):
+        return self.balance['total']
+
+    @try_exc_regular
+    def get_available_balance(self):
+        return super().get_available_balance(
+            leverage=self.leverage,
+            max_pos_part=self.max_pos_part,
+            positions=self.positions,
+            balance=self.balance)
+
     @try_exc_async
     async def _run_ws_loop(self, type):
         async with aiohttp.ClientSession() as s:
@@ -198,7 +296,6 @@ class BtseClient:
             async with s.ws_connect(endpoint) as ws:
                 print(f"BTSE: connected {type}")
                 self._connected.set()
-                # try:
                 if type == 'private':
                     self._ws_private = ws
                     await self._loop_private.create_task(self.subscribe_privates())
@@ -209,17 +306,104 @@ class BtseClient:
                     data = json.loads(msg.data)
                     if type == 'public':
                         if data.get('data') and data['data']['type'] == 'snapshot':
-                            if data['data']['symbol'] == self.now_getting:
-                                while self.getting_ob.is_set():
-                                    time.sleep(0.00001)
                             self.update_orderbook_snapshot(data)
                         elif data.get('data') and data['data']['type'] == 'delta':
-                            if data['data']['symbol'] == self.now_getting:
-                                while self.getting_ob.is_set():
-                                    time.sleep(0.00001)
                             self.update_orderbook(data)
                     elif type == 'private':
-                        print(data)
+                        self.update_private_data(data)
+
+    @try_exc_regular
+    def update_private_data(self, data):
+        if data.get('topic') == 'allPosition':
+            self.update_positions(data)
+        elif data.get('topic') == 'fills':
+            self.update_fills(data)
+
+    @try_exc_regular
+    def get_order_status_by_fill(self, order_id, size):
+        orig_size = self.orig_sizes[order_id]
+        if orig_size == size:
+            return OrderStatus.FULLY_EXECUTED
+        else:
+            return OrderStatus.PARTIALLY_EXECUTED
+
+    @try_exc_regular
+    def update_fills(self, data):
+        for fill in data['data']:
+            self.last_price.update({fill['side'].lower(): float(fill['price'])})
+            order_id = fill['orderId']
+            size = float(fill['size']) * self.instruments[fill['symbol']]['contract_value']
+            size_usd = size * float(fill['price'])
+            if order := self.orders.get(order_id):
+                avg_price = (order['factual_amount_usd'] + size_usd) / (size + order['factual_amount_coin'])
+                new_size = order['factual_amount_coin'] + size
+                result_exist = {'status': self.get_order_status_by_fill(order_id, new_size),
+                                'factual_price': avg_price,
+                                'factual_amount_coin': new_size,
+                                'factual_amount_usd': order['factual_amount_usd'] + size_usd,
+                                'datetime_update': datetime.utcnow(),
+                                'ts_update': fill['timestamp']}
+                self.orders[order_id].update(result_exist)
+                continue
+            result_new = {'exchange_order_id': order_id,
+                          'exchange': self.EXCHANGE_NAME,
+                          'status': self.get_order_status_by_fill(order_id, size),
+                          'factual_price': float(fill['price']),
+                          'factual_amount_coin': size,
+                          'factual_amount_usd': size_usd,
+                          'datetime_update': datetime.utcnow(),
+                          'ts_update': fill['timestamp']}
+            self.orders.update({order_id: result_new})
+        # fills_example = {'topic': 'fills', 'id': '', 'data': [
+        #     {'orderId': '04e64f39-b715-44e5-a2b8-e60b3379c2f3', 'serialId': 4260246, 'clOrderId': '', 'type': '76',
+        #      'symbol': 'ETHPFC', 'side': 'BUY', 'price': '2238.25', 'size': '1.0', 'feeAmount': '0.01119125',
+        #      'feeCurrency': 'USDT', 'base': 'ETHPFC', 'quote': 'USD', 'maker': False, 'timestamp': 1703580743141,
+        #      'tradeId': 'd6201931-446d-4a1c-ab83-e3ebdcf2f077'}]}
+
+    def update_positions(self, data):
+        for pos in data['data']:
+            market = pos['marketName'].split('-')[0]
+            c_v = self.instruments[market]['contract_value']
+            self.positions.update({market: {'timestamp': int(datetime.utcnow().timestamp()),
+                                            'entry_price': pos['entryPrice'],
+                                            'amount': pos['totalContracts'] * c_v,
+                                            'amount_usd': pos['totalValue']}})
+        # positions_example = {'topic': 'allPosition', 'id': '', 'data': [
+        #     {'id': 2343355483091732596, 'requestId': 0, 'username': 'nikicha', 'userCurrency': None,
+        #      'marketName': 'BTCPFC-USD', 'orderType': 90, 'orderMode': 66, 'status': 65, 'originalAmount': 0.001,
+        #      'maxPriceHeld': 0, 'pegPriceMin': 0, 'stealth': 1, 'baseCurrency': None, 'quoteCurrency': None,
+        #      'quoteCurrencyFiat': False, 'parents': None, 'makerFeesRatio': None, 'takerFeesRatio': [0.0005],
+        #      'ip': None, 'systemId': None, 'orderID': None, 'vendorName': None, 'botID': None, 'poolID': 0,
+        #      'maxStealthDisplayAmount': 0, 'sellexchangeRate': 0, 'tag': None, 'triggerPrice': 0, 'closeOrder': False,
+        #      'dbBaseBalHeld': 0, 'dbQuoteBalHeld': -0.567521753, 'isFuture': True, 'liquidationInProgress': False,
+        #      'marginType': 91, 'entryPrice': 42758.3, 'liquidationPrice': 23153.9536897814,
+        #      'markedPrice': 42600.160009819, 'marginHeld': 0, 'unrealizedProfitLoss': -0.15813999,
+        #      'totalMaintenanceMargin': 0.243960466, 'totalContracts': 1, 'marginChargedLongOpen': 0,
+        #      'marginChargedShortOpen': 0, 'unchargedMarginLongOpen': 0, 'unchargedMarginShortOpen': 0,
+        #      'isolatedCurrency': None, 'isolatedLeverage': 0, 'totalFees': 0, 'totalValue': 42.60016001,
+        #      'adlScoreBucket': 1, 'adlScorePercentile': 0.3870967742, 'booleanVar1': False, 'char1': '\x00',
+        #      'orderTypeName': 'TYPE_FUTURES_POSITION', 'orderModeName': 'MODE_BUY',
+        #      'marginTypeName': 'FUTURES_MARGIN_CROSS', 'currentLeverage': 4.4022854879, 'averageFillPrice': 0,
+        #      'filledSize': 0, 'takeProfitOrder': None, 'stopLossOrder': None, 'positionId': 'BTCPFC-USD',
+        #      'positionMode': 'ONE_WAY', 'positionDirection': None, 'future': True, 'settleWithNonUSDAsset': 'USDT'},
+        #
+        #     {'id': 5915202914346471829, 'requestId': 0, 'username': 'nikicha', 'userCurrency': None,
+        #      'marketName': 'ETHPFC-USD', 'orderType': 90, 'orderMode': 66, 'status': 65, 'originalAmount': 0.01,
+        #      'maxPriceHeld': 0, 'pegPriceMin': 0, 'stealth': 1, 'baseCurrency': None, 'quoteCurrency': None,
+        #      'quoteCurrencyFiat': False, 'parents': None, 'makerFeesRatio': None, 'takerFeesRatio': [0.0005],
+        #      'ip': None, 'systemId': None, 'orderID': None, 'vendorName': None, 'botID': None, 'poolID': 0,
+        #      'maxStealthDisplayAmount': 0, 'sellexchangeRate': 0, 'tag': None, 'triggerPrice': 0, 'closeOrder': False,
+        #      'dbBaseBalHeld': 0, 'dbQuoteBalHeld': -0.567521753, 'isFuture': True, 'liquidationInProgress': False,
+        #      'marginType': 91, 'entryPrice': 2231.84, 'liquidationPrice': 1264.1365670193,
+        #      'markedPrice': 2236.501887389, 'marginHeld': 0, 'unrealizedProfitLoss': 0.09323775,
+        #      'totalMaintenanceMargin': 0.258659047, 'totalContracts': 2, 'marginChargedLongOpen': 0,
+        #      'marginChargedShortOpen': 0, 'unchargedMarginLongOpen': 0, 'unchargedMarginShortOpen': 0,
+        #      'isolatedCurrency': None, 'isolatedLeverage': 0, 'totalFees': 0, 'totalValue': 44.730037748,
+        #      'adlScoreBucket': 2, 'adlScorePercentile': 0.7073170732, 'booleanVar1': False, 'char1': '\x00',
+        #      'orderTypeName': 'TYPE_FUTURES_POSITION', 'orderModeName': 'MODE_BUY',
+        #      'marginTypeName': 'FUTURES_MARGIN_CROSS', 'currentLeverage': 4.4022854879, 'averageFillPrice': 0,
+        #      'filledSize': 0, 'takeProfitOrder': None, 'stopLossOrder': None, 'positionId': 'ETHPFC-USD',
+        #      'positionMode': 'ONE_WAY', 'positionDirection': None, 'future': True, 'settleWithNonUSDAsset': 'USDT'}]}
 
     @try_exc_async
     async def subscribe_orderbooks(self):
@@ -251,6 +435,9 @@ class BtseClient:
 
     @try_exc_regular
     def update_orderbook(self, data):
+        if data['data']['symbol'] == self.now_getting:
+            while self.getting_ob.is_set():
+                time.sleep(0.00001)
         symbol = data['data']['symbol']
         for new_bid in data['data']['bids']:
             res = self.orderbook[symbol]['bids']
@@ -268,10 +455,17 @@ class BtseClient:
 
     @try_exc_regular
     def update_orderbook_snapshot(self, data):
+        if data['data']['symbol'] == self.now_getting:
+            while self.getting_ob.is_set():
+                time.sleep(0.00001)
         symbol = data['data']['symbol']
         self.orderbook[symbol] = {'asks': {x[0]: x[1] for x in data['data']['asks']},
                                   'bids': {x[0]: x[1] for x in data['data']['bids']},
                                   'timestamp': data['data']['timestamp']}
+
+    @try_exc_regular
+    def get_last_price(self, side: str) -> float:
+        return self.last_price[side]
 
     @try_exc_regular
     def get_orderbook(self, symbol) -> dict:
@@ -289,12 +483,13 @@ class BtseClient:
         self.getting_ob.clear()
         return ob
 
-    async def get_orderbook_by_symbol(self, symbol, group=None, limit_bids=10, limit_asks=10):
+    async def get_orderbook_by_symbol(self, symbol):
         async with aiohttp.ClientSession() as session:
             path = f'/api/v2.1/orderbook'
-            params = {'symbol': symbol, 'group': group, 'limit_bids': limit_bids, 'limit_asks': limit_asks}
+            params = {'symbol': symbol, 'depth': 10}
+            post_string = '?' + "&".join([f"{key}={params[key]}" for key in sorted(params)])
             # headers = self.get_private_headers(path, {})  # Assuming authentication is required
-            async with session.get(url=self.BASE_URL + path, headers=self.headers, json=params) as resp:
+            async with session.get(url=self.BASE_URL + path + post_string, headers=self.headers, data=params) as resp:
                 ob = await resp.json()
                 contract_value = self.instruments[symbol]['contract_value']
                 if 'buyQuote' in ob and 'sellQuote' in ob:
@@ -325,31 +520,25 @@ if __name__ == '__main__':
 
     async def test_order():
         async with aiohttp.ClientSession() as session:
-            ob = await client.get_orderbook_by_symbol('BTCPFC')
+            ob = await client.get_orderbook_by_symbol('ETHPFC')
             price = ob['bids'][5][0]
-            client.amount = 1
+            client.amount = client.instruments['ETHPFC']['min_size']
             client.price = price
-            data = await client.create_order('BTCPFC', 'buy', session)
-            print(data)
-            data_cancel = client.cancel_all_orders()
-            print(data_cancel)
+            data = await client.create_order('ETHPFC', 'buy', session)
+            print('CREATE_ORDER RESPONSE:', data)
+            print('GET ORDER_BY_ID RESPONSE:', client.get_order_by_id(data['exchange_order_id']))
+            time.sleep(1)
+            client.cancel_all_orders()
+            # print('CANCEL_ALL_ORDERS RESPONSE:', data_cancel)
 
 
     client.run_updater()
-    client.get_real_balance()
-    print(client.balance)
-
-    # client.futures_place_limit_order({"symbol": 'BTCPFC',
-    #                                   "side": 'buy'.upper(),
-    #                                   "price": client.price,
-    #                                   "type": "LIMIT",
-    #                                   'size': client.amount})
-    # print(client.create_order('BTCPFC', 'buy'))
-    # print(client.cancel_all_orders())
-    time.sleep(3)
+    time.sleep(1)
+    # client.get_real_balance()
+    print(client.get_positions())
+    time.sleep(2)
     asyncio.run(test_order())
+    client.get_position()
     while True:
         time.sleep(5)
-        # for symbol in client.orderbook.keys():
-        #     print(symbol, client.get_orderbook(symbol), '\n')
         # print(client.get_all_tops())
