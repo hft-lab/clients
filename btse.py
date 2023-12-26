@@ -136,10 +136,13 @@ class BtseClient(BaseClient):
         headers = self.get_private_headers(path)
         url = self.BASE_URL + path
         response = requests.get(url, headers=headers)
-        balance_data = response.json()
-        self.balance = {'timestamp': round(datetime.utcnow().timestamp()),
-                        'total': balance_data[0]['totalValue'],
-                        'free': balance_data[0]['availableBalance']}
+        if response.status_code in ['200', 200, '201', 201]:
+            balance_data = response.json()
+            self.balance = {'timestamp': round(datetime.utcnow().timestamp()),
+                            'total': balance_data[0]['totalValue'],
+                            'free': balance_data[0]['availableBalance']}
+        else:
+            print(response.text)
 
     @try_exc_regular
     def cancel_all_orders(self):
@@ -154,7 +157,7 @@ class BtseClient(BaseClient):
         path = "/api/v2.1/user/positions"
         headers = self.get_private_headers(path)
         response = requests.get(self.BASE_URL + path, headers=headers)
-        if '200' in str(response):
+        if response.status_code in ['200', 200, '201', 201]:
             for pos in response.json():
                 contract_value = self.instruments[pos['symbol']]['contract_value']
                 if pos['side'] == 'BUY':
@@ -168,7 +171,7 @@ class BtseClient(BaseClient):
                                                        'amount': size_coin,
                                                        'amount_usd': size_usd}})
         else:
-            return response.text
+            print(response.text)
 
     @try_exc_regular
     def get_order_response_status(self, response):
@@ -248,9 +251,9 @@ class BtseClient(BaseClient):
             final_path = f"/api/v2.1/order?clOrderID={cl_order_id}"
         headers = self.get_private_headers(path)
         response = requests.get(url=self.BASE_URL + final_path, headers=headers)
-        try:
+        if response.status_code in ['200', 200, '201', 201]:
             order_data = response.json()
-        except:
+        else:
             print(response.text)
         symbol = order_data.get('symbol').replace('-PERP', 'PFC')
         c_v = self.instruments[symbol]['contract_value']
