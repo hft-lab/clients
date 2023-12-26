@@ -246,9 +246,12 @@ class BtseClient(BaseClient):
         else:
             params['clOrderID'] = cl_order_id
             final_path = f"/api/v2.1/order?clOrderID={cl_order_id}"
-        headers = self.get_private_headers(path, {})  # Assuming authentication is required
+        headers = self.get_private_headers(path)
         response = requests.get(url=self.BASE_URL + final_path, headers=headers)
-        order_data = response.json()
+        try:
+            order_data = response.json()
+        except:
+            print(response.text)
         symbol = order_data.get('symbol').replace('-PERP', 'PFC')
         c_v = self.instruments[symbol]['contract_value']
         return {'exchange_order_id': order_data.get('orderID'),
@@ -537,6 +540,10 @@ if __name__ == '__main__':
             print('GET ORDER_BY_ID RESPONSE:', client.get_order_by_id(data['exchange_order_id']))
             time.sleep(1)
             client.cancel_all_orders()
+            time.sleep(1)
+
+            print('GET ORDER_BY_ID RESPONSE:', client.get_order_by_id(data['exchange_order_id']))
+
             # print('CANCEL_ALL_ORDERS RESPONSE:', data_cancel)
 
 
