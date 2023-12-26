@@ -325,7 +325,7 @@ class BtseClient(BaseClient):
 
     @try_exc_regular
     def get_order_status_by_fill(self, order_id, size):
-        orig_size = self.orig_sizes[order_id]
+        orig_size = self.orig_sizes.get(order_id)
         if orig_size == size:
             return OrderStatus.FULLY_EXECUTED
         else:
