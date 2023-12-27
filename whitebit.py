@@ -330,7 +330,7 @@ class WhiteBitClient(BaseClient):
         path += self._create_uri(params)
         res = requests.post(url=self.BASE_URL + path, headers=headers, json=params)
         response = res.json()
-        # print('GET_ORDER_BY_ID RESPONSE', response)
+        print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID RESPONSE', response)
         if response.get('success'):
             for market in response['result']:
                 for order in response['result'][market]:
