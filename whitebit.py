@@ -95,6 +95,8 @@ class WhiteBitClient(BaseClient):
         for pos in response:
             market = pos['market']
             ob = self.get_orderbook(market)
+            if not ob:
+                ob = self.get_orderbook_http_reg(market)
             change = (ob['asks'][0][0] + ob['bids'][0][0]) / 2
             self.positions.update({market: {'timestamp': int(datetime.utcnow().timestamp()),
                                             'entry_price': float(pos['basePrice']),
@@ -148,6 +150,21 @@ class WhiteBitClient(BaseClient):
                         'bids': [[float(bid[0]), float(bid[1])] for bid in ob['bids']]
                     }
                     return orderbook
+
+    @try_exc_regular
+    def get_orderbook_http_reg(self, symbol):
+        path = f'/api/v4/public/orderbook/{symbol}'
+        params = {'limit': 10}  # Adjusting parameters as per WhiteBit's documentation
+        path += self._create_uri(params)
+        resp = requests.get(url=self.BASE_URL + path, headers=self.headers)
+        ob = resp.json()
+        # Check if the response is a dictionary and has 'asks' and 'bids' directly within it
+        if isinstance(ob, dict) and 'asks' in ob and 'bids' in ob:
+            orderbook = {
+                'asks': [[float(ask[0]), float(ask[1])] for ask in ob['asks']],
+                'bids': [[float(bid[0]), float(bid[1])] for bid in ob['bids']]
+            }
+            return orderbook
 
     @try_exc_regular
     def get_signature(self, data: dict):
