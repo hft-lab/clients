@@ -100,6 +100,7 @@ class WhiteBitClient(BaseClient):
             if not ob:
                 ob = self.get_orderbook_http_reg(market)
             change = (ob['asks'][0][0] + ob['bids'][0][0]) / 2
+            print(f'{self.EXCHANGE_NAME} POSITION UPDATING', pos)
             self.positions.update({market: {'timestamp': int(datetime.utcnow().timestamp()),
                                             'entry_price': float(pos['basePrice']),
                                             'amount': float(pos['amount']),
