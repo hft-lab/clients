@@ -323,6 +323,35 @@ class WhiteBitClient(BaseClient):
         return self.positions
 
     @try_exc_regular
+    def spare_get_order(self, order_id):
+        path = '/api/v1/account/order'
+        params = {'orderId': order_id}
+        params, headers = self.get_auth_for_request(params, path)
+        path += self._create_uri(params)
+        res = requests.post(url=self.BASE_URL + path, headers=headers, json=params)
+        response = res.json()
+        if order := response['result'].get('records', []):
+            return {'exchange_order_id': order['id'],
+                    'exchange': self.EXCHANGE_NAME,
+                    'status': OrderStatus.FULLY_EXECUTED,
+                    'factual_price': float(order['price']),
+                    'factual_amount_coin': float(order['deal']),
+                    'factual_amount_usd': float(order['deal']) * float(order['price']),
+                    'datetime_update': datetime.utcnow(),
+                    'ts_update': order['time']}
+        # example = {"success": true, "message": "", "result":
+        #     {"limit": 50, "offset": 0, "records": [
+        #         {"id": 149156519,
+        #          "clientOrderId": "order1987111",
+        #          "amount": "598",
+        #          "time": 1593342324.613711,
+        #          "dealOrderId": 3134995325,
+        #          "role": 2,
+        #          "deal": "0.00419198",
+        #          "price": "0.00000701",
+        #          "fee": "0.00000419198"}]}}
+
+    @try_exc_regular
     def get_order_by_id(self, symbol, order_id):
         path = '/api/v1/account/order_history'
         params = {'limit': 100}
@@ -349,7 +378,8 @@ class WhiteBitClient(BaseClient):
                                 'ts_update': order['mtime']}
         else:
             print(response)
-            return None
+            return {}
+        return self.spare_get_order(order_id)
 
         # example = {'success': True, 'message': '', 'result': {'BTC_PERP': [
         #     {'amount': '0.001', 'price': '43192.7', 'type': 'margin_limit', 'id': 395373055942, 'clientOrderId': '',

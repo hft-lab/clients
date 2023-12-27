@@ -261,7 +261,7 @@ class KrakenClient(BaseClient):
     async def _symbol_data_getter(self, session: aiohttp.ClientSession) -> None:
         async with session.ws_connect(self.BASE_WS) as ws:
             # self.markets_list = list(self.markets.keys())[:10]
-            for symbol in self.markets_list:
+            for symbol in list(self.markets.keys()):
                 if market := self.markets.get(symbol):
                     await ws.send_str(orjson.dumps({"event": "subscribe",
                                                     "feed": "book",
@@ -749,7 +749,7 @@ if __name__ == '__main__':
     client = KrakenClient(keys=config['KRAKEN'],
                           leverage=float(config['SETTINGS']['LEVERAGE']),
                           max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']))
-    client.markets_list = ['ETH', 'RUNE', 'SNX', 'ENJ', 'DOT', 'LINK', 'ETC', 'DASH', 'XLM', 'WAVES']
+    # client.markets_list = ['ETH', 'RUNE', 'SNX', 'ENJ', 'DOT', 'LINK', 'ETC', 'DASH', 'XLM', 'WAVES']
     client.run_updater()
     time.sleep(3)
 
@@ -775,7 +775,7 @@ if __name__ == '__main__':
                                              session,
                                              client_id=f"api_deal_{str(uuid.uuid4()).replace('-', '')[:20]}")
             # data = client.get_balance()
-            print(client.get_order_by_id(data['exchange_order_id']))
+            # print(client.get_order_by_id(data['exchange_order_id']))
 
             # client.cancel_all_orders()
 
@@ -786,11 +786,11 @@ if __name__ == '__main__':
     # print(client.tickers)
     # print('\n\n\n\n')
     # print(client.instruments)
-    asyncio.run(test_order())
+    # asyncio.run(test_order())
 
     while True:
         time.sleep(5)
 
     # time.sleep(5)
 
-    # print(client.get_all_tops())
+        print(client.get_all_tops())
