@@ -171,7 +171,6 @@ class BtseClient(BaseClient):
                                                        'entry_price': pos['entryPrice'],
                                                        'amount': size_coin,
                                                        'amount_usd': size_usd}})
-                print(self.positions)
         else:
             print(response.text)
 
