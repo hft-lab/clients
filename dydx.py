@@ -205,7 +205,7 @@ class DydxClient(BaseClient):
         path = f'/v3/fills'
         headers = self.get_headers(path, 'GET', {})
         resp = requests.get(url=self.BASE_URL + path, headers=headers, data=json.dumps(remove_nones({}))).json()
-        print('GET_HTTP_FILLS RESPONSE', resp)
+        # print('GET_HTTP_FILLS RESPONSE', resp)
         return resp
 
     # example = {'fills': [

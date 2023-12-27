@@ -326,7 +326,7 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_regular
     def get_order_by_id(self, symbol: str, order_id: int):
-        time.sleep(1)
+        time.sleep(3)
         path = '/api/v1/account/order_history'
         params = {'limit': 100}
         params, headers = self.get_auth_for_request(params, path)

@@ -268,7 +268,7 @@ class BtseClient(BaseClient):
         response = requests.get(url=self.BASE_URL + final_path, headers=headers)
         if response.status_code in ['200', 200, '201', 201]:
             order_data = response.json()
-            print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID RESPONSE', response)
+            # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID RESPONSE', response)
         else:
             print(response.text)
             return
