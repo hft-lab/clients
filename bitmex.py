@@ -226,8 +226,8 @@ class BitmexClient(BaseClient):
             )
         return orders
 
-    @try_exc_async
-    async def get_order_by_id(self, symbol, order_id, session):
+    @try_exc_regular
+    def get_order_by_id(self, symbol, order_id, session):
         res = self.swagger_client.Order.Order_getOrders(filter=json.dumps({'orderID': order_id})).result()[0][0]
         contract_value = self.get_contract_value(symbol)
         real_size = res['cumQty'] / contract_value
