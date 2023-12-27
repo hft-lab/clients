@@ -157,6 +157,7 @@ class BtseClient(BaseClient):
         path = "/api/v2.1/user/positions"
         headers = self.get_private_headers(path)
         response = requests.get(self.BASE_URL + path, headers=headers)
+        # print('GET_POSITION RESPONSE', response.json())
         if response.status_code in ['200', 200, '201', 201]:
             for pos in response.json():
                 contract_value = self.instruments[pos['symbol']]['contract_value']
@@ -170,8 +171,23 @@ class BtseClient(BaseClient):
                                                        'entry_price': pos['entryPrice'],
                                                        'amount': size_coin,
                                                        'amount_usd': size_usd}})
+                print(self.positions)
         else:
             print(response.text)
+
+    # example = [
+    #     {'marginType': 91, 'entryPrice': 2285.71, 'markPrice': 2287.538939479, 'symbol': 'ETHPFC', 'side': 'SELL',
+    #      'orderValue': 91.5015575792, 'settleWithAsset': 'USDT', 'unrealizedProfitLoss': -0.07315758,
+    #      'totalMaintenanceMargin': 0.503258567, 'size': 4, 'liquidationPrice': 2760.8422619841, 'isolatedLeverage': 0,
+    #      'adlScoreBucket': 2, 'liquidationInProgress': False, 'timestamp': 0, 'takeProfitOrder': None,
+    #      'stopLossOrder': None, 'positionMode': 'ONE_WAY', 'positionDirection': None, 'positionId': 'ETHPFC-USD',
+    #      'currentLeverage': 6.0406022256},
+    #     {'marginType': 91, 'entryPrice': 15.3456, 'markPrice': 15.448104591, 'symbol': 'LINKPFC', 'side': 'BUY',
+    #      'orderValue': 29.3513987229, 'settleWithAsset': 'USDT', 'unrealizedProfitLoss': 0.19475872,
+    #      'totalMaintenanceMargin': 0.467254602, 'size': 190, 'liquidationPrice': 5.2669433086, 'isolatedLeverage': 0,
+    #      'adlScoreBucket': 2, 'liquidationInProgress': False, 'timestamp': 0, 'takeProfitOrder': None,
+    #      'stopLossOrder': None, 'positionMode': 'ONE_WAY', 'positionDirection': None, 'positionId': 'LINKPFC-USD',
+    #      'currentLeverage': 6.0406022256}]
 
     @try_exc_regular
     def get_order_response_status(self, response):
@@ -375,46 +391,49 @@ class BtseClient(BaseClient):
     def update_positions(self, data):
         for pos in data['data']:
             market = pos['marketName'].split('-')[0]
-            c_v = self.instruments[market]['contract_value']
+            contract_value = self.instruments[market]['contract_value']
+            size = pos['totalContracts'] * contract_value
+            size = -size if pos['orderModeName'] == 'MODE_SELL' else size
             self.positions.update({market: {'timestamp': int(datetime.utcnow().timestamp()),
                                             'entry_price': pos['entryPrice'],
-                                            'amount': pos['totalContracts'] * c_v,
+                                            'amount': size,
                                             'amount_usd': pos['totalValue']}})
+            # print('POSITIONS AFTER WS UPDATING:', self.positions)
         # positions_example = {'topic': 'allPosition', 'id': '', 'data': [
-        #     {'id': 2343355483091732596, 'requestId': 0, 'username': 'nikicha', 'userCurrency': None,
-        #      'marketName': 'BTCPFC-USD', 'orderType': 90, 'orderMode': 66, 'status': 65, 'originalAmount': 0.001,
+        #     {'id': 6233130152254608579, 'requestId': 0, 'username': 'nikicha', 'userCurrency': None,
+        #      'marketName': 'ETHPFC-USD', 'orderType': 90, 'orderMode': 83, 'status': 65, 'originalAmount': 0.01,
         #      'maxPriceHeld': 0, 'pegPriceMin': 0, 'stealth': 1, 'baseCurrency': None, 'quoteCurrency': None,
         #      'quoteCurrencyFiat': False, 'parents': None, 'makerFeesRatio': None, 'takerFeesRatio': [0.0005],
         #      'ip': None, 'systemId': None, 'orderID': None, 'vendorName': None, 'botID': None, 'poolID': 0,
         #      'maxStealthDisplayAmount': 0, 'sellexchangeRate': 0, 'tag': None, 'triggerPrice': 0, 'closeOrder': False,
-        #      'dbBaseBalHeld': 0, 'dbQuoteBalHeld': -0.567521753, 'isFuture': True, 'liquidationInProgress': False,
-        #      'marginType': 91, 'entryPrice': 42758.3, 'liquidationPrice': 23153.9536897814,
-        #      'markedPrice': 42600.160009819, 'marginHeld': 0, 'unrealizedProfitLoss': -0.15813999,
-        #      'totalMaintenanceMargin': 0.243960466, 'totalContracts': 1, 'marginChargedLongOpen': 0,
+        #      'dbBaseBalHeld': 0, 'dbQuoteBalHeld': -0.846941176, 'isFuture': True, 'liquidationInProgress': False,
+        #      'marginType': 91, 'entryPrice': 2285.71, 'liquidationPrice': 2760.8226073098,
+        #      'markedPrice': 2287.470283012, 'marginHeld': 0, 'unrealizedProfitLoss': -0.07041132,
+        #      'totalMaintenanceMargin': 0.503243462, 'totalContracts': 4, 'marginChargedLongOpen': 0,
         #      'marginChargedShortOpen': 0, 'unchargedMarginLongOpen': 0, 'unchargedMarginShortOpen': 0,
-        #      'isolatedCurrency': None, 'isolatedLeverage': 0, 'totalFees': 0, 'totalValue': 42.60016001,
-        #      'adlScoreBucket': 1, 'adlScorePercentile': 0.3870967742, 'booleanVar1': False, 'char1': '\x00',
-        #      'orderTypeName': 'TYPE_FUTURES_POSITION', 'orderModeName': 'MODE_BUY',
-        #      'marginTypeName': 'FUTURES_MARGIN_CROSS', 'currentLeverage': 4.4022854879, 'averageFillPrice': 0,
-        #      'filledSize': 0, 'takeProfitOrder': None, 'stopLossOrder': None, 'positionId': 'BTCPFC-USD',
+        #      'isolatedCurrency': None, 'isolatedLeverage': 0, 'totalFees': 0, 'totalValue': -91.49881132,
+        #      'adlScoreBucket': 2, 'adlScorePercentile': 0.8333333333, 'booleanVar1': False, 'char1': '\x00',
+        #      'orderTypeName': 'TYPE_FUTURES_POSITION', 'orderModeName': 'MODE_SELL',
+        #      'marginTypeName': 'FUTURES_MARGIN_CROSS', 'currentLeverage': 6.0398382482, 'averageFillPrice': 0,
+        #      'filledSize': 0, 'takeProfitOrder': None, 'stopLossOrder': None, 'positionId': 'ETHPFC-USD',
         #      'positionMode': 'ONE_WAY', 'positionDirection': None, 'future': True, 'settleWithNonUSDAsset': 'USDT'},
         #
-        #     {'id': 5915202914346471829, 'requestId': 0, 'username': 'nikicha', 'userCurrency': None,
-        #      'marketName': 'ETHPFC-USD', 'orderType': 90, 'orderMode': 66, 'status': 65, 'originalAmount': 0.01,
+        #     {'id': 280658257410787295, 'requestId': 0, 'username': 'nikicha', 'userCurrency': None,
+        #      'marketName': 'LINKPFC-USD', 'orderType': 90, 'orderMode': 66, 'status': 65, 'originalAmount': 0.01,
         #      'maxPriceHeld': 0, 'pegPriceMin': 0, 'stealth': 1, 'baseCurrency': None, 'quoteCurrency': None,
         #      'quoteCurrencyFiat': False, 'parents': None, 'makerFeesRatio': None, 'takerFeesRatio': [0.0005],
         #      'ip': None, 'systemId': None, 'orderID': None, 'vendorName': None, 'botID': None, 'poolID': 0,
         #      'maxStealthDisplayAmount': 0, 'sellexchangeRate': 0, 'tag': None, 'triggerPrice': 0, 'closeOrder': False,
-        #      'dbBaseBalHeld': 0, 'dbQuoteBalHeld': -0.567521753, 'isFuture': True, 'liquidationInProgress': False,
-        #      'marginType': 91, 'entryPrice': 2231.84, 'liquidationPrice': 1264.1365670193,
-        #      'markedPrice': 2236.501887389, 'marginHeld': 0, 'unrealizedProfitLoss': 0.09323775,
-        #      'totalMaintenanceMargin': 0.258659047, 'totalContracts': 2, 'marginChargedLongOpen': 0,
-        #      'marginChargedShortOpen': 0, 'unchargedMarginLongOpen': 0, 'unchargedMarginShortOpen': 0,
-        #      'isolatedCurrency': None, 'isolatedLeverage': 0, 'totalFees': 0, 'totalValue': 44.730037748,
-        #      'adlScoreBucket': 2, 'adlScorePercentile': 0.7073170732, 'booleanVar1': False, 'char1': '\x00',
+        #      'dbBaseBalHeld': 0, 'dbQuoteBalHeld': -0.846941176, 'isFuture': True, 'liquidationInProgress': False,
+        #      'marginType': 91, 'entryPrice': 15.3456, 'liquidationPrice': 5.2654664485, 'markedPrice': 15.447681802,
+        #      'marginHeld': 0, 'unrealizedProfitLoss': 0.19395542, 'totalMaintenanceMargin': 0.467241814,
+        #      'totalContracts': 190, 'marginChargedLongOpen': 0, 'marginChargedShortOpen': 0,
+        #      'unchargedMarginLongOpen': 0, 'unchargedMarginShortOpen': 0, 'isolatedCurrency': None,
+        #      'isolatedLeverage': 0, 'totalFees': 0, 'totalValue': 29.350595424, 'adlScoreBucket': 2,
+        #      'adlScorePercentile': 0.25, 'booleanVar1': False, 'char1': '\x00',
         #      'orderTypeName': 'TYPE_FUTURES_POSITION', 'orderModeName': 'MODE_BUY',
-        #      'marginTypeName': 'FUTURES_MARGIN_CROSS', 'currentLeverage': 4.4022854879, 'averageFillPrice': 0,
-        #      'filledSize': 0, 'takeProfitOrder': None, 'stopLossOrder': None, 'positionId': 'ETHPFC-USD',
+        #      'marginTypeName': 'FUTURES_MARGIN_CROSS', 'currentLeverage': 6.0398382482, 'averageFillPrice': 0,
+        #      'filledSize': 0, 'takeProfitOrder': None, 'stopLossOrder': None, 'positionId': 'LINKPFC-USD',
         #      'positionMode': 'ONE_WAY', 'positionDirection': None, 'future': True, 'settleWithNonUSDAsset': 'USDT'}]}
 
     @try_exc_async
@@ -488,7 +507,7 @@ class BtseClient(BaseClient):
         self.getting_ob.set()
         self.now_getting = symbol
         snap = self.orderbook[symbol]
-        if snap.get('asks'):
+        if isinstance(snap['asks'], list):
             return snap
         c_v = self.instruments[symbol]['contract_value']
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
@@ -542,13 +561,13 @@ if __name__ == '__main__':
             client.amount = client.instruments['ETHPFC']['min_size']
             client.price = price
             data = await client.create_order('ETHPFC', 'buy', session)
-            print('CREATE_ORDER RESPONSE:', data)
-            print('GET ORDER_BY_ID RESPONSE:', client.get_order_by_id(data['exchange_order_id']))
+            print('CREATE_ORDER OUTPUT:', data)
+            print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
             time.sleep(1)
             client.cancel_all_orders()
             time.sleep(1)
 
-            print('GET ORDER_BY_ID RESPONSE:', client.get_order_by_id(data['exchange_order_id']))
+            print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
 
             # print('CANCEL_ALL_ORDERS RESPONSE:', data_cancel)
 
