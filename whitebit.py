@@ -372,8 +372,8 @@ class WhiteBitClient(BaseClient):
             "ioc": False
         }
         print(f"{self.EXCHANGE_NAME} SENDING ORDER: {params}")
-        if client_id:
-            params['clientOrderId'] = client_id
+        # if client_id:
+        #     params['clientOrderId'] = client_id
         params, headers = self.get_auth_for_request(params, path)
         path += self._create_uri(params)
         async with session.post(url=self.BASE_URL + path, headers=headers, json=params) as resp:
