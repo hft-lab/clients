@@ -670,6 +670,7 @@ class OkxClient(BaseClient):
         async with aiohttp.ClientSession() as session:
             async with session.get(url=self.BASE_URL + way, headers=self.headers) as resp:
                 data = await resp.json()
+                print(data)
                 orderbook = data['data'][0]
                 contract = self.get_contract_value(symbol)
                 new_asks = [[float(ask[0]), float(ask[1]) * contract] for ask in orderbook['asks']]

@@ -238,7 +238,7 @@ class BtseClient(BaseClient):
                 return OrderStatus.NOT_EXECUTED
 
     @try_exc_regular
-    def get_order_by_id(self, order_id=None, cl_order_id=None):
+    def get_order_by_id(self, symbol, order_id, cl_order_id=None):
         if order_id is None and cl_order_id is None:
             raise ValueError("Either orderID or clOrderID must be provided")
         params = {}
@@ -255,6 +255,7 @@ class BtseClient(BaseClient):
             order_data = response.json()
         else:
             print(response.text)
+            return
         symbol = order_data.get('symbol').replace('-PERP', 'PFC')
         c_v = self.instruments[symbol]['contract_value']
         return {'exchange_order_id': order_data.get('orderID'),
@@ -487,6 +488,8 @@ class BtseClient(BaseClient):
         self.getting_ob.set()
         self.now_getting = symbol
         snap = self.orderbook[symbol]
+        if snap.get('asks'):
+            return snap
         c_v = self.instruments[symbol]['contract_value']
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
               'asks': [[float(x), float(snap['asks'][x]) * c_v] for x in sorted(snap['asks']) if snap['asks'].get(x)],

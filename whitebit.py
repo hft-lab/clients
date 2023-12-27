@@ -316,7 +316,7 @@ class WhiteBitClient(BaseClient):
         return self.positions
 
     @try_exc_regular
-    def get_order_by_id(self, order_id):
+    def get_order_by_id(self, symbol, order_id):
         path = '/api/v1/account/order_history'
         params = {'limit': 100}
         params, headers = self.get_auth_for_request(params, path)
@@ -474,6 +474,8 @@ class WhiteBitClient(BaseClient):
         self.getting_ob.set()
         self.now_getting = symbol
         snap = self.orderbook[symbol]
+        if snap.get('asks'):
+            return snap
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
               'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks']) if snap['asks'].get(x)],
               'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids']) if snap['bids'].get(x)][::-1]}
