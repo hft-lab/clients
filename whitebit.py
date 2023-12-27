@@ -46,6 +46,7 @@ class WhiteBitClient(BaseClient):
         self.balance = {}
         self.positions = {}
         self.websocket_token = self.get_ws_token()
+        self.LAST_ORDER_ID = 'default'
         self.get_real_balance()
         self.taker_fee = 0.00035
 
@@ -380,6 +381,7 @@ class WhiteBitClient(BaseClient):
             response = await resp.json()
             print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
             status = self.get_order_response_status(response)
+            self.LAST_ORDER_ID = response.get('orderId', 'default')
             return {'exchange_name': self.EXCHANGE_NAME,
                     'exchange_order_id': response.get('orderId'),
                     'timestamp': response.get('timestamp'),

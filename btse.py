@@ -61,6 +61,7 @@ class BtseClient(BaseClient):
         self.last_price = {}
         self.taker_fee = 0.0005
         self.orig_sizes = {}
+        self.LAST_ORDER_ID = 'default'
 
     @staticmethod
     @try_exc_regular
@@ -226,12 +227,20 @@ class BtseClient(BaseClient):
         async with session.post(url=self.BASE_URL + path, headers=headers, json=body) as resp:
             res = await resp.json()
             print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {res}")
-            status, timestamp = self.get_order_response_status(res)
-            self.orig_sizes.update({res[0]['orderID']: res[0]['originalSize']})
-            return {'exchange_name': self.EXCHANGE_NAME,
-                    'exchange_order_id': res[0]['orderID'],
-                    'timestamp': timestamp,
-                    'status': status}
+            if len(res):
+                status, timestamp = self.get_order_response_status(res)
+                self.LAST_ORDER_ID = res[0]['orderID']
+                self.orig_sizes.update({res[0]['orderID']: res[0]['originalSize']})
+                return {'exchange_name': self.EXCHANGE_NAME,
+                        'exchange_order_id': res[0]['orderID'],
+                        'timestamp': timestamp,
+                        'status': status}
+            else:
+                self.error_info = res
+                return {'exchange_name': self.EXCHANGE_NAME,
+                        'exchange_order_id': 'default',
+                        'timestamp': time.time(),
+                        'status': ResponseStatus.ERROR}
 
             # res_example = [{'status': 2, 'symbol': 'BTCPFC', 'orderType': 76, 'price': 43490, 'side': 'BUY', 'size': 1,
             #             'orderID': '13a82711-f6e2-4228-bf9f-3755cd8d7885', 'timestamp': 1703535543583,
