@@ -212,7 +212,7 @@ class BtseClient(BaseClient):
         rounded_price = round(price / tick_size) * tick_size
         self.price = round(rounded_price, price_precision)
 
-    @try_exc_regular
+    @try_exc_async
     async def create_order(self, symbol, side, session=None, expire=10000, client_id=None, expiration=None):
         path = '/api/v2.1/order'
         contract_value = self.instruments[symbol]['contract_value']
