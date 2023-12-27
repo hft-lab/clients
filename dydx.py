@@ -204,8 +204,19 @@ class DydxClient(BaseClient):
     def get_http_fills(self):
         path = f'/v3/fills'
         headers = self.get_headers(path, 'GET', {})
-        resp = requests.get(url=self.BASE_URL + path, headers=headers, data=json.dumps(remove_nones({})))
-        return resp.json()
+        resp = requests.get(url=self.BASE_URL + path, headers=headers, data=json.dumps(remove_nones({}))).json()
+        print('GET_HTTP_FILLS RESPONSE', resp)
+        return resp
+
+    # example = {'fills': [
+    #     {'id': 'cca2733c-e700-5f17-b038-38b26d3c8cfe', 'side': 'SELL', 'liquidity': 'TAKER', 'type': 'MARKET',
+    #      'market': 'LINK-USD', 'price': '15.396', 'size': '0.4', 'fee': '0.003079',
+    #      'createdAt': '2023-12-27T11:36:27.164Z',
+    #      'orderId': '5a47c13f9e7e3ee56a7b105b1815588cf907d68d3a419da4530dbb25160d7cd'},
+    #     {'id': '02e349f8-48e4-5438-b411-31b89bdf3c4f', 'side': 'BUY', 'liquidity': 'TAKER', 'type': 'LIMIT',
+    #      'market': 'SNX-USD', 'price': '3.698', 'size': '1.9', 'fee': '0.003513',
+    #      'createdAt': '2023-12-19T12:03:00.250Z',
+    #      'orderId': '28ecd6695ad3aac64b5d0c031a2ab1bbdb5be52be69e3f245b93d0ece684287'}]}
 
     @try_exc_regular
     def get_http_order(self, order_id):
@@ -220,7 +231,7 @@ class DydxClient(BaseClient):
         av_price = 0
         real_size_coin = 0
         real_size_usd = 0
-        for fill in fills:
+        for fill in fills['fills']:
             if fill['orderId'] == order_id:
                 if av_price:
                     real_size_usd = av_price * real_size_coin + float(fill['size']) * float(fill['price'])
@@ -790,9 +801,8 @@ if __name__ == '__main__':
                         max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
                         markets_list=['RUNE', 'ETH', 'SNX', 'LINK', 'ENJ', 'XLM'])
     client.run_updater()
-
+    client.get_http_fills()
     time.sleep(1)
-
 
     # async def test_order():
     #     async with aiohttp.ClientSession() as session:
@@ -815,7 +825,7 @@ if __name__ == '__main__':
     #
     #
     # asyncio.run(test_order())
-    client.get_order_by_id('exchange_order_id')
+    client.get_order_by_id('symbol', 'exchange_order_id')
 
     while True:
         time.sleep(5)
