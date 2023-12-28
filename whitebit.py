@@ -94,17 +94,18 @@ class WhiteBitClient(BaseClient):
         res = requests.post(url=self.BASE_URL + path, headers=headers, json=params)
         response = res.json()
         # print('GET_POSITION RESPONSE', response)
+        self.positions = {}
         for pos in response:
             market = pos['market']
             ob = self.get_orderbook(market)
             if not ob:
                 ob = self.get_orderbook_http_reg(market)
             change = (ob['asks'][0][0] + ob['bids'][0][0]) / 2
-            # print(f'{self.EXCHANGE_NAME} POSITION UPDATING', pos)
             self.positions.update({market: {'timestamp': int(datetime.utcnow().timestamp()),
                                             'entry_price': float(pos['basePrice']) if pos['basePrice'] else 0,
                                             'amount': float(pos['amount']),
                                             'amount_usd': change * float(pos['amount'])}})
+        print(self.EXCHANGE_NAME, 'POSITIONS AFTER UPDATE:', self.positions)
 
             # example = [{'positionId': 3634420, 'market': 'BTC_PERP', 'openDate': 1703664697.619855,
             #             'modifyDate': 1703664697.619855,

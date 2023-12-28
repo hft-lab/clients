@@ -159,6 +159,7 @@ class BtseClient(BaseClient):
         headers = self.get_private_headers(path)
         response = requests.get(self.BASE_URL + path, headers=headers)
         # print('GET_POSITION RESPONSE', response.json())
+        self.positions = {}
         if response.status_code in ['200', 200, '201', 201]:
             for pos in response.json():
                 contract_value = self.instruments[pos['symbol']]['contract_value']
@@ -221,6 +222,7 @@ class BtseClient(BaseClient):
                 "price": self.price,
                 "type": "LIMIT",
                 'size': int(self.amount / contract_value)}
+        print(f"{self.EXCHANGE_NAME} SENDING ORDER: {body}")
         headers = self.get_private_headers(path, body)
         async with session.post(url=self.BASE_URL + path, headers=headers, json=body) as resp:
             res = await resp.json()
