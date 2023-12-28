@@ -125,17 +125,6 @@ class DydxClient(BaseClient):
         self.position_id = self.account['account']['positionId']
 
     @try_exc_regular
-    def exit(self):
-        self._ws.close()
-        while True:
-            try:
-                self._loop.stop()
-                self._loop.close()
-                return
-            except:
-                pass
-
-    @try_exc_regular
     def get_markets(self):
         # NECESSARY
         for market, value in self.instruments.items():
@@ -437,28 +426,21 @@ class DydxClient(BaseClient):
     @try_exc_regular
     def _run_ws_forever(self):
         while True:
-            try:
-                self._loop.run_until_complete(self._run_ws_loop())
-            finally:
-                print("WS loop completed. Restarting")
+            self._loop.run_until_complete(self._run_ws_loop())
+            time.sleep(60)
 
     @try_exc_async
     async def _run_ws_loop(self):
         async with aiohttp.ClientSession() as s:
-            try:
-                async with s.ws_connect(self.BASE_WS) as ws:
-                    print("DyDx: connected")
-                    self._connected.set()
-                    self._ws = ws
-                    self._loop.create_task(self._subscribe_orderbooks())
-                    self._loop.create_task(self._subscribe_account())
-                    async for msg in ws:
-                        self._process_msg(msg)
-            except Exception as e:
-                print("DyDx ws loop exited: ")
-                traceback.print_exc()
-            finally:
-                self._connected.clear()
+            async with s.ws_connect(self.BASE_WS) as ws:
+                print("DyDx: connected")
+                self._connected.set()
+                self._ws = ws
+                await self._loop.create_task(self._subscribe_orderbooks())
+                await self._loop.create_task(self._subscribe_account())
+                async for msg in ws:
+                    self._process_msg(msg)
+            self._connected.clear()
 
     @try_exc_async
     async def _subscribe_account(self):
