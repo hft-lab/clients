@@ -105,7 +105,7 @@ class WhiteBitClient(BaseClient):
                                             'entry_price': float(pos['basePrice']) if pos['basePrice'] else 0,
                                             'amount': float(pos['amount']),
                                             'amount_usd': change * float(pos['amount'])}})
-        print(self.EXCHANGE_NAME, 'POSITIONS AFTER UPDATE:', self.positions)
+        # print(self.EXCHANGE_NAME, 'POSITIONS AFTER UPDATE:', self.positions)
 
             # example = [{'positionId': 3634420, 'market': 'BTC_PERP', 'openDate': 1703664697.619855,
             #             'modifyDate': 1703664697.619855,
