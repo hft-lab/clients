@@ -295,7 +295,7 @@ class WhiteBitClient(BaseClient):
         #                 2: 'update_order',
         #                 3: 'finish(executed or canceled)'}
         if not order:
-            return OrderStatus.PROCESSING
+            return OrderStatus.NOT_EXECUTED
         key = 'deal_stock' if order.get('deal_stock') else 'dealStock'
         rest = float(order['left']) if order.get('left') else float(order['amount']) - float(order['dealStock'])
         if status_id:
