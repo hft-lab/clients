@@ -9,7 +9,7 @@ import hmac
 import hashlib
 import base64
 
-from clients.core.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
+from clients.core.enums import ResponseStatus, OrderStatus
 from core.wrappers import try_exc_regular, try_exc_async
 from clients.core.base_client import BaseClient
 
@@ -100,21 +100,31 @@ class WhiteBitClient(BaseClient):
             if not ob:
                 ob = self.get_orderbook_http_reg(market)
             change = (ob['asks'][0][0] + ob['bids'][0][0]) / 2
-            print(f'{self.EXCHANGE_NAME} POSITION UPDATING', pos)
+            # print(f'{self.EXCHANGE_NAME} POSITION UPDATING', pos)
             self.positions.update({market: {'timestamp': int(datetime.utcnow().timestamp()),
-                                            'entry_price': float(pos['basePrice']),
+                                            'entry_price': float(pos['basePrice']) if pos['basePrice'] else 0,
                                             'amount': float(pos['amount']),
                                             'amount_usd': change * float(pos['amount'])}})
 
-    # example = [{'positionId': 3634420, 'market': 'BTC_PERP', 'openDate': 1703664697.619855,
-    #             'modifyDate': 1703664697.619855,
-    #             'amount': '0.001', 'basePrice': '42523.8', 'liquidationPrice': '0', 'pnl': '0.2', 'pnlPercent': '0.47',
-    #             'margin': '8.6', 'freeMargin': '41.6', 'funding': '0', 'unrealizedFunding': '0',
-    #             'liquidationState': None}]
-    # example_negative_pos = [
-    #     {'positionId': 3635477, 'market': 'BTC_PERP', 'openDate': 1703677698.102418, 'modifyDate': 1703677698.102418,
-    #      'amount': '-0.002', 'basePrice': '43131.7', 'liquidationPrice': '66743.8', 'pnl': '0', 'pnlPercent': '0.00',
-    #      'margin': '17.3', 'freeMargin': '33.2', 'funding': '0', 'unrealizedFunding': '0', 'liquidationState': None}]
+            # example = [{'positionId': 3634420, 'market': 'BTC_PERP', 'openDate': 1703664697.619855,
+            #             'modifyDate': 1703664697.619855,
+            #             'amount': '0.001', 'basePrice': '42523.8', 'liquidationPrice': '0', 'pnl': '0.2',
+            #             'pnlPercent': '0.47',
+            #             'margin': '8.6', 'freeMargin': '41.6', 'funding': '0', 'unrealizedFunding': '0',
+            #             'liquidationState': None},
+            #            {'positionId': 3642507, 'market': 'BTC_PERP', 'openDate': 1703752465.897688,
+            #             'modifyDate': 1703752465.897688, 'amount': '0', 'basePrice': '', 'liquidationPrice': None,
+            #             'pnl': None,
+            #             'pnlPercent': None, 'margin': '8.7', 'freeMargin': '13.6', 'funding': '0',
+            #             'unrealizedFunding': '0',
+            #             'liquidationState': None}]
+            # example_negative_pos = [
+            #     {'positionId': 3635477, 'market': 'BTC_PERP', 'openDate': 1703677698.102418,
+            #      'modifyDate': 1703677698.102418,
+            #      'amount': '-0.002', 'basePrice': '43131.7', 'liquidationPrice': '66743.8', 'pnl': '0',
+            #      'pnlPercent': '0.00',
+            #      'margin': '17.3', 'freeMargin': '33.2', 'funding': '0', 'unrealizedFunding': '0',
+            #      'liquidationState': None}]
 
     @try_exc_regular
     def get_real_balance(self):
@@ -127,10 +137,11 @@ class WhiteBitClient(BaseClient):
         self.balance = {'timestamp': datetime.utcnow().timestamp(),
                         'total': float(response['USDT']),
                         'free': float(response['USDT'])}
-        # example = {'ADA': '0', 'APE': '0', 'ARB': '0', 'ATOM': '0', 'AVAX': '0', 'BCH': '0', 'BTC': '0', 'DOGE': '0',
-        #            'DOT': '0', 'EOS': '0', 'ETC': '0', 'ETH': '0', 'LINK': '0', 'LTC': '0', 'MATIC': '0', 'NEAR': '0',
-        #            'OP': '0', 'SHIB': '0', 'SOL': '0', 'TRX': '0', 'UNI': '0', 'USDC': '0', 'USDT': '50', 'WBT': '0',
-        #            'XLM': '0', 'XRP': '0'}
+    # example = {'ADA': '0', 'APE': '0', 'ARB': '0', 'ATOM': '0', 'AVAX': '0', 'BCH': '0', 'BTC': '0', 'DOGE': '0',
+    #            'DOT': '0', 'EOS': '0', 'ETC': '0', 'ETH': '0', 'LINK': '0', 'LTC': '0', 'MATIC': '0', 'NEAR': '0',
+    #            'OP': '0', 'SHIB': '0', 'SOL': '0', 'TRX': '0', 'UNI': '0', 'USDC': '0', 'USDT': '50', 'WBT': '0',
+    #            'XLM': '0', 'XRP': '0'}
+
 
     @staticmethod
     @try_exc_regular
@@ -283,6 +294,8 @@ class WhiteBitClient(BaseClient):
         # api_statuses = {1: 'new_order',
         #                 2: 'update_order',
         #                 3: 'finish(executed or canceled)'}
+        if not order:
+            return OrderStatus.PROCESSING
         key = 'deal_stock' if order.get('deal_stock') else 'dealStock'
         rest = float(order['left']) if order.get('left') else float(order['amount']) - float(order['dealStock'])
         if status_id:
@@ -326,30 +339,36 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_regular
     def get_order_by_id(self, symbol: str, order_id: int):
-        time.sleep(3)
         path = '/api/v1/account/order_history'
         params = {'limit': 100}
         params, headers = self.get_auth_for_request(params, path)
         path += self._create_uri(params)
         res = requests.post(url=self.BASE_URL + path, headers=headers, json=params)
         response = res.json()
+        # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID STARTED')
         # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID RESPONSE', response)
+        right_order = {}
+        factual_price = 0
         if response.get('success'):
             for market in response['result']:
-                for order in response['result'][market]:
-                    if order['id'] == order_id:
-                        factual_price = 0
-                        if order['dealStock'] != '0':
-                            factual_price = float(order['dealMoney']) / float(order['dealStock'])
-                        return {'exchange_order_id': order['id'],
-                                'exchange': self.EXCHANGE_NAME,
-                                'status': self.get_order_status(order, 0),
-                                'factual_price': factual_price,
-                                'factual_amount_coin': float(order['dealStock']),
-                                'factual_amount_usd': float(order['dealMoney']),
-                                'datetime_update': datetime.utcnow(),
-                                'ts_update': order['ftime']}
-        return {}
+                if not right_order:
+                    for order in response['result'][market]:
+                        if order['id'] == order_id:
+                            right_order = order
+                            # print(f"GET_ORDER_BY_ID ORDER FOUND: {right_order}")
+                            if right_order['dealStock'] != '0':
+                                factual_price = float(right_order['dealMoney']) / float(right_order['dealStock'])
+                            break
+                else:
+                    break
+        return {'exchange_order_id': order_id,
+                'exchange': self.EXCHANGE_NAME,
+                'status': self.get_order_status(right_order, 0),
+                'factual_price': factual_price,
+                'factual_amount_coin': float(right_order.get('dealStock', 0)),
+                'factual_amount_usd': float(right_order.get('dealMoney', 0)),
+                'datetime_update': datetime.utcnow(),
+                'ts_update': right_order.get('ftime', datetime.utcnow().timestamp())}
         # example = {'success': True, 'message': '', 'result': {'BTC_PERP': [
         #     {'amount': '0.001', 'price': '43192.7', 'type': 'margin_limit', 'id': 395373055942, 'clientOrderId': '',
         #      'side': 'buy', 'ctime': 1703673670.631547, 'takerFee': '0.00035', 'ftime': 1703673672.240763,
@@ -518,23 +537,21 @@ if __name__ == '__main__':
     async def test_order():
         async with aiohttp.ClientSession() as session:
             ob = client.get_orderbook('BTC_PERP')
-            print(ob)
-            price = ob['bids'][5][0]
+            price = ob['bids'][8][0]
             client.amount = client.instruments['BTC_PERP']['min_size']
             client.price = price
             data = await client.create_order('BTC_PERP', 'buy', session)
             print('CREATE_ORDER OUTPUT:', data)
             print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
             time.sleep(1)
-            client.get_position()
-            data_cancel = client.cancel_all_orders()
-            print('CANCEL_ALL_ORDERS OUTPUT:', data_cancel)
+            client.cancel_all_orders()
+            # print('CANCEL_ALL_ORDERS OUTPUT:', data_cancel)
             print('GET ORDER_BY_ID OUTPUT AFTER CANCEL:', client.get_order_by_id('asd', data['exchange_order_id']))
 
 
-    id = 395769654408
-    print(client.get_order_by_id('abs', id))
-    # client.run_updater()
+    # id = 395769654408
+    # print(client.get_order_by_id('abs', id))
+    client.run_updater()
     # time.sleep(1)
     # client.get_real_balance()
     # print('GET POSITION RESPONSE', client.get_position())
@@ -544,7 +561,8 @@ if __name__ == '__main__':
     # client.get_ws_token()
     # time.sleep(2)
 
-    # asyncio.run(test_order())
+    # client.get_position()
+    asyncio.run(test_order())
     # print(len(client.get_markets()))
     while True:
         time.sleep(5)
