@@ -143,7 +143,7 @@ class BtseClient(BaseClient):
                             'total': balance_data[0]['totalValue'],
                             'free': balance_data[0]['availableBalance']}
         else:
-            print(response.text)
+            print(f"ERROR IN GET_REAL_BALANCE RESPONSE BTSE: {response.text=}")
 
     @try_exc_regular
     def cancel_all_orders(self):
@@ -174,7 +174,7 @@ class BtseClient(BaseClient):
                                                        'amount': size_coin,
                                                        'amount_usd': size_usd}})
         else:
-            print(response.text)
+            print(f"ERROR IN GET_POSITION RESPONSE BTSE: {response.text=}")
 
     # example = [
     #     {'marginType': 91, 'entryPrice': 2285.71, 'markPrice': 2287.538939479, 'symbol': 'ETHPFC', 'side': 'SELL',
@@ -272,7 +272,7 @@ class BtseClient(BaseClient):
             order_data = response.json()
             # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID RESPONSE', response)
         else:
-            print(response.text)
+            print(f"ERROR IN GET_ORDER_BY_ID RESPONSE BTSE: {response.text=}")
             return
         symbol = order_data.get('symbol').replace('-PERP', 'PFC')
         c_v = self.instruments[symbol]['contract_value']
