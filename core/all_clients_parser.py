@@ -6,6 +6,7 @@ from clients.bit import BitClient
 from clients.btse import BtseClient
 from clients.whitebit import WhiteBitClient
 from clients.tapbit import TapbitClient
+from clients.orangex import OrangexClient
 
 ALL_CLIENTS = {
     'HITBTC': HitbtcClient,
@@ -15,5 +16,6 @@ ALL_CLIENTS = {
     'BIT': BitClient,
     'BTSE': BtseClient,
     'WHITEBIT': WhiteBitClient,
-    'TAPBIT': TapbitClient
+    'TAPBIT': TapbitClient,
+    'ORANGEX': OrangexClient
 }
