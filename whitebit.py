@@ -523,7 +523,7 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_regular
     def first_positions_update(self):
-        while set(self.orderbook.keys()) < set(self.markets.values()):
+        while set(self.orderbook.keys()) < set([self.markets[x] for x in self.markets_list if self.markets.get(x)]):
             time.sleep(0.0001)
         print('GOT ALL MARKETS')
         self.get_position()
