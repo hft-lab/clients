@@ -8,17 +8,17 @@ import threading
 from core.wrappers import try_exc_regular, try_exc_async
 
 
-class TapbitClient:
-    PUBLIC_WS_ENDPOINT = 'wss://ws-openapi.tapbit.com/stream/ws'
-    BASE_URL = 'https://openapi.tapbit.com/swap/'
-    EXCHANGE_NAME = 'TAPBIT'
+class OrangexClient:
+    PUBLIC_WS_ENDPOINT = 'wss://api.orangex.com/ws/api/v1'
+    BASE_URL = 'https://api.orangex.com/api/v1'
+    EXCHANGE_NAME = 'ORANGEX'
 
     def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20):
         if keys:
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
-        self.markets_list = markets_list
         self.headers = {'Content-Type': 'application/json'}
+        self.markets_list = markets_list
         self.markets = self.get_markets()
         self._loop_public = asyncio.new_event_loop()
         self._connected = asyncio.Event()
@@ -27,22 +27,26 @@ class TapbitClient:
         self.getting_ob = asyncio.Event()
         self.now_getting = ''
         self.orderbook = {}
-        self.taker_fee = 0.0006
+        self.taker_fee = 0.0005
 
     @try_exc_regular
     def get_markets(self):
-        path = "/api/usdt/instruments/list"
+        path = "/public/get_instruments"
         resp = requests.get(url=self.BASE_URL + path, headers=self.headers).json()
         markets = {}
-        for market in resp['data']:
-            markets.update({market['contract_code'].split('-')[0]: market['contract_code']})
+        for market in resp['result']:
+            if market['currency'] == 'PERPETUAL' and market['is_active'] and '1000' not in market['instrument_name']:
+                markets.update({market['quote_currency']: market['instrument_name']})
         return markets
-        # example = {'code': 200, 'message': None, 'data': [
-        #     {'contract_code': 'FTT-SWAP', 'multiplier': '1', 'min_amount': '1', 'max_amount': '10000',
-        #      'min_price_change': '0.0001', 'price_precision': '4', 'leverages': '2,3,5,10,20', 'max_leverage': '20'},
-        #     {'contract_code': 'ORDI-SWAP', 'multiplier': '0.1', 'min_amount': '1', 'max_amount': '15000',
-        #      'min_price_change': '0.001', 'price_precision': '3', 'leverages': '2,3,5,10,20', 'max_leverage': '20'},
-        #     ]}
+        # example = {'jsonrpc': '2.0', 'usIn': 1704140719190, 'usOut': 1704140719199, 'usDiff': 9, 'result': [
+        #     {'instrId': 3, 'currency': 'PERPETUAL', 'newListing': False, 'base_currency': 'USDT', 'contract_size': '1',
+        #      'creation_timestamp': '1669651200000', 'expiration_timestamp': '2114352000000',
+        #      'instrument_name': '1INCH-USDT-PERPETUAL', 'show_name': '1INCHUSDT', 'is_active': True,
+        #      'kind': 'perpetual', 'leverage': 25, 'maker_commission': '0.0002', 'taker_commission': '0.0005',
+        #      'min_trade_amount': '1', 'option_type': 'init', 'quote_currency': '1INCH', 'strike': '0',
+        #      'tick_size': '0.0001', 'instr_multiple': '1', 'order_price_low_rate': '0.5',
+        #      'order_price_high_rate': '1.5', 'order_price_limit_type': 1, 'min_qty': '18', 'min_notional': '10',
+        #      'support_trace_trade': False}]}
 
     @try_exc_regular
     def get_all_tops(self):
@@ -69,47 +73,48 @@ class TapbitClient:
                 self._ws_public = ws
                 await self._loop_public.create_task(self.subscribe_orderbooks())
                 async for msg in ws:
-                    if msg.data == 'ping':
-                        await ws.pong(b'pong')
-                        continue
-                    data = json.loads(msg.data)
-                    if data.get('action') == 'insert':
-                        self.update_orderbook_snapshot(data)
-                    elif data.get('action') == 'update':
-                        self.update_orderbook(data)
+                    if ',instrument_name:' in str(msg.data):
+                        parts = str(msg.data).split(',instrument_name:')
+                        data = json.loads(parts[0] + '}}}')
+                        symbol = parts[1].split('PERPETUAL')[0] + 'PERPETUAL'
+                        self.update_orderbook(data, symbol)
 
-                    # example = [{"topic": "usdt/orderBook.1000FLOKI-SWAP", "action": "update", "data": [{
-                    #         "bids": [["0.03616", "50768"], ["0.03614", "116165"]],
-                    #         "asks": [["0.03621", "59245"], ["0.03622", "0"]],
-                    #         "version": 26818052, "timestamp": 1704134381758}]},
-                    #     {"topic": "usdt/orderBook.FTT-SWAP", "action": "insert", "data": [{
-                    #        "bids": [["3.1095", "10"], ["3.1090", "31"]],
-                    #        "asks": [["3.1158", "12"], ["3.1161", "15"]],
-                    #        "version": 3775392, "timestamp": 1704134367804}]}]
     @try_exc_async
     async def subscribe_orderbooks(self):
-        met = {"op": "subscribe",
-               "args": ['usdt/orderBook.' + self.markets[x] + '.10' for x in self.markets_list if self.markets.get(x)]}
+        method = {"jsonrpc": "2.0",
+                  "id": 1,
+                  "method": "/public/subscribe",
+                  "params": {
+                      "channels": ['book.' + x + '.raw' for x in self.markets_list if self.markets.get(x)]}}
         await self._connected.wait()
-        await self._ws_public.send_json(met)
+        await self._ws_public.send_json(method)
 
     @try_exc_regular
-    def update_orderbook(self, data):
-        ob = data['data'][0]
-        symbol = data['topic'].split('.')[1]
+    def update_orderbook(self, data, symbol):
+        ob = data['params']['data']
+        if not self.orderbook.get(symbol):
+            self.orderbook.update({symbol: {'asks': {}, 'bids': {}, 'timestamp': ob['timestamp']}})
         for new_bid in ob['bids']:
             res = self.orderbook[symbol]['bids']
-            if res.get(new_bid[0]) and new_bid[1] == '0':
-                del res[new_bid[0]]
+            if res.get(new_bid[1]) and new_bid[0] == 'delete':
+                del res[new_bid[1]]
             else:
-                self.orderbook[symbol]['bids'][new_bid[0]] = new_bid[1]
+                self.orderbook[symbol]['bids'][new_bid[1]] = new_bid[2]
         for new_ask in ob['asks']:
             res = self.orderbook[symbol]['asks']
-            if res.get(new_ask[0]) and new_ask[1] == '0':
-                del res[new_ask[0]]
+            if res.get(new_ask[1]) and new_ask[0] == 'delete':
+                del res[new_ask[1]]
             else:
-                self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
+                self.orderbook[symbol]['asks'][new_ask[1]] = new_ask[2]
         self.orderbook[symbol]['timestamp'] = ob['timestamp']
+        # example = {"params": {"data":
+        #                           {"timestamp": 1704141351600, "change_id": 34369840,
+        #                            "asks": [["delete", "2.34060000", "0"],
+        #                                     ["new", "2.35000000", "7167.00000000"]],
+        #                            "bids": [["new", "2.33130000", "4591.00000000"]],
+        #                            "instrument_name": "GAL-USDT-PERPETUAL"},
+        #                       "channel": "book.GAL-USDT-PERPETUAL.raw"},
+        #            "method": "subscription", "jsonrpc": "2.0"}
 
     @try_exc_regular
     def update_orderbook_snapshot(self, data):
@@ -140,8 +145,9 @@ class TapbitClient:
 
 
 if __name__ == '__main__':
-    client = TapbitClient()
-    # print(len(client.get_markets()))
+    client = OrangexClient()
+    print(len(client.get_markets()))
+    # print(client.get_markets())
     client.run_updater()
     while True:
         time.sleep(5)

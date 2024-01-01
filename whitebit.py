@@ -27,6 +27,7 @@ class WhiteBitClient(BaseClient):
         self.headers = {"Accept": "application/json;charset=UTF-8",
                         "Content-Type": "application/json",
                         'User-Agent': 'python-whitebit-sdk'}
+        self.markets_list = markets_list
         self.instruments = {}
         self.leverage = leverage
         self.max_pos_part = max_pos_part
@@ -239,8 +240,9 @@ class WhiteBitClient(BaseClient):
                 self._connected.set()
                 self._ws = ws
                 await self._loop.create_task(self.subscribe_privates())
-                for market in self.markets.values():
-                    await self._loop.create_task(self.subscribe_orderbooks(market))
+                for symbol in self.markets_list:
+                    if market := self.markets.get(symbol):
+                        await self._loop.create_task(self.subscribe_orderbooks(market))
                 async for msg in ws:
                     data = json.loads(msg.data)
                     if data.get('method') == 'depth_update':

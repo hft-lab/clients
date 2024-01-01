@@ -39,6 +39,7 @@ class BtseClient(BaseClient):
             self.api_secret = keys['API_SECRET']
         self.headers = {"Accept": "application/json;charset=UTF-8",
                         "Content-Type": "application/json"}
+        self.markets_list = markets_list
         self.positions = {}
         self.instruments = {}
         self.markets = self.get_markets()
@@ -442,7 +443,7 @@ class BtseClient(BaseClient):
 
     @try_exc_async
     async def subscribe_orderbooks(self):
-        args = [f"update:{x}_0" for x in self.markets.values()]
+        args = [f"update:{self.markets[x]}_0" for x in self.markets_list if self.markets.get(x)]
         method = {"op": "subscribe",
                   "args": args}
         await self._connected.wait()
