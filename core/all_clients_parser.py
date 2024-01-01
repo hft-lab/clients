@@ -5,6 +5,7 @@ from clients.globederivative import GlobeClient
 from clients.bit import BitClient
 from clients.btse import BtseClient
 from clients.whitebit import WhiteBitClient
+from clients.tapbit import TapbitClient
 
 ALL_CLIENTS = {
     'HITBTC': HitbtcClient,
@@ -13,5 +14,6 @@ ALL_CLIENTS = {
     'GLOBE': GlobeClient,
     'BIT': BitClient,
     'BTSE': BtseClient,
-    'WHITEBIT': WhiteBitClient
+    'WHITEBIT': WhiteBitClient,
+    'TAPBIT': TapbitClient
 }
