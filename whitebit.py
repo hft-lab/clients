@@ -167,7 +167,8 @@ class WhiteBitClient(BaseClient):
                 if isinstance(ob, dict) and 'asks' in ob and 'bids' in ob:
                     orderbook = {
                         'asks': [[float(ask[0]), float(ask[1])] for ask in ob['asks']],
-                        'bids': [[float(bid[0]), float(bid[1])] for bid in ob['bids']]
+                        'bids': [[float(bid[0]), float(bid[1])] for bid in ob['bids']],
+                        'timestamp': datetime.utcnow().timestamp()
                     }
                     return orderbook
 

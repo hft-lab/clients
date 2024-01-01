@@ -1,5 +1,4 @@
 import asyncio
-import traceback
 import uuid
 from datetime import datetime
 import json
@@ -468,12 +467,10 @@ class DydxClient(BaseClient):
         # self.markets_list = list(self.markets.keys())[:10]
         for symbol in self.markets_list:
             if market := self.markets.get(symbol):
-                msg = {
-                    'type': 'subscribe',
-                    'channel': 'v3_orderbook',
-                    'id': market,
-                    'includeOffsets': True
-                }
+                msg = {'type': 'subscribe',
+                       'channel': 'v3_orderbook',
+                       'id': market,
+                       'includeOffsets': True}
                 await self._connected.wait()
                 await self._ws.send_json(msg)
 
