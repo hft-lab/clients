@@ -253,6 +253,8 @@ class BtseClient(BaseClient):
                 return OrderStatus.PROCESSING
             else:
                 return OrderStatus.NOT_EXECUTED
+        else:
+            return OrderStatus.NOT_EXECUTED
 
     @try_exc_regular
     def get_order_by_id(self, symbol, order_id, cl_order_id=None):
