@@ -273,13 +273,13 @@ class BtseClient(BaseClient):
             # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID RESPONSE', response)
         else:
             print(f"ERROR IN GET_ORDER_BY_ID RESPONSE BTSE: {response.text=}")
-            return
-        symbol = order_data.get('symbol').replace('-PERP', 'PFC')
+            order_data = {}
+        # symbol = order_data.get('symbol').replace('-PERP', 'PFC')
         c_v = self.instruments[symbol]['contract_value']
         return {'exchange_order_id': order_data.get('orderID'),
                 'exchange': self.EXCHANGE_NAME,
                 'status': self.get_status_of_order(order_data.get('status', 0)),
-                'factual_price': order_data.get('avgFilledPrice'),
+                'factual_price': order_data.get('avgFilledPrice', 0),
                 'factual_amount_coin': order_data.get('filledSize', 0) * c_v,
                 'factual_amount_usd': order_data.get('filledSize', 0) * c_v * order_data.get('avgFilledPrice', 0),
                 'datetime_update': datetime.utcnow(),

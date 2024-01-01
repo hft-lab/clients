@@ -8,6 +8,7 @@ import threading
 from core.wrappers import try_exc_regular, try_exc_async
 import hmac
 import hashlib
+import base64
 
 
 class GlobeClient:
@@ -19,6 +20,7 @@ class GlobeClient:
         if keys:
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
+            self.passphrase = keys['PASSPHRASE']
         self.headers = {'Content-Type': 'application/json'}
         self.markets = self.get_markets()
         self._loop_public = asyncio.new_event_loop()
@@ -26,17 +28,60 @@ class GlobeClient:
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=[self._loop_public])
         self.requestLimit = 1200
         self.orderbook = {}
+        self.positions = {}
         self.taker_fee = 0.0005
 
     @try_exc_regular
     def get_markets(self):
-        way = "https://globe.exchange/api/v1/ticker/contracts"
-        resp = requests.get(url=way, headers=self.headers).json()
+        path = "/api/v1/ticker/contracts"
+        resp = requests.get(url=self.BASE_URL + path, headers=self.headers).json()
         markets = {}
         for market in resp:
             if market['product_type'] == 'perpetual' and market['product_status'] == 'Active':
                 markets.update({market['base_symbol']: market['instrument']})
         return markets
+
+    def _hash(self, sign_txt):
+        sign_txt = bytes(sign_txt, "utf-8")
+        secret = base64.b64decode(bytes(self.api_secret, "utf-8"))
+        signature = base64.b64encode(hmac.new(secret, sign_txt, digestmod=hashlib.sha256).digest())
+        return signature
+
+    @try_exc_regular
+    def get_private_headers(self, url):
+        """
+        Generate new authentication headers
+        """
+        headers = {
+            "X-Access-Key": self.api_key,
+            "X-Access-Signature": "",
+            "X-Access-Nonce": str(int(datetime.utcnow().timestamp() * 1000)),
+            "X-Access-Passphrase": self.passphrase,
+        }
+        sign_txt = headers["X-Access-Nonce"] + url
+        headers["X-Access-Signature"] = str(self._hash(sign_txt), "utf-8")
+        return headers
+
+    @try_exc_regular
+    def cancel_all_orders(self):
+        path = '/api/v4/order/cancel/all'
+        params, headers = self.get_auth_for_request({}, path)
+        path += self._create_uri(params)
+        res = requests.post(url=self.BASE_URL + path, headers=headers, json=params)
+        return res.json()
+
+    @try_exc_regular
+    def get_position(self):
+        path = "/api/v1/positions"
+        headers = self.get_private_headers(path)
+        resp = requests.get(url=self.BASE_URL + path, headers=headers).json()
+        for market, position in resp.items():
+            ob = self.get_orderbook(market)
+            mark_price = (ob['asks'][0][0] + ob['bids'][0][0]) / 2
+            self.positions.update({'timestamp': int(datetime.utcnow().timestamp()),
+                                   'entry_price': position['avg_price'],
+                                   'amount': position['quantity'],
+                                   'amount_usd': mark_price * position['quantity']})
 
     @try_exc_regular
     def get_all_tops(self):
