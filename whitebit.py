@@ -26,8 +26,11 @@ class WhiteBitClient(BaseClient):
             self.api_secret = keys['API_SECRET']
         self.headers = {"Accept": "application/json;charset=UTF-8",
                         "Content-Type": "application/json",
-                        'User-Agent': 'python-whitebit-sdk'}
+                        'User-Agent': 'python-whitebit-sdk',
+                        'Connection': 'keep-alive'}
         self.markets_list = markets_list
+        self.session = requests.session()
+        self.session.headers.update(self.headers)
         self.instruments = {}
         self.leverage = leverage
         self.max_pos_part = max_pos_part
@@ -54,7 +57,7 @@ class WhiteBitClient(BaseClient):
     @try_exc_regular
     def get_markets(self):
         path = "/api/v4/public/markets"
-        resp = requests.get(url=self.BASE_URL + path, headers=self.headers).json()
+        resp = self.session.get(url=self.BASE_URL + path).json()
         markets = {}
         for market in resp:
             if market['type'] == 'futures' and market['tradesEnabled']:
@@ -74,25 +77,25 @@ class WhiteBitClient(BaseClient):
     def set_leverage(self, leverage):
         path = "/api/v4/collateral-account/leverage"
         params = {'leverage': leverage}
-        params, headers = self.get_auth_for_request(params, path)
+        params = self.get_auth_for_request(params, path)
         path += self._create_uri(params)
-        res = requests.post(url=self.BASE_URL + path, headers=headers, json=params)
+        res = self.session.post(url=self.BASE_URL + path, json=params)
         return res.json()
 
     @try_exc_regular
     def cancel_all_orders(self):
         path = '/api/v4/order/cancel/all'
-        params, headers = self.get_auth_for_request({}, path)
+        params = self.get_auth_for_request({}, path)
         path += self._create_uri(params)
-        res = requests.post(url=self.BASE_URL + path, headers=headers, json=params)
+        res = self.session.post(url=self.BASE_URL + path, json=params)
         return res.json()
 
     @try_exc_regular
     def get_position(self):
         path = "/api/v4/collateral-account/positions/open"
-        params, headers = self.get_auth_for_request({}, path)
+        params = self.get_auth_for_request({}, path)
         path += self._create_uri(params)
-        res = requests.post(url=self.BASE_URL + path, headers=headers, json=params)
+        res = self.session.post(url=self.BASE_URL + path, json=params)
         response = res.json()
         # print('GET_POSITION RESPONSE', response)
         self.positions = {}
@@ -132,9 +135,9 @@ class WhiteBitClient(BaseClient):
     @try_exc_regular
     def get_real_balance(self):
         path = "/api/v4/collateral-account/balance"
-        params, headers = self.get_auth_for_request({}, path)
+        params = self.get_auth_for_request({}, path)
         path += self._create_uri(params)
-        res = requests.post(url=self.BASE_URL + path, headers=headers, json=params)
+        res = self.session.post(url=self.BASE_URL + path, json=params)
         response = res.json()
         # print('GET_REAL_BALANCE RESPONSE', response)
         self.balance = {'timestamp': datetime.utcnow().timestamp(),
@@ -144,7 +147,6 @@ class WhiteBitClient(BaseClient):
     #            'DOT': '0', 'EOS': '0', 'ETC': '0', 'ETH': '0', 'LINK': '0', 'LTC': '0', 'MATIC': '0', 'NEAR': '0',
     #            'OP': '0', 'SHIB': '0', 'SOL': '0', 'TRX': '0', 'UNI': '0', 'USDC': '0', 'USDT': '50', 'WBT': '0',
     #            'XLM': '0', 'XRP': '0'}
-
 
     @staticmethod
     @try_exc_regular
@@ -178,7 +180,7 @@ class WhiteBitClient(BaseClient):
         path = f'/api/v4/public/orderbook/{symbol}'
         params = {'limit': 10}  # Adjusting parameters as per WhiteBit's documentation
         path += self._create_uri(params)
-        resp = requests.get(url=self.BASE_URL + path, headers=self.headers)
+        resp = self.session.get(url=self.BASE_URL + path)
         ob = resp.json()
         # Check if the response is a dictionary and has 'asks' and 'bids' directly within it
         if isinstance(ob, dict) and 'asks' in ob and 'bids' in ob:
@@ -211,13 +213,12 @@ class WhiteBitClient(BaseClient):
         params['nonce'] = int(time.time() * 1000)
         params['nonceWindow'] = True
         signature, payload = self.get_signature(params)
-        headers = self.headers
-        headers.update({
+        self.session.headers.update({
             'X-TXC-APIKEY': self.api_key,
             'X-TXC-SIGNATURE': signature,
-            'X-TXC-PAYLOAD': payload.decode('ascii'),
+            'X-TXC-PAYLOAD': payload.decode('ascii')
         })
-        return params, headers
+        return params
 
     @try_exc_regular
     def _run_ws_forever(self, loop):
@@ -346,9 +347,9 @@ class WhiteBitClient(BaseClient):
     def get_order_by_id(self, symbol: str, order_id: int):
         path = '/api/v1/account/order_history'
         params = {'limit': 100}
-        params, headers = self.get_auth_for_request(params, path)
+        params = self.get_auth_for_request(params, path)
         path += self._create_uri(params)
-        res = requests.post(url=self.BASE_URL + path, headers=headers, json=params)
+        res = self.session.post(url=self.BASE_URL + path, json=params)
         response = res.json()
         # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID STARTED')
         # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID RESPONSE', response)
@@ -386,6 +387,7 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_async
     async def create_order(self, symbol, side, session=None, expire=10000, client_id=None):
+        time_start = time.time()
         path = "/api/v4/order/collateral/limit"
         params = {
             "market": symbol,
@@ -398,11 +400,12 @@ class WhiteBitClient(BaseClient):
         print(f"{self.EXCHANGE_NAME} SENDING ORDER: {params}")
         # if client_id:
         #     params['clientOrderId'] = client_id
-        params, headers = self.get_auth_for_request(params, path)
+        params = self.get_auth_for_request(params, path)
         path += self._create_uri(params)
-        async with session.post(url=self.BASE_URL + path, headers=headers, json=params) as resp:
+        async with session.post(url=self.BASE_URL + path, json=params) as resp:
             response = await resp.json()
             print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
+            print(f"ORDER PLACING TIME: {time.time() - time_start}")
             status = self.get_order_response_status(response)
             self.LAST_ORDER_ID = response.get('orderId', 'default')
             return {'exchange_name': self.EXCHANGE_NAME,
@@ -438,9 +441,9 @@ class WhiteBitClient(BaseClient):
     @try_exc_regular
     def get_ws_token(self):
         path = "/api/v4/profile/websocket_token"
-        params, headers = self.get_auth_for_request({}, path)
+        params = self.get_auth_for_request({}, path)
         path += self._create_uri(params)
-        res = requests.post(url=self.BASE_URL + path, headers=headers, json=params).json()
+        res = self.session.post(url=self.BASE_URL + path, json=params).json()
         return res['websocket_token']
 
     @try_exc_async

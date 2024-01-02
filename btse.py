@@ -38,7 +38,10 @@ class BtseClient(BaseClient):
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
         self.headers = {"Accept": "application/json;charset=UTF-8",
-                        "Content-Type": "application/json"}
+                        "Content-Type": "application/json",
+                        'Connection': 'keep-alive'}
+        self.session = requests.session()
+        self.session.headers.update(self.headers)
         self.markets_list = markets_list
         self.positions = {}
         self.instruments = {}
@@ -78,7 +81,7 @@ class BtseClient(BaseClient):
     @try_exc_regular
     def get_markets(self):
         way = "https://api.btse.com/futures/api/v2.1/market_summary"
-        resp = requests.get(url=way, headers=self.headers).json()
+        resp = self.session.get(url=way).json()
         markets = {}
         for market in resp:
             if market['active'] and 'PFC' in market['symbol']:
@@ -122,22 +125,19 @@ class BtseClient(BaseClient):
         return signature
 
     @try_exc_regular
-    def get_private_headers(self, path, data=''):
+    def get_private_headers(self, path, data={}):
         json_data = json.dumps(data) if data else ''
         nonce = str(int(time.time() * 1000))
         signature = self.generate_signature(path, nonce, json_data)
-        return {"request-api": self.api_key,
-                "request-nonce": nonce,
-                "request-sign": signature,
-                "Accept": "application/json;charset=UTF-8",
-                "Content-Type": "application/json"}
+        self.session.headers.update({"request-api": self.api_key,
+                                     "request-nonce": nonce,
+                                     "request-sign": signature})
 
     @try_exc_regular
     def get_real_balance(self):
         path = '/api/v2.1/user/wallet'
-        headers = self.get_private_headers(path)
-        url = self.BASE_URL + path
-        response = requests.get(url, headers=headers)
+        self.get_private_headers(path)
+        response = self.session.get(url=self.BASE_URL + path)
         if response.status_code in ['200', 200, '201', 201]:
             balance_data = response.json()
             self.balance = {'timestamp': round(datetime.utcnow().timestamp()),
@@ -150,15 +150,15 @@ class BtseClient(BaseClient):
     def cancel_all_orders(self):
         path = "/api/v2.1/order/cancelAllAfter"
         data = {"timeout": 10}
-        headers = self.get_private_headers(path, data)
-        response = requests.post(self.BASE_URL + path, headers=headers, json=data)
+        self.get_private_headers(path, data)
+        response = self.session.post(self.BASE_URL + path, json=data)
         return response.text
 
     @try_exc_regular
     def get_position(self):
         path = "/api/v2.1/user/positions"
-        headers = self.get_private_headers(path)
-        response = requests.get(self.BASE_URL + path, headers=headers)
+        self.get_private_headers(path)
+        response = self.session.get(self.BASE_URL + path)
         # print('GET_POSITION RESPONSE', response.json())
         self.positions = {}
         if response.status_code in ['200', 200, '201', 201]:
@@ -269,8 +269,8 @@ class BtseClient(BaseClient):
         else:
             params['clOrderID'] = cl_order_id
             final_path = f"/api/v2.1/order?clOrderID={cl_order_id}"
-        headers = self.get_private_headers(path)
-        response = requests.get(url=self.BASE_URL + final_path, headers=headers)
+        self.get_private_headers(path)
+        response = self.session.get(url=self.BASE_URL + final_path)
         if response.status_code in ['200', 200, '201', 201]:
             order_data = response.json()
             # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID RESPONSE', response)

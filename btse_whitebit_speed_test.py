@@ -1,17 +1,20 @@
 import time
 from datetime import datetime
 import requests
+# import clients.btse_whitebit_speed_test
 
 headers = {"Accept": "application/json;charset=UTF-8",
-           "Content-Type": "application/json"}
+           "Content-Type": "application/json",
+           'Connection': 'keep-alive'}
 
 
-def get_orderbook_btse():
+def get_orderbook_btse(session):
     path = 'https://api.btse.com/futures/api/v2.1/orderbook'
     params = {'symbol': 'ETHPFC', 'depth': 10}
     post_string = '?' + "&".join([f"{key}={params[key]}" for key in sorted(params)])
     # headers = get_private_headers(path, {})  # Assuming authentication is required
-    res = requests.get(url=path + post_string, headers=headers, data=params)
+    res = session.get(url=path + post_string, data=params)
+    # print('BTSE', res.headers)
     ob = res.json()
     if 'buyQuote' in ob and 'sellQuote' in ob:
         orderbook = {
@@ -22,7 +25,7 @@ def get_orderbook_btse():
         return orderbook
 
 
-def get_orderbook_whitebit():
+def get_orderbook_whitebit(session):
     path = 'https://whitebit.com/api/v4/public/orderbook/BTC_PERP'
     params = {'limit': 10}  # Adjusting parameters as per WhiteBit's documentation
     data = ''
@@ -31,7 +34,8 @@ def get_orderbook_whitebit():
         strl.append(f'{key}={params[key]}')
     data += '&'.join(strl)
     path += f'?{data}'.replace(' ', '%20')
-    resp = requests.get(url=path, headers=headers)
+    resp = session.get(url=path)
+    # print('whitebit', resp.headers)
     ob = resp.json()
     # Check if the response is a dictionary and has 'asks' and 'bids' directly within it
     if isinstance(ob, dict) and 'asks' in ob and 'bids' in ob:
@@ -46,15 +50,17 @@ def get_orderbook_whitebit():
 if __name__ == '__main__':
     whitebit_records = []
     btse_records = []
+    session = requests.Session()
+    session.headers.update(headers)
     while True:
         time.sleep(1)
         time_start_whitebit = datetime.utcnow().timestamp()
-        ob_whitebit_time = get_orderbook_whitebit()['timestamp']
+        ob_whitebit_time = get_orderbook_whitebit(session)['timestamp']
         # print(f"GET OB WHITEBIT TIME: {ob_whitebit_time - time_start_whitebit} sec")
         whitebit_records.append(ob_whitebit_time - time_start_whitebit)
         print(f"GET OB WHITEBIT AV. TIME: {sum(whitebit_records) / len(whitebit_records)} sec")
         time_start_btse = datetime.utcnow().timestamp()
-        ob_btse_time = get_orderbook_whitebit()['timestamp']
+        ob_btse_time = get_orderbook_whitebit(session)['timestamp']
         # print(f"GET OB BTSE TIME: {ob_btse_time - time_start_btse} sec")
         btse_records.append(ob_btse_time - time_start_btse)
         print(f"GET OB BTSE AV. TIME: {sum(btse_records) / len(btse_records)} sec")
