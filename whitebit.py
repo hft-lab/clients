@@ -21,8 +21,10 @@ class WhiteBitClient(BaseClient):
     BASE_URL = 'https://whitebit.com'
     EXCHANGE_NAME = 'WHITEBIT'
 
-    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20):
+    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20, finder=None):
         super().__init__()
+        if finder:
+            self.finder = finder
         if keys:
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
@@ -498,6 +500,7 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_regular
     def update_orderbook(self, data):
+        flag = False
         if data['params'][2] == self.now_getting:
             while self.getting_ob.is_set():
                 time.sleep(0.00001)
@@ -505,19 +508,25 @@ class WhiteBitClient(BaseClient):
         for new_bid in data['params'][1].get('bids', []):
             if float(new_bid[0]) >= self.orderbook[symbol]['top_bid'][0]:
                 self.orderbook[symbol]['top_bid'] = [float(new_bid[0]), float(new_bid[1])]
+                self.orderbook[symbol]['top_bid_timestamp'] = data['params'][1]['timestamp']
+                flag = True
             if self.orderbook[symbol]['bids'].get(new_bid[0]) and new_bid[1] == '0':
                 del self.orderbook[symbol]['bids'][new_bid[0]]
                 top = sorted(self.orderbook[symbol]['bids'])[-1]
                 self.orderbook[symbol]['top_bid'] = [float(top), float(self.orderbook[symbol]['bids'][top])]
+                self.orderbook[symbol]['top_bid_timestamp'] = data['params'][1]['timestamp']
             else:
                 self.orderbook[symbol]['bids'][new_bid[0]] = new_bid[1]
         for new_ask in data['params'][1].get('asks', []):
             if float(new_ask[0]) <= self.orderbook[symbol]['top_ask'][0]:
                 self.orderbook[symbol]['top_ask'] = [float(new_ask[0]), float(new_ask[1])]
+                self.orderbook[symbol]['top_ask_timestamp'] = data['params'][1]['timestamp']
+                flag = True
             if self.orderbook[symbol]['asks'].get(new_ask[0]) and new_ask[1] == '0':
                 del self.orderbook[symbol]['asks'][new_ask[0]]
                 top = sorted(self.orderbook[symbol]['asks'])[0]
                 self.orderbook[symbol]['top_ask'] = [float(top), float(self.orderbook[symbol]['asks'][top])]
+                self.orderbook[symbol]['top_ask_timestamp'] = data['params'][1]['timestamp']
             else:
                 self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol]['timestamp'] = data['params'][1]['timestamp']
@@ -534,7 +543,9 @@ class WhiteBitClient(BaseClient):
                                       'bids': {x[0]: x[1] for x in ob['bids']},
                                       'timestamp': data['params'][1]['timestamp'],
                                       'top_ask': [float(ob['asks'][0][0]), float(ob['asks'][0][1])],
-                                      'top_bid': [float(ob['bids'][0][0]), float(ob['bids'][0][1])]}
+                                      'top_bid': [float(ob['bids'][0][0]), float(ob['bids'][0][1])],
+                                      'top_ask_timestamp': data['params'][1]['timestamp'],
+                                      'top_bid_timestamp': data['params'][1]['timestamp']}
 
     @try_exc_regular
     def get_orderbook(self, symbol) -> dict:
@@ -547,7 +558,9 @@ class WhiteBitClient(BaseClient):
             return snap
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
               'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks'])[:5]],
-              'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids'])[-5:]][::-1]}
+              'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids'])[-5:]][::-1],
+              'top_ask_timestamp': self.orderbook[symbol]['top_ask_timestamp'],
+              'top_bid_timestamp': self.orderbook[symbol]['top_bid_timestamp']}
         self.now_getting = ''
         self.getting_ob.clear()
         return ob
