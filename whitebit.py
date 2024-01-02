@@ -237,14 +237,22 @@ class WhiteBitClient(BaseClient):
         path += self._create_uri(params)
         async with session.get(url=self.BASE_URL + path) as resp:
             ob = await resp.json()
-            print(f"SuperSonic time: {time.time() - time_start} sec")
-            print(ob)
+            # print(f"SuperSonic time: {time.time() - time_start} sec")
+            # print(ob)
             # Check if the response is a dictionary and has 'asks' and 'bids' directly within it
             if isinstance(ob, dict) and 'asks' in ob and 'bids' in ob:
+                ask = ob['asks'][0]
+                bid = ob['bids'][0]
+                ts = datetime.utcnow().timestamp()
                 orderbook = {
-                    'asks': [[float(ask[0]), float(ask[1])] for ask in ob['asks']],
-                    'bids': [[float(bid[0]), float(bid[1])] for bid in ob['bids']],
-                    'timestamp': datetime.utcnow().timestamp()}
+                    'asks': {ask[0]: ask[1]},
+                    'bids': {bid[0]: bid[1]},
+                    'top_ask': [float(ask[0]), float(ask[1])],
+                    'top_bid': [float(bid[0]), float(bid[1])],
+                    'timestamp': ts,
+                    'top_ask_timestamp': ts,
+                    'top_bid_timestamp': ts}
+                # print(orderbook)
                 self.orderbook[market] = orderbook
                 self.finder.coins_to_check.append(coin)
                 self.finder.update = True
