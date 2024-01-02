@@ -43,10 +43,11 @@ class WhiteBitClient(BaseClient):
         self.error_info = None
         self.markets = self.get_markets()
         self._loop = asyncio.new_event_loop()
+        self._loop_supersonic = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self._wst_ = threading.Thread(target=self._run_ws_forever, args=[self._loop])
         self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
-        self._extra_speed = threading.Thread(target=self._request_orderbooks)
+        self._extra_speed = threading.Thread(target=self.run_super_sonic)
         self.requestLimit = 1200
         self.getting_ob = asyncio.Event()
         self.now_getting = ''
@@ -262,16 +263,23 @@ class WhiteBitClient(BaseClient):
                 target_coin = coin
         return self.markets.get(target_coin), target_coin
 
+    @try_exc_regular
+    def run_super_sonic(self):
+        self._loop_supersonic.run_until_complete(self._request_orderbooks())
+
     @try_exc_async
     async def _request_orderbooks(self):
+        print('SUPERSONIC INITIALIZED')
         while not self.finder:
             time.sleep(1)
         async with aiohttp.ClientSession() as session:
             session.headers.update(self.headers)
             while True:
-                print(f"SUPERSONIC GO!!!!")
+                time.sleep(0.005)
+                # print(f"SUPERSONIC GO!!!!")
                 best_market, coin = self.find_best_market()
-                await self._loop.create_task(self.super_sonic_ob_update(best_market, coin, session))
+                if best_market:
+                    await self._loop_supersonic.create_task(self.super_sonic_ob_update(best_market, coin, session))
 
     @try_exc_regular
     def _run_ws_forever(self, loop):
@@ -623,7 +631,7 @@ class WhiteBitClient(BaseClient):
     @try_exc_regular
     def first_positions_update(self):
         while set(self.orderbook.keys()) < set([self.markets[x] for x in self.markets_list if self.markets.get(x)]):
-            time.sleep(0.0001)
+            time.sleep(0.01)
         print('GOT ALL MARKETS')
         self.get_position()
 
