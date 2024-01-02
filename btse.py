@@ -7,6 +7,8 @@ import asyncio
 import threading
 import hmac
 import hashlib
+import requests_cache
+requests_cache.install_cache('dns_cache', backend='sqlite', expire_after=300)
 
 from clients.core.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
 from core.wrappers import try_exc_regular, try_exc_async
@@ -50,13 +52,13 @@ class BtseClient(BaseClient):
         self.get_real_balance()
         self.get_position()
         self.error_info = None
-        self._loop_public = asyncio.new_event_loop()
-        self._loop_private = asyncio.new_event_loop()
+        self._loop = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self.getting_ob = asyncio.Event()
         self.now_getting = ''
-        self.wst_public = threading.Thread(target=self._run_ws_forever, args=['public', self._loop_public])
-        self.wst_private = threading.Thread(target=self._run_ws_forever, args=['private', self._loop_private])
+        self.wst_public = threading.Thread(target=self._run_ws_forever, args=['public'])
+        self.wst_private = threading.Thread(target=self._run_ws_forever, args=['private'])
+        self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
         self.price = 0
         self.amount = 0
         self.requestLimit = 1200
@@ -65,6 +67,7 @@ class BtseClient(BaseClient):
         self.last_price = {}
         self.taker_fee = 0.0005
         self.orig_sizes = {}
+        self.message_queue = asyncio.Queue(loop=self._loop)
         self.LAST_ORDER_ID = 'default'
 
     @staticmethod
@@ -102,18 +105,21 @@ class BtseClient(BaseClient):
     def get_all_tops(self):
         tops = {}
         for coin, symbol in self.markets.items():
-            orderbook = self.get_orderbook(symbol)
-            if orderbook and orderbook['bids'] and orderbook['asks']:
+            orderbook = self.orderbook.get(symbol, {})
+            if orderbook and orderbook.get('bids') and orderbook.get('asks'):
+                c_v = self.instruments[symbol]['contract_value']
                 tops.update({self.EXCHANGE_NAME + '__' + coin: {
-                    'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
-                    'bid_vol': orderbook['bids'][0][1], 'ask_vol': orderbook['asks'][0][1],
+                    'top_bid': orderbook['top_bid'][0], 'top_ask': orderbook['top_ask'][0],
+                    'bid_vol': orderbook['top_bid'][1] * c_v, 'ask_vol': orderbook['top_ask'][1] * c_v,
                     'ts_exchange': orderbook['timestamp']}})
         return tops
 
     @try_exc_regular
-    def _run_ws_forever(self, type, loop):
-        while True:
-            loop.run_until_complete(self._run_ws_loop(type))
+    def _run_ws_forever(self, ws_type):
+        if ws_type == 'public':
+            self._loop.run_until_complete(self._run_ws_loop(ws_type))
+        else:
+            self._loop.create_task(self._run_ws_loop(ws_type))
 
     @try_exc_regular
     def generate_signature(self, path, nonce, data=''):
@@ -216,6 +222,7 @@ class BtseClient(BaseClient):
 
     @try_exc_async
     async def create_order(self, symbol, side, session=None, expire=10000, client_id=None, expiration=None):
+        time_start = time.time()
         path = '/api/v2.1/order'
         contract_value = self.instruments[symbol]['contract_value']
         body = {"symbol": symbol,
@@ -224,10 +231,14 @@ class BtseClient(BaseClient):
                 "type": "LIMIT",
                 'size': int(self.amount / contract_value)}
         print(f"{self.EXCHANGE_NAME} SENDING ORDER: {body}")
-        headers = self.get_private_headers(path, body)
-        async with session.post(url=self.BASE_URL + path, headers=headers, json=body) as resp:
+        self.get_private_headers(path, body)
+        async with session.post(url=self.BASE_URL + path, headers=self.session.headers, json=body) as resp:
             res = await resp.json()
+        # resp = self.session.post(url=self.BASE_URL + path, json=body)
+        # res = resp.json()
             print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {res}")
+            print(f"ORDER PLACING TIME: {time.time() - time_start}")
+            # self.aver_time.append(time.time() - time_start)
             if len(res):
                 status = self.get_order_response_status(res)
                 self.LAST_ORDER_ID = res[0].get('orderID', 'default')
@@ -319,30 +330,43 @@ class BtseClient(BaseClient):
             balance=self.balance)
 
     @try_exc_async
-    async def _run_ws_loop(self, type):
+    async def _run_ws_loop(self, ws_type):
         async with aiohttp.ClientSession() as s:
-            if type == 'private':
+            if ws_type == 'private':
                 endpoint = self.PRIVATE_WS_ENDPOINT
             else:
                 endpoint = self.PUBLIC_WS_ENDPOINT
             async with s.ws_connect(endpoint) as ws:
-                print(f"BTSE: connected {type}")
+                print(f"BTSE: connected {ws_type}")
                 self._connected.set()
-                if type == 'private':
+                if ws_type == 'private':
                     self._ws_private = ws
-                    await self._loop_private.create_task(self.subscribe_privates())
+                    await self._loop.create_task(self.subscribe_privates())
                 else:
                     self._ws_public = ws
-                    await self._loop_public.create_task(self.subscribe_orderbooks())
+                    await self._loop.create_task(self.subscribe_orderbooks())
                 async for msg in ws:
-                    data = json.loads(msg.data)
-                    if type == 'public':
-                        if data.get('data') and data['data']['type'] == 'snapshot':
-                            self.update_orderbook_snapshot(data)
-                        elif data.get('data') and data['data']['type'] == 'delta':
-                            self.update_orderbook(data)
-                    elif type == 'private':
-                        self.update_private_data(data)
+                    await self.message_queue.put(msg)
+
+    @try_exc_regular
+    def _process_ws_line(self):
+        self._loop.create_task(self.process_messages())
+
+    @try_exc_async
+    async def process_messages(self):
+        while True:
+            msg = await self.message_queue.get()
+            data = json.loads(msg.data)
+            if 'update' in data.get('topic', ''):
+                if data.get('data') and data['data']['type'] == 'snapshot':
+                    self.update_orderbook_snapshot(data)
+                elif data.get('data') and data['data']['type'] == 'delta':
+                    self.update_orderbook(data)
+            else:
+                self.update_private_data(data)
+            self.message_queue.task_done()
+            if self.message_queue.qsize() > 100:
+                print(f'ALERT! {self.EXCHANGE_NAME} WS LINE LENGTH:', self.message_queue.qsize())
 
     @try_exc_regular
     def update_private_data(self, data):
@@ -452,11 +476,11 @@ class BtseClient(BaseClient):
     @try_exc_regular
     def get_wss_auth(self):
         url = "/ws/futures"
-        headers = self.get_private_headers(url)
+        self.get_private_headers(url)
         data = {"op": "authKeyExpires",
-                "args": [headers["request-api"],
-                         headers["request-nonce"],
-                         headers["request-sign"]]}
+                "args": [self.session.headers["request-api"],
+                         self.session.headers["request-nonce"],
+                         self.session.headers["request-sign"]]}
         return data
 
     @try_exc_async
@@ -478,18 +502,25 @@ class BtseClient(BaseClient):
                 time.sleep(0.00001)
         symbol = data['data']['symbol']
         for new_bid in data['data']['bids']:
-            res = self.orderbook[symbol]['bids']
-            if res.get(new_bid[0]) and new_bid[1] == '0':
-                del res[new_bid[0]]
+            if float(new_bid[0]) >= self.orderbook[symbol]['top_bid'][0]:
+                self.orderbook[symbol]['top_bid'] = [float(new_bid[0]), float(new_bid[1])]
+            if self.orderbook[symbol]['bids'].get(new_bid[0]) and new_bid[1] == '0':
+                del self.orderbook[symbol]['bids'][new_bid[0]]
+                top = sorted(self.orderbook[symbol]['bids'])[-1]
+                self.orderbook[symbol]['top_bid'] = [float(top), float(self.orderbook[symbol]['bids'][top])]
             else:
                 self.orderbook[symbol]['bids'][new_bid[0]] = new_bid[1]
         for new_ask in data['data']['asks']:
-            res = self.orderbook[symbol]['asks']
-            if res.get(new_ask[0]) and new_ask[1] == '0':
-                del res[new_ask[0]]
+            if float(new_ask[0]) <= self.orderbook[symbol]['top_ask'][0]:
+                self.orderbook[symbol]['top_ask'] = [float(new_ask[0]), float(new_ask[1])]
+            if self.orderbook[symbol]['asks'].get(new_ask[0]) and new_ask[1] == '0':
+                del self.orderbook[symbol]['asks'][new_ask[0]]
+                top = sorted(self.orderbook[symbol]['asks'])[0]
+                self.orderbook[symbol]['top_ask'] = [float(top), float(self.orderbook[symbol]['asks'][top])]
             else:
                 self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol]['timestamp'] = data['data']['timestamp']
+
 
     @try_exc_regular
     def update_orderbook_snapshot(self, data):
@@ -499,7 +530,10 @@ class BtseClient(BaseClient):
         symbol = data['data']['symbol']
         self.orderbook[symbol] = {'asks': {x[0]: x[1] for x in data['data']['asks']},
                                   'bids': {x[0]: x[1] for x in data['data']['bids']},
-                                  'timestamp': data['data']['timestamp']}
+                                  'timestamp': data['data']['timestamp'],
+                                  'top_ask': [float(data['data']['asks'][0][0]), float(data['data']['asks'][0][1])],
+                                  'top_bid': [float(data['data']['bids'][0][0]), float(data['data']['bids'][0][1])]}
+
 
     @try_exc_regular
     def get_last_price(self, side: str) -> float:
@@ -516,9 +550,8 @@ class BtseClient(BaseClient):
             return snap
         c_v = self.instruments[symbol]['contract_value']
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
-              'asks': [[float(x), float(snap['asks'][x]) * c_v] for x in sorted(snap['asks']) if snap['asks'].get(x)],
-              'bids': [[float(x), float(snap['bids'][x]) * c_v] for x in sorted(snap['bids']) if snap['bids'].get(x)][
-                      ::-1]}
+              'asks': [[float(x), float(snap['asks'][x]) * c_v] for x in sorted(snap['asks'])[:5]],
+              'bids': [[float(x), float(snap['bids'][x]) * c_v] for x in sorted(snap['bids'])[-5:]]}
         self.now_getting = ''
         self.getting_ob.clear()
         return ob
@@ -547,6 +580,8 @@ class BtseClient(BaseClient):
         self.wst_public.start()
         self.wst_private.daemon = True
         self.wst_private.start()
+        self._wst_orderbooks.daemon = True
+        self._wst_orderbooks.start()
 
 
 if __name__ == '__main__':
@@ -556,34 +591,53 @@ if __name__ == '__main__':
     config.read('config.ini', "utf-8")
     client = BtseClient(keys=config['BTSE'],
                         leverage=float(config['SETTINGS']['LEVERAGE']),
-                        max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']))
+                        max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
+                        markets_list=['BTC'])
 
 
     async def test_order():
         async with aiohttp.ClientSession() as session:
             ob = await client.get_orderbook_by_symbol('ETHPFC')
-            price = ob['bids'][5][0]
+            price = ob['bids'][8][0]
+            loop = asyncio.get_event_loop()
             client.amount = client.instruments['ETHPFC']['min_size']
-            client.price = price
-            data = await client.create_order('ETHPFC', 'buy', session)
-            print('CREATE_ORDER OUTPUT:', data)
-            print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
+            tick = client.instruments['ETHPFC']['tick_size']
+            # client.price = price
+            # await client.create_order('ETHPFC', 'buy', session)
+            # print('CREATE_ORDER OUTPUT:', data)
+            tasks = []
+            time_start = time.time()
+            for price in ob['bids'][3:6]:
+                client.price = price[0] - tick
+                tasks.append(loop.create_task(client.create_order('ETHPFC', 'buy', session)))
+            data = await asyncio.gather(*tasks)
+            print(f"ALL TIME: {time.time() - time_start} sec")
+            print(data)
+            # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
             time.sleep(1)
             client.cancel_all_orders()
-            time.sleep(1)
-
-            print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
+            # time.sleep(1)
+            #
+            # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
 
             # print('CANCEL_ALL_ORDERS RESPONSE:', data_cancel)
 
-
+    client.markets_list = list(client.markets.keys())
     client.run_updater()
-    time.sleep(1)
-    # client.get_real_balance()
-    print(client.get_positions())
-    time.sleep(2)
-    asyncio.run(test_order())
-    client.get_position()
+    # time.sleep(1)
+    # # client.get_real_balance()
+    # print(client.get_positions())
+    # time.sleep(2)
+    # asyncio.run(test_order())
+    # client.get_position()
+    client.aver_time = []
     while True:
         time.sleep(5)
+        for market in client.markets.values():
+            print(client.get_orderbook(market))
+            print()
+        # print(client.get_all_tops())
+        # asyncio.run(test_order())
+        # print(f"Aver. order create time: {sum(client.aver_time) / len(client.aver_time)} sec")
+
         # print(client.get_all_tops())
