@@ -530,6 +530,10 @@ class WhiteBitClient(BaseClient):
             else:
                 self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol]['timestamp'] = data['params'][1]['timestamp']
+        if flag and self.message_queue.qsize() <= 1:
+            coin = symbol.split('_')[0]
+            self.finder.coins_to_check.append(coin)
+            self.finder.update = True
 
     @try_exc_regular
     def update_orderbook_snapshot(self, data):
