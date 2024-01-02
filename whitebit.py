@@ -512,9 +512,10 @@ class WhiteBitClient(BaseClient):
                 flag = True
             if self.orderbook[symbol]['bids'].get(new_bid[0]) and new_bid[1] == '0':
                 del self.orderbook[symbol]['bids'][new_bid[0]]
-                top = sorted(self.orderbook[symbol]['bids'])[-1]
-                self.orderbook[symbol]['top_bid'] = [float(top), float(self.orderbook[symbol]['bids'][top])]
-                self.orderbook[symbol]['top_bid_timestamp'] = data['params'][1]['timestamp']
+                if float(new_bid[0]) == self.orderbook[symbol]['top_bid'][0] and len(self.orderbook[symbol]['bids']):
+                    top = sorted(self.orderbook[symbol]['bids'])[-1]
+                    self.orderbook[symbol]['top_bid'] = [float(top), float(self.orderbook[symbol]['bids'][top])]
+                    self.orderbook[symbol]['top_bid_timestamp'] = data['params'][1]['timestamp']
             else:
                 self.orderbook[symbol]['bids'][new_bid[0]] = new_bid[1]
         for new_ask in data['params'][1].get('asks', []):
@@ -524,9 +525,10 @@ class WhiteBitClient(BaseClient):
                 flag = True
             if self.orderbook[symbol]['asks'].get(new_ask[0]) and new_ask[1] == '0':
                 del self.orderbook[symbol]['asks'][new_ask[0]]
-                top = sorted(self.orderbook[symbol]['asks'])[0]
-                self.orderbook[symbol]['top_ask'] = [float(top), float(self.orderbook[symbol]['asks'][top])]
-                self.orderbook[symbol]['top_ask_timestamp'] = data['params'][1]['timestamp']
+                if float(new_ask[0]) == self.orderbook[symbol]['top_ask'][0] and len(self.orderbook[symbol]['asks']):
+                    top = sorted(self.orderbook[symbol]['asks'])[0]
+                    self.orderbook[symbol]['top_ask'] = [float(top), float(self.orderbook[symbol]['asks'][top])]
+                    self.orderbook[symbol]['top_ask_timestamp'] = data['params'][1]['timestamp']
             else:
                 self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol]['timestamp'] = data['params'][1]['timestamp']
