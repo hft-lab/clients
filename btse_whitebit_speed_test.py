@@ -60,8 +60,8 @@ if __name__ == '__main__':
         whitebit_records.append(ob_whitebit_time - time_start_whitebit)
         print(f"GET OB WHITEBIT AV. TIME: {sum(whitebit_records) / len(whitebit_records)} sec")
         time_start_btse = datetime.utcnow().timestamp()
-        ob_btse_time = get_orderbook_whitebit(session)['timestamp']
+        ob_btse_time = get_orderbook_btse(session)['timestamp'] / 1000
         # print(f"GET OB BTSE TIME: {ob_btse_time - time_start_btse} sec")
-        btse_records.append(ob_btse_time - time_start_btse)
+        btse_records.append(datetime.utcnow().timestamp() - time_start_btse)
         print(f"GET OB BTSE AV. TIME: {sum(btse_records) / len(btse_records)} sec")
         print()

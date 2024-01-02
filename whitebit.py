@@ -46,6 +46,7 @@ class WhiteBitClient(BaseClient):
         self._connected = asyncio.Event()
         self._wst_ = threading.Thread(target=self._run_ws_forever, args=[self._loop])
         self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
+        self._extra_speed = threading.Thread(target=self._request_orderbooks)
         self.requestLimit = 1200
         self.getting_ob = asyncio.Event()
         self.now_getting = ''
@@ -177,8 +178,9 @@ class WhiteBitClient(BaseClient):
                     orderbook = {
                         'asks': [[float(ask[0]), float(ask[1])] for ask in ob['asks']],
                         'bids': [[float(bid[0]), float(bid[1])] for bid in ob['bids']],
-                        'timestamp': datetime.utcnow().timestamp()
-                    }
+                        'timestamp': datetime.utcnow().timestamp(),
+                        'top_ask_timestamp': datetime.utcnow().timestamp(),
+                        'top_bid_timestamp': datetime.utcnow().timestamp()}
                     return orderbook
 
     @try_exc_regular
@@ -226,6 +228,51 @@ class WhiteBitClient(BaseClient):
         })
         return params
 
+    @try_exc_async
+    async def super_sonic_ob_update(self, market, coin, session):
+        time_start = time.time()
+        path = f'/api/v4/public/orderbook/{market}'
+        params = {'limit': 1}  # Adjusting parameters as per WhiteBit's documentation
+        path += self._create_uri(params)
+        async with session.get(url=self.BASE_URL + path) as resp:
+            ob = await resp.json()
+            print(f"SuperSonic time: {time.time() - time_start} sec")
+            print(ob)
+            # Check if the response is a dictionary and has 'asks' and 'bids' directly within it
+            if isinstance(ob, dict) and 'asks' in ob and 'bids' in ob:
+                orderbook = {
+                    'asks': [[float(ask[0]), float(ask[1])] for ask in ob['asks']],
+                    'bids': [[float(bid[0]), float(bid[1])] for bid in ob['bids']],
+                    'timestamp': datetime.utcnow().timestamp()}
+                self.orderbook[market] = orderbook
+                self.finder.coins_to_check.append(coin)
+                self.finder.update = True
+
+    @try_exc_regular
+    def find_best_market(self):
+        tradable_markets = self.finder.tradable_profits.copy()
+        min_profit_gap = 100
+        target_coin = None
+        for coin, exchanges in tradable_markets.items():
+            if exchanges.get(self.EXCHANGE_NAME + 'BUY', 100) < min_profit_gap:
+                min_profit_gap = exchanges[self.EXCHANGE_NAME + 'BUY']
+                target_coin = coin
+            if exchanges.get(self.EXCHANGE_NAME + 'SELL', 100) < min_profit_gap:
+                min_profit_gap = exchanges[self.EXCHANGE_NAME + 'SELL']
+                target_coin = coin
+        return self.markets.get(target_coin), target_coin
+
+    @try_exc_async
+    async def _request_orderbooks(self):
+        while not self.finder:
+            time.sleep(1)
+        async with aiohttp.ClientSession() as session:
+            session.headers.update(self.headers)
+            while True:
+                print(f"SUPERSONIC GO!!!!")
+                best_market, coin = self.find_best_market()
+                await self._loop.create_task(self.super_sonic_ob_update(best_market, coin, session))
+
     @try_exc_regular
     def _run_ws_forever(self, loop):
         while True:
@@ -259,6 +306,8 @@ class WhiteBitClient(BaseClient):
         self._wst_.start()
         self._wst_orderbooks.daemon = True
         self._wst_orderbooks.start()
+        self._extra_speed.daemon = True
+        self._extra_speed.start()
         self.first_positions_update()
 
     @try_exc_regular
