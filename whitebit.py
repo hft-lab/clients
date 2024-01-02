@@ -490,12 +490,12 @@ class WhiteBitClient(BaseClient):
     def get_all_tops(self):
         tops = {}
         for coin, symbol in self.markets.items():
-            orderbook = self.get_orderbook(symbol)
-            if orderbook and orderbook['bids'] and orderbook['asks']:
+            orderbook = self.orderbook.get(symbol, {})
+            if orderbook and orderbook.get('bids') and orderbook.get('asks'):
                 tops.update({self.EXCHANGE_NAME + '__' + coin: {
-                    'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
-                    'bid_vol': orderbook['bids'][0][1], 'ask_vol': orderbook['asks'][0][1],
-                    'ts_exchange': orderbook['timestamp'] * 1000}})
+                    'top_bid': orderbook['top_bid'][0], 'top_ask': orderbook['top_ask'][0],
+                    'bid_vol': orderbook['top_bid'][1], 'ask_vol': orderbook['top_ask'][1],
+                    'ts_exchange': orderbook['timestamp']}})
         return tops
 
     @try_exc_regular
