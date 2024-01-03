@@ -541,6 +541,7 @@ class BtseClient(BaseClient):
             else:
                 self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol]['timestamp'] = data['data']['timestamp']
+        self.orderbook[symbol]['ts_ms'] = time.time()
         if flag and self.message_queue.qsize() < 5:
             coin = symbol.split('PFC')[0]
             self.finder.coins_to_check.append(coin)

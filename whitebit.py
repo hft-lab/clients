@@ -84,7 +84,7 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_async
     async def get_ws_orderbook(self, market, websocket):
-        id = randint(1, 300)
+        id = randint(1, 10000000000000)
         method = {"id": id,
                   "method": "depth_request",
                   "params": [market, 5, "0"]}
@@ -111,13 +111,15 @@ class WhiteBitClient(BaseClient):
     @try_exc_regular
     def update_orderbook(self, data, id):
         market = self.subs[id]
+        self.subs.pop(id)
         # print(f"Market update {market}")
         if self.orderbook.get(market):
             old_top_ask = self.orderbook[market]['asks'][0]
             old_top_bid = self.orderbook[market]['bids'][0]
             new_ob = {'asks': [[float(ask[0]), float(ask[1])] for ask in data['asks']],
                       'bids': [[float(bid[0]), float(bid[1])] for bid in data['bids']],
-                      'timestamp': data['timestamp']}
+                      'timestamp': data['timestamp'],
+                      'ts_ms': time.time()}
             if old_top_ask != new_ob['asks'][0]:
                 new_ob['timestamp_top_ask'] = data['timestamp']
             if old_top_bid != new_ob['bids'][0]:
@@ -137,7 +139,8 @@ class WhiteBitClient(BaseClient):
                                             'bids': [[float(bid[0]), float(bid[1])] for bid in data['bids']],
                                             'timestamp': data['timestamp'],
                                             'timestamp_top_ask': data['timestamp'],
-                                            'timestamp_top_bid': data['timestamp']}})
+                                            'timestamp_top_bid': data['timestamp'],
+                                            'ts_ms': time.time()}})
 
     @try_exc_regular
     def get_markets(self):
@@ -477,7 +480,7 @@ class WhiteBitClient(BaseClient):
             if isinstance(order, int):
                 status_id = order
                 continue
-            if float(order['deal_stock']) != '0':
+            if order['deal_stock'] != '0':
                 factual_price = float(order['deal_money']) / float(order['deal_stock'])
                 side = 'sell' if order['side'] == 1 else 'buy'
                 self.last_price.update({side: factual_price})
@@ -679,8 +682,8 @@ class WhiteBitClient(BaseClient):
             orderbook = self.orderbook.get(symbol, {})
             if orderbook and orderbook.get('bids') and orderbook.get('asks'):
                 tops.update({self.EXCHANGE_NAME + '__' + coin: {
-                    'top_bid': orderbook['top_bid'][0], 'top_ask': orderbook['top_ask'][0],
-                    'bid_vol': orderbook['top_bid'][1], 'ask_vol': orderbook['top_ask'][1],
+                    'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
+                    'bid_vol': orderbook['bids'][0][1], 'ask_vol': orderbook['asks'][0][1],
                     'ts_exchange': orderbook['timestamp']}})
         return tops
 
