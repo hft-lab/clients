@@ -8,8 +8,6 @@ import threading
 import hmac
 import hashlib
 import requests_cache
-requests_cache.install_cache('dns_cache', backend='sqlite', expire_after=300)
-
 from clients.core.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
 from core.wrappers import try_exc_regular, try_exc_async
 from clients.core.base_client import BaseClient
@@ -20,6 +18,7 @@ class BtseClient(BaseClient):
     PRIVATE_WS_ENDPOINT = 'wss://ws.btse.com/ws/futures'
     BASE_URL = f"https://api.btse.com/futures"
     EXCHANGE_NAME = 'BTSE'
+    requests_cache.install_cache('dns_cache', backend='sqlite', expire_after=300)
     order_statuses = {2: 'Order Inserted',
                       3: 'Order Transacted',
                       4: 'Order Fully Transacted',

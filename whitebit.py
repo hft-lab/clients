@@ -9,8 +9,6 @@ import hmac
 import hashlib
 import base64
 import requests_cache
-requests_cache.install_cache('dns_cache', backend='sqlite', expire_after=300)
-
 from clients.core.enums import ResponseStatus, OrderStatus
 from core.wrappers import try_exc_regular, try_exc_async
 from clients.core.base_client import BaseClient
@@ -20,6 +18,7 @@ class WhiteBitClient(BaseClient):
     PUBLIC_WS_ENDPOINT = 'wss://api.whitebit.com/ws'
     BASE_URL = 'https://whitebit.com'
     EXCHANGE_NAME = 'WHITEBIT'
+    requests_cache.install_cache('dns_cache', backend='sqlite', expire_after=300)
 
     def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20, finder=None):
         super().__init__()
