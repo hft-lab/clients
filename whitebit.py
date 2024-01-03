@@ -46,7 +46,7 @@ class WhiteBitClient(BaseClient):
         self._connected = asyncio.Event()
         self._wst_ = threading.Thread(target=self._run_ws_forever, args=[self._loop])
         self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
-        # self._extra_speed = threading.Thread(target=self.run_super_sonic)
+        self._extra_speed = threading.Thread(target=self.run_super_sonic)
         self.requestLimit = 1200
         self.getting_ob = asyncio.Event()
         self.now_getting = ''
@@ -288,12 +288,11 @@ class WhiteBitClient(BaseClient):
         min_profit_gap = 100
         target_coin = None
         for coin, exchanges in tradable_markets.items():
-            if exchanges.get(self.EXCHANGE_NAME + 'BUY', 100) < min_profit_gap:
-                min_profit_gap = exchanges[self.EXCHANGE_NAME + 'BUY']
-                target_coin = coin
-            if exchanges.get(self.EXCHANGE_NAME + 'SELL', 100) < min_profit_gap:
-                min_profit_gap = exchanges[self.EXCHANGE_NAME + 'SELL']
-                target_coin = coin
+            for side, profit in exchanges.items():
+                if self.EXCHANGE_NAME in side:
+                    if profit < min_profit_gap:
+                        min_profit_gap = exchanges[self.EXCHANGE_NAME + 'BUY']
+                        target_coin = coin
         return self.markets.get(target_coin), target_coin
 
     @try_exc_regular
@@ -307,16 +306,16 @@ class WhiteBitClient(BaseClient):
             time.sleep(1)
         async with aiohttp.ClientSession() as session:
             session.headers.update(self.headers)
-            count = 0
-            time_start = time.time()
+            # count = 0
+            # time_start = time.time()
             while True:
                 # time.sleep(0.005)
                 # print(f"SUPERSONIC GO!!!!")
                 best_market, coin = self.find_best_market()
                 if best_market:
                     await self._loop_supersonic.create_task(self.super_sonic_ob_update(best_market, coin, session))
-                    count += 1
-                    print(f"REAL REQUESTS FREQUENCY DATA:\nTIME: {time.time() - time_start}\nREQUESTS: {count}")
+                    # count += 1
+                    # print(f"REAL REQUESTS FREQUENCY DATA:\nTIME: {time.time() - time_start}\nREQUESTS: {count}")
     ### SUPERSONIC FEATURE ###
 
     @try_exc_regular
@@ -352,8 +351,8 @@ class WhiteBitClient(BaseClient):
         self._wst_.start()
         self._wst_orderbooks.daemon = True
         self._wst_orderbooks.start()
-        # self._extra_speed.daemon = True
-        # self._extra_speed.start()
+        self._extra_speed.daemon = True
+        self._extra_speed.start()
         self.first_positions_update()
 
     @try_exc_regular
