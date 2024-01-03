@@ -559,7 +559,8 @@ class BtseClient(BaseClient):
                                   'top_ask': [float(data['data']['asks'][0][0]), float(data['data']['asks'][0][1])],
                                   'top_bid': [float(data['data']['bids'][0][0]), float(data['data']['bids'][0][1])],
                                   'top_ask_timestamp': data['data']['timestamp'],
-                                  'top_bid_timestamp': data['data']['timestamp']}
+                                  'top_bid_timestamp': data['data']['timestamp'],
+                                  'ts_ms': time.time()}
 
     @try_exc_regular
     def get_last_price(self, side: str) -> float:
@@ -579,7 +580,8 @@ class BtseClient(BaseClient):
               'asks': [[float(x), float(snap['asks'][x]) * c_v] for x in sorted(snap['asks'])[:5]],
               'bids': [[float(x), float(snap['bids'][x]) * c_v] for x in sorted(snap['bids'])[::-1][:5]],
               'top_ask_timestamp': self.orderbook[symbol]['top_ask_timestamp'],
-              'top_bid_timestamp': self.orderbook[symbol]['top_bid_timestamp']}
+              'top_bid_timestamp': self.orderbook[symbol]['top_bid_timestamp'],
+              'ts_ms': self.orderbook[symbol]['ts_ms']}
         self.now_getting = ''
         self.getting_ob.clear()
         return ob

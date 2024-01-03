@@ -96,23 +96,27 @@ class WhiteBitClient(BaseClient):
         async with aiohttp.ClientSession() as s:
             while True:
                 async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
-                    counter = 0
-                    while counter < 199:
-                        await asyncio.sleep(0.02)
-                        counter += 1
+                    while True:
                         await loop.create_task(self.get_ws_orderbook(market, ws))
-                        data = await ws.receive_json()
+                        try:
+                            data = await ws.receive_json()
+                        except:
+                            continue
                         if not data['error']:
+                            if time.time() - data['result']['timestamp'] > 0.015:
+                                await asyncio.sleep(time.time() - data['result']['timestamp'] + 0.011)
+                                continue
                             self.update_orderbook(data['result'], data['id'])
+                            await asyncio.sleep(0.989)
                         else:
                             print('ORDERBOOK WS UPDATE ERROR', data)
-                    await ws.close()
 
     @try_exc_regular
     def update_orderbook(self, data, id):
         market = self.subs[id]
         self.subs.pop(id)
-        # print(f"Market update {market}")
+        # if time.time() - data['timestamp'] < 0.03:
+            # print(f"Market update {market}. OB AGE: {time.time() - data['timestamp']}")
         if self.orderbook.get(market):
             old_top_ask = self.orderbook[market]['asks'][0]
             old_top_bid = self.orderbook[market]['bids'][0]
@@ -125,12 +129,12 @@ class WhiteBitClient(BaseClient):
             if old_top_bid != new_ob['bids'][0]:
                 new_ob['timestamp_top_bid'] = data['timestamp']
             if old_top_bid[0] < new_ob['bids'][0][0] or old_top_bid[1] != new_ob['bids'][0][1]:
-                if self.finder:
+                if self.finder and time.time() - data['timestamp'] < 0.03:
                     coin = market.split('_')[0]
                     self.finder.coins_to_check.append(coin)
                     self.finder.update = True
             elif old_top_ask[0] > new_ob['asks'][0][0] or old_top_ask[1] != new_ob['asks'][0][1]:
-                if self.finder:
+                if self.finder and time.time() - data['timestamp'] < 0.03:
                     coin = market.split('_')[0]
                     self.finder.coins_to_check.append(coin)
                     self.finder.update = True
@@ -742,9 +746,7 @@ class WhiteBitClient(BaseClient):
     def get_orderbook(self, symbol) -> dict:
         if not self.orderbook.get(symbol):
             return {}
-        snap = self.orderbook[symbol]
-        if isinstance(snap['asks'], list):
-            return snap
+        return self.orderbook[symbol]
         # ob = {'timestamp': self.orderbook[symbol]['timestamp'],
         #       'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks'])[:5]],
         #       'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids'])][::-1][:5],
