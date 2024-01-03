@@ -47,7 +47,7 @@ class WhiteBitClient(BaseClient):
         self._connected = asyncio.Event()
         self._wst_ = threading.Thread(target=self._run_ws_forever, args=[self._loop])
         self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
-        self._extra_speed = threading.Thread(target=self.run_super_sonic)
+        # self._extra_speed = threading.Thread(target=self.run_super_sonic)
         self.requestLimit = 1200
         self.getting_ob = asyncio.Event()
         self.now_getting = ''
@@ -229,33 +229,37 @@ class WhiteBitClient(BaseClient):
         })
         return params
 
+    ### SUPERSONIC FEATURE ###
     @try_exc_async
     async def super_sonic_ob_update(self, market, coin, session):
-        time_start = time.time()
         path = f'/api/v4/public/orderbook/{market}'
         params = {'limit': 1}  # Adjusting parameters as per WhiteBit's documentation
         path += self._create_uri(params)
         async with session.get(url=self.BASE_URL + path) as resp:
             ob = await resp.json()
-            # print(f"SuperSonic time: {time.time() - time_start} sec")
             # print(ob)
             # Check if the response is a dictionary and has 'asks' and 'bids' directly within it
             if isinstance(ob, dict) and 'asks' in ob and 'bids' in ob:
                 ask = ob['asks'][0]
                 bid = ob['bids'][0]
-                ts = datetime.utcnow().timestamp()
+                ts = ob['timestamp']
+                old_top_ask = self.orderbook[market]
+                old_top_bid = self.orderbook[market]
+                top_ask_timestamp = ts if old_top_ask != ask else self.orderbook[market]['top_ask_timestamp']
+                top_bid_timestamp = ts if old_top_bid != bid else self.orderbook[market]['top_bid_timestamp']
                 orderbook = {
                     'asks': {ask[0]: ask[1]},
                     'bids': {bid[0]: bid[1]},
                     'top_ask': [float(ask[0]), float(ask[1])],
                     'top_bid': [float(bid[0]), float(bid[1])],
                     'timestamp': ts,
-                    'top_ask_timestamp': ts,
-                    'top_bid_timestamp': ts}
-                # print(orderbook)
+                    'top_ask_timestamp': top_ask_timestamp,
+                    'top_bid_timestamp': top_bid_timestamp}
+                # print(f"SuperSonic time: {time.time() - ts} sec")
                 self.orderbook[market] = orderbook
-                self.finder.coins_to_check.append(coin)
-                self.finder.update = True
+                if top_bid_timestamp != ts or top_ask_timestamp != ts:
+                    self.finder.coins_to_check.append(coin)
+                    self.finder.update = True
 
     @try_exc_regular
     def find_best_market(self):
@@ -282,12 +286,17 @@ class WhiteBitClient(BaseClient):
             time.sleep(1)
         async with aiohttp.ClientSession() as session:
             session.headers.update(self.headers)
+            count = 0
+            time_start = time.time()
             while True:
-                time.sleep(0.005)
+                # time.sleep(0.005)
                 # print(f"SUPERSONIC GO!!!!")
                 best_market, coin = self.find_best_market()
                 if best_market:
                     await self._loop_supersonic.create_task(self.super_sonic_ob_update(best_market, coin, session))
+                    count += 1
+                    print(f"REAL REQUESTS FREQUENCY DATA:\nTIME: {time.time() - time_start}\nREQUESTS: {count}")
+    ### SUPERSONIC FEATURE ###
 
     @try_exc_regular
     def _run_ws_forever(self, loop):
@@ -322,8 +331,8 @@ class WhiteBitClient(BaseClient):
         self._wst_.start()
         self._wst_orderbooks.daemon = True
         self._wst_orderbooks.start()
-        self._extra_speed.daemon = True
-        self._extra_speed.start()
+        # self._extra_speed.daemon = True
+        # self._extra_speed.start()
         self.first_positions_update()
 
     @try_exc_regular
