@@ -350,6 +350,17 @@ class BtseClient(BaseClient):
                 async for msg in ws:
                     await self.message_queue.put(msg)
 
+    @try_exc_async
+    async def cancel_order(self, symbol: str, order_id: str, session: aiohttp.ClientSession):
+        path = '/api/v2.1/order'
+        params = {'symbol': symbol,
+                  'orderID': order_id}
+        post_string = '?' + "&".join([f"{key}={params[key]}" for key in sorted(params)])
+        async with session.delete(url=self.BASE_URL + path + post_string) as resp:
+            resp = await resp.json()
+            print(self.EXCHANGE_NAME, resp)
+            return resp
+
     @try_exc_regular
     def _process_ws_line(self):
         self._loop.create_task(self.process_messages())

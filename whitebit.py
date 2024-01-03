@@ -98,6 +98,29 @@ class WhiteBitClient(BaseClient):
         res = self.session.post(url=self.BASE_URL + path, json=params)
         return res.json()
 
+    @try_exc_async
+    async def cancel_order(self, symbol: str, order_id: int, session: aiohttp.ClientSession):
+        path = '/api/v4/order/cancel'
+        params = {"market": symbol,
+                  "orderId": order_id}
+        params = self.get_auth_for_request(params, path)
+        async with session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
+            resp = await resp.json()
+            print(self.EXCHANGE_NAME, resp)
+            return resp
+
+    def get_auth_for_request(self, params, uri):
+        params['request'] = uri
+        params['nonce'] = int(time.time() * 1000)
+        params['nonceWindow'] = True
+        signature, payload = self.get_signature(params)
+        self.session.headers.update({
+            'X-TXC-APIKEY': self.api_key,
+            'X-TXC-SIGNATURE': signature,
+            'X-TXC-PAYLOAD': payload.decode('ascii')
+        })
+        return params
+
     @try_exc_regular
     def get_position(self):
         path = "/api/v4/collateral-account/positions/open"
