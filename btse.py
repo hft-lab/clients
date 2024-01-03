@@ -355,10 +355,10 @@ class BtseClient(BaseClient):
         path = '/api/v2.1/order'
         params = {'symbol': symbol,
                   'orderID': order_id}
-        post_string = '?' + "&".join([f"{key}={params[key]}" for key in sorted(params)])
-        async with session.delete(url=self.BASE_URL + path + post_string) as resp:
+        self.get_private_headers(path, params)
+        path += '?' + "&".join([f"{key}={params[key]}" for key in sorted(params)])
+        async with session.delete(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
             resp = await resp.json()
-            print(self.EXCHANGE_NAME, resp)
             return resp
 
     @try_exc_regular
@@ -577,7 +577,7 @@ class BtseClient(BaseClient):
         c_v = self.instruments[symbol]['contract_value']
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
               'asks': [[float(x), float(snap['asks'][x]) * c_v] for x in sorted(snap['asks'])[:5]],
-              'bids': [[float(x), float(snap['bids'][x]) * c_v] for x in sorted(snap['bids'])[-5:]],
+              'bids': [[float(x), float(snap['bids'][x]) * c_v] for x in sorted(snap['bids'])[::-1][:5]],
               'top_ask_timestamp': self.orderbook[symbol]['top_ask_timestamp'],
               'top_bid_timestamp': self.orderbook[symbol]['top_bid_timestamp']}
         self.now_getting = ''

@@ -106,7 +106,6 @@ class WhiteBitClient(BaseClient):
         params = self.get_auth_for_request(params, path)
         async with session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
             resp = await resp.json()
-            print(self.EXCHANGE_NAME, resp)
             return resp
 
     def get_auth_for_request(self, params, uri):
