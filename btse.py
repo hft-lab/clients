@@ -569,8 +569,8 @@ class BtseClient(BaseClient):
             return snap
         c_v = self.instruments[symbol]['contract_value']
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
-              'asks': [[float(x), float(snap['asks'][x]) * c_v] for x in sorted(snap['asks'])[:2]],
-              'bids': [[float(x), float(snap['bids'][x]) * c_v] for x in sorted(snap['bids'])[::-1][:2]],
+              'asks': [[float(x), float(snap['asks'][x]) * c_v] for x in sorted(snap['asks'])[:5]],
+              'bids': [[float(x), float(snap['bids'][x]) * c_v] for x in sorted(snap['bids'])[::-1][:5]],
               'top_ask_timestamp': self.orderbook[symbol]['top_ask_timestamp'],
               'top_bid_timestamp': self.orderbook[symbol]['top_bid_timestamp'],
               'ts_ms': self.orderbook[symbol]['ts_ms']}
