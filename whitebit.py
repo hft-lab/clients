@@ -45,12 +45,12 @@ class WhiteBitClient(BaseClient):
         self.error_info = None
         self.markets = self.get_markets()
         self._loop = asyncio.new_event_loop()
-        self._loop_supersonic = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self._wst_ = threading.Thread(target=self._run_ws_forever, args=[self._loop])
         self._wst_processing_messages = threading.Thread(target=self._process_ws_line)
+        # self._loop_supersonic = asyncio.new_event_loop()
         # self._extra_speed = threading.Thread(target=self.run_super_sonic)
-        self.requestLimit = 1200
+        self.requestLimit = 600
         self.orderbook = {}
         self.last_price = {}
         self.orders = {}
@@ -75,7 +75,7 @@ class WhiteBitClient(BaseClient):
             loop.create_task(self._run_market_ws_loop(market, loop))
         thread.daemon = True
         thread.start()
-            # print(f"Thread {market} started")
+        # print(f"Thread {market} started")
 
     @try_exc_regular
     def run_loopie_loop(self, loop, market):
@@ -335,73 +335,73 @@ class WhiteBitClient(BaseClient):
         })
         return params
 
-    ### SUPERSONIC FEATURE ###
-    @try_exc_async
-    async def super_sonic_ob_update(self, market, coin, session):
-        path = f'/api/v4/public/orderbook/{market}'
-        params = {'limit': 1}  # Adjusting parameters as per WhiteBit's documentation
-        path += self._create_uri(params)
-        async with session.get(url=self.BASE_URL + path) as resp:
-            ob = await resp.json()
-            # print(ob)
-            # Check if the response is a dictionary and has 'asks' and 'bids' directly within it
-            if isinstance(ob, dict) and 'asks' in ob and 'bids' in ob:
-                ask = ob['asks'][0]
-                bid = ob['bids'][0]
-                ts = ob['timestamp']
-                old_top_ask = self.orderbook[market]
-                old_top_bid = self.orderbook[market]
-                top_ask_timestamp = ts if old_top_ask != ask else self.orderbook[market]['top_ask_timestamp']
-                top_bid_timestamp = ts if old_top_bid != bid else self.orderbook[market]['top_bid_timestamp']
-                orderbook = {
-                    'asks': {ask[0]: ask[1]},
-                    'bids': {bid[0]: bid[1]},
-                    'top_ask': [float(ask[0]), float(ask[1])],
-                    'top_bid': [float(bid[0]), float(bid[1])],
-                    'timestamp': ts,
-                    'top_ask_timestamp': top_ask_timestamp,
-                    'top_bid_timestamp': top_bid_timestamp}
-                # print(f"SuperSonic time: {time.time() - ts} sec")
-                self.orderbook[market] = orderbook
-                if top_bid_timestamp != ts or top_ask_timestamp != ts:
-                    self.finder.coins_to_check.append(coin)
-                    self.finder.update = True
-
-    @try_exc_regular
-    def find_best_market(self):
-        tradable_markets = self.finder.tradable_profits.copy()
-        min_profit_gap = 100
-        target_coin = None
-        for coin, exchanges in tradable_markets.items():
-            for side, profit in exchanges.items():
-                if self.EXCHANGE_NAME in side:
-                    if profit < min_profit_gap:
-                        min_profit_gap = exchanges[self.EXCHANGE_NAME + 'BUY']
-                        target_coin = coin
-        return self.markets.get(target_coin), target_coin
-
-    @try_exc_regular
-    def run_super_sonic(self):
-        self._loop_supersonic.run_until_complete(self._request_orderbooks())
-
-    @try_exc_async
-    async def _request_orderbooks(self):
-        print('SUPERSONIC INITIALIZED')
-        while not self.finder:
-            time.sleep(1)
-        async with aiohttp.ClientSession() as session:
-            session.headers.update(self.headers)
-            # count = 0
-            # time_start = time.time()
-            while True:
-                # time.sleep(0.005)
-                # print(f"SUPERSONIC GO!!!!")
-                best_market, coin = self.find_best_market()
-                if best_market:
-                    await self._loop_supersonic.create_task(self.super_sonic_ob_update(best_market, coin, session))
-                    # count += 1
-                    # print(f"REAL REQUESTS FREQUENCY DATA:\nTIME: {time.time() - time_start}\nREQUESTS: {count}")
-    ### SUPERSONIC FEATURE ###
+    # ### SUPERSONIC FEATURE ###
+    # @try_exc_async
+    # async def super_sonic_ob_update(self, market, coin, session):
+    #     path = f'/api/v4/public/orderbook/{market}'
+    #     params = {'limit': 1}  # Adjusting parameters as per WhiteBit's documentation
+    #     path += self._create_uri(params)
+    #     async with session.get(url=self.BASE_URL + path) as resp:
+    #         ob = await resp.json()
+    #         # print(ob)
+    #         # Check if the response is a dictionary and has 'asks' and 'bids' directly within it
+    #         if isinstance(ob, dict) and 'asks' in ob and 'bids' in ob:
+    #             ask = ob['asks'][0]
+    #             bid = ob['bids'][0]
+    #             ts = ob['timestamp']
+    #             old_top_ask = self.orderbook[market]
+    #             old_top_bid = self.orderbook[market]
+    #             top_ask_timestamp = ts if old_top_ask != ask else self.orderbook[market]['top_ask_timestamp']
+    #             top_bid_timestamp = ts if old_top_bid != bid else self.orderbook[market]['top_bid_timestamp']
+    #             orderbook = {
+    #                 'asks': {ask[0]: ask[1]},
+    #                 'bids': {bid[0]: bid[1]},
+    #                 'top_ask': [float(ask[0]), float(ask[1])],
+    #                 'top_bid': [float(bid[0]), float(bid[1])],
+    #                 'timestamp': ts,
+    #                 'top_ask_timestamp': top_ask_timestamp,
+    #                 'top_bid_timestamp': top_bid_timestamp}
+    #             # print(f"SuperSonic time: {time.time() - ts} sec")
+    #             self.orderbook[market] = orderbook
+    #             if top_bid_timestamp != ts or top_ask_timestamp != ts:
+    #                 self.finder.coins_to_check.append(coin)
+    #                 self.finder.update = True
+    #
+    # @try_exc_regular
+    # def find_best_market(self):
+    #     tradable_markets = self.finder.tradable_profits.copy()
+    #     min_profit_gap = 100
+    #     target_coin = None
+    #     for coin, exchanges in tradable_markets.items():
+    #         for side, profit in exchanges.items():
+    #             if self.EXCHANGE_NAME in side:
+    #                 if profit < min_profit_gap:
+    #                     min_profit_gap = exchanges[self.EXCHANGE_NAME + 'BUY']
+    #                     target_coin = coin
+    #     return self.markets.get(target_coin), target_coin
+    #
+    # @try_exc_regular
+    # def run_super_sonic(self):
+    #     self._loop_supersonic.run_until_complete(self._request_orderbooks())
+    #
+    # @try_exc_async
+    # async def _request_orderbooks(self):
+    #     print('SUPERSONIC INITIALIZED')
+    #     while not self.finder:
+    #         time.sleep(1)
+    #     async with aiohttp.ClientSession() as session:
+    #         session.headers.update(self.headers)
+    #         # count = 0
+    #         # time_start = time.time()
+    #         while True:
+    #             # time.sleep(0.005)
+    #             # print(f"SUPERSONIC GO!!!!")
+    #             best_market, coin = self.find_best_market()
+    #             if best_market:
+    #                 await self._loop_supersonic.create_task(self.super_sonic_ob_update(best_market, coin, session))
+    #                 # count += 1
+    #                 # print(f"REAL REQUESTS FREQUENCY DATA:\nTIME: {time.time() - time_start}\nREQUESTS: {count}")
+    # ### SUPERSONIC FEATURE ###
 
     @try_exc_regular
     def _run_ws_forever(self, loop):
@@ -417,18 +417,18 @@ class WhiteBitClient(BaseClient):
         while True:
             msg = await self.message_queue.get()
             data = json.loads(msg.data)
-            # if data.get('method') == 'depth_update':
-            #     if data['params'][0]:
-            #         self.update_orderbook_snapshot(data)
-            #     else:
-            #         self.update_orderbook(data)
+            if data.get('method') == 'depth_update':
+                # print(data)
+                if data['params'][0]:
+                    self.update_orderbook_snapshot(data)
+                else:
+                    self.update_orderbook(data)
             if data.get('method') == 'balanceMargin_update':
                 self.update_balances(data)
             elif data.get('method') in ['ordersExecuted_update', 'ordersPending_update']:
-                print(data)
                 self.update_orders(data)
-            else:
-                print(data)
+            # else:
+            #     print(data)
             self.message_queue.task_done()
             if self.message_queue.qsize() > 100:
                 print(f'ALERT! {self.EXCHANGE_NAME} WS LINE LENGTH:', self.message_queue.qsize())
@@ -439,7 +439,7 @@ class WhiteBitClient(BaseClient):
         self._wst_.start()
         self._wst_processing_messages.daemon = True
         self._wst_processing_messages.start()
-        self.crazy_treading_func()
+        # self.crazy_treading_func()
         # if self.finder:
         #     self._extra_speed.daemon = True
         #     self._extra_speed.start()
@@ -461,9 +461,9 @@ class WhiteBitClient(BaseClient):
                 self._connected.set()
                 self._ws = ws
                 await self._loop.create_task(self.subscribe_privates())
-                # for symbol in self.markets_list:
-                #     if market := self.markets.get(symbol):
-                #         await self._loop.create_task(self.subscribe_orderbooks(market))
+                for symbol in self.markets_list:
+                    if market := self.markets.get(symbol):
+                        await self._loop.create_task(self.subscribe_orderbooks(market))
                 async for msg in ws:
                     await self.message_queue.put(msg)
 
@@ -645,7 +645,7 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_async
     async def subscribe_orderbooks(self, symbol):
-        data = [symbol, 10, '0', True]
+        data = [symbol, 100, '0', True]
         method = {"id": 0,
                   "method": "depth_subscribe",
                   "params": data}
@@ -663,19 +663,20 @@ class WhiteBitClient(BaseClient):
     @try_exc_async
     async def subscribe_privates(self):
         method_auth = {"id": 1, "method": "authorize", "params": [self.websocket_token, "public"]}
-        orders_ex = {"id": 2, "method": "ordersExecuted_subscribe", "params": [list(self.markets.values()), 0]}
-        orders_pend = {"id": 3, "method": "ordersPending_subscribe", "params": []}
+        # orders_ex = {"id": 2, "method": "ordersExecuted_subscribe", "params": [list(self.markets.values()), 0]}
+        # orders_pend = {"id": 3, "method": "ordersPending_subscribe", "params": []}
         balance = {"id": 4, "method": "balanceMargin_subscribe", "params": ["USDT"]}
+        deals = {"id": 5, "method": "deals_subscribe", "params": list(self.markets.values())}
         await self._connected.wait()
         await self._ws.send_json(method_auth)
         time.sleep(1)
-        await self._ws.send_json(orders_ex)
-        for market in list(self.markets.values()):
-            id = randint(1, 1000)
-            # print(f"SUBSCRIPTION: {id}: {market}")
-            orders_pend.update({"id": id, 'params': [market]})
-            await self._ws.send_json(orders_pend)
-            await asyncio.sleep(0.2)
+        await self._ws.send_json(deals)
+        # for market in list(self.markets.values()):
+        #     id = randint(1, 1000)
+        #     # print(f"SUBSCRIPTION: {id}: {market}")
+        #     orders_pend.update({"id": id, 'params': [market]})
+        #     await self._ws.send_json(orders_pend)
+        #     await asyncio.sleep(0.2)
         await self._ws.send_json(balance)
         await self._ws.send_json(balance)
 
@@ -691,68 +692,72 @@ class WhiteBitClient(BaseClient):
                     'ts_exchange': orderbook['timestamp']}})
         return tops
 
-    # @try_exc_regular
-    # def update_orderbook(self, data):
-    #     flag = False
-    #     # print(data)
-    #     symbol = data['params'][2]
-    #     for new_bid in data['params'][1].get('bids', []):
-    #         if float(new_bid[0]) >= self.orderbook[symbol]['top_bid'][0]:
-    #             self.orderbook[symbol]['top_bid'] = [float(new_bid[0]), float(new_bid[1])]
-    #             self.orderbook[symbol]['top_bid_timestamp'] = data['params'][1]['timestamp']
-    #             flag = True
-    #         if self.orderbook[symbol]['bids'].get(new_bid[0]) and new_bid[1] == '0':
-    #             del self.orderbook[symbol]['bids'][new_bid[0]]
-    #             if float(new_bid[0]) == self.orderbook[symbol]['top_bid'][0] and len(self.orderbook[symbol]['bids']):
-    #                 top = sorted(self.orderbook[symbol]['bids'])[-1]
-    #                 self.orderbook[symbol]['top_bid'] = [float(top), float(self.orderbook[symbol]['bids'][top])]
-    #                 self.orderbook[symbol]['top_bid_timestamp'] = data['params'][1]['timestamp']
-    #         else:
-    #             self.orderbook[symbol]['bids'][new_bid[0]] = new_bid[1]
-    #     for new_ask in data['params'][1].get('asks', []):
-    #         if float(new_ask[0]) <= self.orderbook[symbol]['top_ask'][0]:
-    #             self.orderbook[symbol]['top_ask'] = [float(new_ask[0]), float(new_ask[1])]
-    #             self.orderbook[symbol]['top_ask_timestamp'] = data['params'][1]['timestamp']
-    #             flag = True
-    #         if self.orderbook[symbol]['asks'].get(new_ask[0]) and new_ask[1] == '0':
-    #             del self.orderbook[symbol]['asks'][new_ask[0]]
-    #             if float(new_ask[0]) == self.orderbook[symbol]['top_ask'][0] and len(self.orderbook[symbol]['asks']):
-    #                 top = sorted(self.orderbook[symbol]['asks'])[0]
-    #                 self.orderbook[symbol]['top_ask'] = [float(top), float(self.orderbook[symbol]['asks'][top])]
-    #                 self.orderbook[symbol]['top_ask_timestamp'] = data['params'][1]['timestamp']
-    #         else:
-    #             self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
-    #     self.orderbook[symbol]['timestamp'] = data['params'][1]['timestamp']
-    #     if flag and self.message_queue.qsize() <= 1:
-    #         coin = symbol.split('_')[0]
-    #         if self.finder:
-    #             self.finder.coins_to_check.append(coin)
-    #             self.finder.update = True
-    #
-    # @try_exc_regular
-    # def update_orderbook_snapshot(self, data):
-    #     symbol = data['params'][2]
-    #     ob = data['params'][1]
-    #     if ob.get('asks') and ob.get('bids'):
-    #         self.orderbook[symbol] = {'asks': {x[0]: x[1] for x in ob['asks']},
-    #                                   'bids': {x[0]: x[1] for x in ob['bids']},
-    #                                   'timestamp': data['params'][1]['timestamp'],
-    #                                   'top_ask': [float(ob['asks'][0][0]), float(ob['asks'][0][1])],
-    #                                   'top_bid': [float(ob['bids'][0][0]), float(ob['bids'][0][1])],
-    #                                   'top_ask_timestamp': data['params'][1]['timestamp'],
-    #                                   'top_bid_timestamp': data['params'][1]['timestamp']}
+    @try_exc_regular
+    def update_orderbook(self, data):
+        flag = False
+        # print(data)
+        symbol = data['params'][2]
+        for new_bid in data['params'][1].get('bids', []):
+            if float(new_bid[0]) >= self.orderbook[symbol]['top_bid'][0]:
+                self.orderbook[symbol]['top_bid'] = [float(new_bid[0]), float(new_bid[1])]
+                self.orderbook[symbol]['top_bid_timestamp'] = data['params'][1]['timestamp']
+                flag = True
+            if self.orderbook[symbol]['bids'].get(new_bid[0]) and new_bid[1] == '0':
+                del self.orderbook[symbol]['bids'][new_bid[0]]
+                if float(new_bid[0]) == self.orderbook[symbol]['top_bid'][0] and len(self.orderbook[symbol]['bids']):
+                    top = sorted(self.orderbook[symbol]['bids'])[-1]
+                    self.orderbook[symbol]['top_bid'] = [float(top), float(self.orderbook[symbol]['bids'][top])]
+                    self.orderbook[symbol]['top_bid_timestamp'] = data['params'][1]['timestamp']
+            else:
+                self.orderbook[symbol]['bids'][new_bid[0]] = new_bid[1]
+        for new_ask in data['params'][1].get('asks', []):
+            if float(new_ask[0]) <= self.orderbook[symbol]['top_ask'][0]:
+                self.orderbook[symbol]['top_ask'] = [float(new_ask[0]), float(new_ask[1])]
+                self.orderbook[symbol]['top_ask_timestamp'] = data['params'][1]['timestamp']
+                flag = True
+            if self.orderbook[symbol]['asks'].get(new_ask[0]) and new_ask[1] == '0':
+                del self.orderbook[symbol]['asks'][new_ask[0]]
+                if float(new_ask[0]) == self.orderbook[symbol]['top_ask'][0] and len(self.orderbook[symbol]['asks']):
+                    top = sorted(self.orderbook[symbol]['asks'])[0]
+                    self.orderbook[symbol]['top_ask'] = [float(top), float(self.orderbook[symbol]['asks'][top])]
+                    self.orderbook[symbol]['top_ask_timestamp'] = data['params'][1]['timestamp']
+            else:
+                self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
+        self.orderbook[symbol]['timestamp'] = data['params'][1]['timestamp']
+        self.orderbook[symbol]['ts_ms'] = time.time()
+
+        if flag and self.message_queue.qsize() <= 1:
+            coin = symbol.split('_')[0]
+            if self.finder:
+                self.finder.coins_to_check.append(coin)
+                self.finder.update = True
+
+    @try_exc_regular
+    def update_orderbook_snapshot(self, data):
+        symbol = data['params'][2]
+        ob = data['params'][1]
+        if ob.get('asks') and ob.get('bids'):
+            self.orderbook[symbol] = {'asks': {x[0]: x[1] for x in ob['asks']},
+                                      'bids': {x[0]: x[1] for x in ob['bids']},
+                                      'timestamp': data['params'][1]['timestamp'],
+                                      'top_ask': [float(ob['asks'][0][0]), float(ob['asks'][0][1])],
+                                      'top_bid': [float(ob['bids'][0][0]), float(ob['bids'][0][1])],
+                                      'top_ask_timestamp': data['params'][1]['timestamp'],
+                                      'top_bid_timestamp': data['params'][1]['timestamp']}
 
     @try_exc_regular
     def get_orderbook(self, symbol) -> dict:
         if not self.orderbook.get(symbol):
             return {}
-        return self.orderbook[symbol]
-        # ob = {'timestamp': self.orderbook[symbol]['timestamp'],
-        #       'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks'])[:5]],
-        #       'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids'])][::-1][:5],
-        #       'top_ask_timestamp': self.orderbook[symbol]['top_ask_timestamp'],
-        #       'top_bid_timestamp': self.orderbook[symbol]['top_bid_timestamp']}
-        # return ob
+        snap = self.orderbook[symbol]
+        if isinstance(snap['asks'], list):
+            return snap
+        ob = {'timestamp': self.orderbook[symbol]['timestamp'],
+              'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks'])[:5]],
+              'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids'])[::-1][:5]],
+              'top_ask_timestamp': self.orderbook[symbol]['top_ask_timestamp'],
+              'top_bid_timestamp': self.orderbook[symbol]['top_bid_timestamp']}
+        return ob
 
     @try_exc_regular
     def first_positions_update(self):
@@ -800,6 +805,9 @@ if __name__ == '__main__':
     # print(client.get_order_by_id('abs', id))
     client.markets_list = list(client.markets.keys())
     client.run_updater()
+
+    time.sleep(1)
+
     # time.sleep(1)
     # client.get_real_balance()
     # print('GET POSITION RESPONSE', client.get_position())
@@ -813,15 +821,21 @@ if __name__ == '__main__':
     # print(len(client.get_markets()))
     client.aver_time = []
     while True:
-        time.sleep(5)
-        # for market in client.markets.values():
-        #     ob = client.get_orderbook(market)
-        #     print(ob)
-        #     if ob['asks'][0][0] < ob['bids'][0][0]:
-        #         print(client.get_orderbook(market))
-        #         print()
+
+        time.sleep(0.1)
+        ob = client.get_orderbook('BTC_PERP')
+        print('ASK', client.get_orderbook('BTC_PERP')['asks'][0], client.get_orderbook('BTC_PERP')['asks'][1])
+        print('BID', client.get_orderbook('BTC_PERP')['bids'][0], client.get_orderbook('BTC_PERP')['asks'][1])
+        print()
+
+        # time.sleep(5)
+        for market in client.markets.values():
+            ob = client.get_orderbook(market)
+            # if ob['asks'][0][0] < ob['bids'][0][0]:
+            #     print(ob)
+            #     print()
         # print(client.get_all_tops())
-        asyncio.run(test_order())
+        # asyncio.run(test_order())
         # print(f"Aver. order create time: {sum(client.aver_time) / len(client.aver_time)} sec")
 
         # print(client.markets)
