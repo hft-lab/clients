@@ -70,7 +70,7 @@ class BtseClient(BaseClient):
         self.orig_sizes = {}
         self.message_queue = asyncio.Queue(loop=self._loop)
         self.LAST_ORDER_ID = 'default'
-        self.ob_push_limit = None
+        self.ob_push_limit = 0
 
     @staticmethod
     @try_exc_regular
