@@ -62,6 +62,7 @@ class WhiteBitClient(BaseClient):
         self.message_queue = asyncio.Queue(loop=self._loop)
         self.taker_fee = 0.00035
         self.subs = {}
+        self.ob_push_limit = 0.1
 
     @try_exc_regular
     def crazy_treading_func(self):
