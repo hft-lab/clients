@@ -684,7 +684,7 @@ class WhiteBitClient(BaseClient):
     def get_all_tops(self):
         tops = {}
         for coin, symbol in self.markets.items():
-            orderbook = self.orderbook.get(symbol, {})
+            orderbook = self.get_orderbook(symbol)
             if orderbook and orderbook.get('bids') and orderbook.get('asks'):
                 tops.update({self.EXCHANGE_NAME + '__' + coin: {
                     'top_bid': orderbook['bids'][0][0], 'top_ask': orderbook['asks'][0][0],
@@ -697,6 +697,8 @@ class WhiteBitClient(BaseClient):
         flag = False
         # print(data)
         symbol = data['params'][2]
+        self.orderbook[symbol]['timestamp'] = data['params'][1]['timestamp']
+        self.orderbook[symbol]['ts_ms'] = time.time()
         for new_bid in data['params'][1].get('bids', []):
             if float(new_bid[0]) >= self.orderbook[symbol]['top_bid'][0]:
                 self.orderbook[symbol]['top_bid'] = [float(new_bid[0]), float(new_bid[1])]
@@ -723,12 +725,9 @@ class WhiteBitClient(BaseClient):
                     self.orderbook[symbol]['top_ask_timestamp'] = data['params'][1]['timestamp']
             else:
                 self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
-        self.orderbook[symbol]['timestamp'] = data['params'][1]['timestamp']
-        self.orderbook[symbol]['ts_ms'] = time.time()
-
-        if flag and self.message_queue.qsize() <= 1:
-            coin = symbol.split('_')[0]
+        if flag:
             if self.finder:
+                coin = symbol.split('_')[0]
                 self.finder.coins_to_check.append(coin)
                 self.finder.update = True
 
@@ -743,7 +742,8 @@ class WhiteBitClient(BaseClient):
                                       'top_ask': [float(ob['asks'][0][0]), float(ob['asks'][0][1])],
                                       'top_bid': [float(ob['bids'][0][0]), float(ob['bids'][0][1])],
                                       'top_ask_timestamp': data['params'][1]['timestamp'],
-                                      'top_bid_timestamp': data['params'][1]['timestamp']}
+                                      'top_bid_timestamp': data['params'][1]['timestamp'],
+                                      'ts_ms': time.time()}
 
     @try_exc_regular
     def get_orderbook(self, symbol) -> dict:
@@ -755,8 +755,9 @@ class WhiteBitClient(BaseClient):
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
               'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks'])[:5]],
               'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids'])[::-1][:5]],
-              'top_ask_timestamp': self.orderbook[symbol]['top_ask_timestamp'],
-              'top_bid_timestamp': self.orderbook[symbol]['top_bid_timestamp']}
+              'top_ask_timestamp': snap['top_ask_timestamp'],
+              'top_bid_timestamp': snap['top_bid_timestamp'],
+              'ts_ms': snap['ts_ms']}
         return ob
 
     @try_exc_regular

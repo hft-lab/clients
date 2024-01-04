@@ -510,9 +510,6 @@ class BtseClient(BaseClient):
     @try_exc_regular
     def update_orderbook(self, data):
         flag = False
-        if data['data']['symbol'] == self.now_getting:
-            while self.getting_ob.is_set():
-                time.sleep(0.00001)
         symbol = data['data']['symbol']
         for new_bid in data['data']['bids']:
             if float(new_bid[0]) >= self.orderbook[symbol]['top_bid'][0]:
@@ -542,16 +539,13 @@ class BtseClient(BaseClient):
                 self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol]['timestamp'] = data['data']['timestamp']
         self.orderbook[symbol]['ts_ms'] = time.time()
-        if flag and self.message_queue.qsize() < 5:
+        if flag:
             coin = symbol.split('PFC')[0]
             self.finder.coins_to_check.append(coin)
             self.finder.update = True
 
     @try_exc_regular
     def update_orderbook_snapshot(self, data):
-        if data['data']['symbol'] == self.now_getting:
-            while self.getting_ob.is_set():
-                time.sleep(0.00001)
         symbol = data['data']['symbol']
         self.orderbook[symbol] = {'asks': {x[0]: x[1] for x in data['data']['asks']},
                                   'bids': {x[0]: x[1] for x in data['data']['bids']},
@@ -570,20 +564,16 @@ class BtseClient(BaseClient):
     def get_orderbook(self, symbol) -> dict:
         if not self.orderbook.get(symbol):
             return {}
-        self.getting_ob.set()
-        self.now_getting = symbol
         snap = self.orderbook[symbol]
         if isinstance(snap['asks'], list):
             return snap
         c_v = self.instruments[symbol]['contract_value']
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
-              'asks': [[float(x), float(snap['asks'][x]) * c_v] for x in sorted(snap['asks'])[:5]],
-              'bids': [[float(x), float(snap['bids'][x]) * c_v] for x in sorted(snap['bids'])[::-1][:5]],
+              'asks': [[float(x), float(snap['asks'][x]) * c_v] for x in sorted(snap['asks'])[:2]],
+              'bids': [[float(x), float(snap['bids'][x]) * c_v] for x in sorted(snap['bids'])[::-1][:2]],
               'top_ask_timestamp': self.orderbook[symbol]['top_ask_timestamp'],
               'top_bid_timestamp': self.orderbook[symbol]['top_bid_timestamp'],
               'ts_ms': self.orderbook[symbol]['ts_ms']}
-        self.now_getting = ''
-        self.getting_ob.clear()
         return ob
 
     @try_exc_async
