@@ -424,12 +424,12 @@ class WhiteBitClient(BaseClient):
                     self.update_orderbook_snapshot(data)
                 else:
                     self.update_orderbook(data)
-            if data.get('method') == 'balanceMargin_update':
+            elif data.get('method') == 'balanceMargin_update':
                 self.update_balances(data)
             elif data.get('method') in ['ordersExecuted_update', 'ordersPending_update']:
                 self.update_orders(data)
-            # else:
-            #     print(data)
+            else:
+                print(data)
             self.message_queue.task_done()
             if self.message_queue.qsize() > 100:
                 print(f'ALERT! {self.EXCHANGE_NAME} WS LINE LENGTH:', self.message_queue.qsize())
