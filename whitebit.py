@@ -664,10 +664,10 @@ class WhiteBitClient(BaseClient):
     @try_exc_async
     async def subscribe_privates(self):
         method_auth = {"id": 1, "method": "authorize", "params": [self.websocket_token, "public"]}
-        # orders_ex = {"id": 2, "method": "ordersExecuted_subscribe", "params": [list(self.markets.values()), 0]}
+        orders_ex = {"id": 2, "method": "ordersExecuted_subscribe", "params": [list(self.markets.values()), 0]}
         # orders_pend = {"id": 3, "method": "ordersPending_subscribe", "params": []}
-        balance = {"id": 4, "method": "balanceMargin_subscribe", "params": ["USDT"]}
-        deals = {"id": 5, "method": "deals_subscribe", "params": list(self.markets.values())}
+        balance = {"id": 3, "method": "balanceMargin_subscribe", "params": ["USDT"]}
+        deals = {"id": 4, "method": "deals_subscribe", "params": list(self.markets.values())}
         await self._connected.wait()
         await self._ws.send_json(method_auth)
         time.sleep(1)
@@ -678,7 +678,7 @@ class WhiteBitClient(BaseClient):
         #     orders_pend.update({"id": id, 'params': [market]})
         #     await self._ws.send_json(orders_pend)
         #     await asyncio.sleep(0.2)
-        await self._ws.send_json(balance)
+        await self._ws.send_json(orders_ex)
         await self._ws.send_json(balance)
 
     @try_exc_regular
