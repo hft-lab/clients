@@ -33,6 +33,7 @@ class BtseClient(BaseClient):
 
     def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20, finder=None):
         super().__init__()
+        self.finder = None
         if finder:
             self.finder = finder
         self.max_pos_part = max_pos_part
@@ -542,8 +543,9 @@ class BtseClient(BaseClient):
         self.orderbook[symbol]['ts_ms'] = time.time()
         if flag:
             coin = symbol.split('PFC')[0]
-            self.finder.coins_to_check.append(coin)
-            self.finder.update = True
+            if self.finder:
+                self.finder.coins_to_check.append(coin)
+                self.finder.update = True
 
     @try_exc_regular
     def update_orderbook_snapshot(self, data):
@@ -616,34 +618,34 @@ if __name__ == '__main__':
                         markets_list=['BTC'])
 
 
-    async def test_order():
-        async with aiohttp.ClientSession() as session:
-            ob = await client.get_orderbook_by_symbol('ETHPFC')
-            price = ob['bids'][8][0]
-            loop = asyncio.get_event_loop()
-            client.amount = client.instruments['ETHPFC']['min_size']
-            tick = client.instruments['ETHPFC']['tick_size']
-            # client.price = price
-            # await client.create_order('ETHPFC', 'buy', session)
-            # print('CREATE_ORDER OUTPUT:', data)
-            tasks = []
-            time_start = time.time()
-            for price in ob['bids'][3:6]:
-                client.price = price[0] - tick
-                tasks.append(loop.create_task(client.create_order('ETHPFC', 'buy', session)))
-            data = await asyncio.gather(*tasks)
-            print(f"ALL TIME: {time.time() - time_start} sec")
-            print(data)
-            # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
-            time.sleep(1)
-            client.cancel_all_orders()
+    # async def test_order():
+    #     async with aiohttp.ClientSession() as session:
+    #         ob = await client.get_orderbook_by_symbol('ETHPFC')
+    #         price = ob['bids'][8][0]
+    #         loop = asyncio.get_event_loop()
+    #         client.amount = client.instruments['ETHPFC']['min_size']
+    #         tick = client.instruments['ETHPFC']['tick_size']
+    #         # client.price = price
+    #         # await client.create_order('ETHPFC', 'buy', session)
+    #         # print('CREATE_ORDER OUTPUT:', data)
+    #         tasks = []
+    #         time_start = time.time()
+    #         for price in ob['bids'][3:6]:
+    #             client.price = price[0] - tick
+    #             tasks.append(loop.create_task(client.create_order('ETHPFC', 'buy', session)))
+    #         data = await asyncio.gather(*tasks)
+    #         print(f"ALL TIME: {time.time() - time_start} sec")
+    #         print(data)
+    #         # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
+    #         time.sleep(1)
+    #         client.cancel_all_orders()
             # time.sleep(1)
             #
             # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
 
             # print('CANCEL_ALL_ORDERS RESPONSE:', data_cancel)
 
-    client.markets_list = list(client.markets.keys())
+    # client.markets_list = list(client.markets.keys())
     client.run_updater()
     # time.sleep(1)
     # # client.get_real_balance()
@@ -654,9 +656,9 @@ if __name__ == '__main__':
     client.aver_time = []
     while True:
         time.sleep(5)
-        for market in client.markets.values():
-            print(client.get_orderbook(market))
-            print()
+        # for market in client.markets.values():
+        # print(client.get_orderbook('BTCPFC'))
+        # print()
         # print(client.get_all_tops())
         # asyncio.run(test_order())
         # print(f"Aver. order create time: {sum(client.aver_time) / len(client.aver_time)} sec")
