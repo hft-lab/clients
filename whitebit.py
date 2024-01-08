@@ -647,6 +647,7 @@ class WhiteBitClient(BaseClient):
             print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
             print(f"ORDER PLACING TIME: {time.time() - time_start}")
             # self.aver_time.append(time.time() - time_start)
+            self.update_order_after_deal(response)
             status = self.get_order_response_status(response)
             self.LAST_ORDER_ID = response.get('orderId', 'default')
             return {'exchange_name': self.EXCHANGE_NAME,
@@ -664,7 +665,7 @@ class WhiteBitClient(BaseClient):
     @try_exc_regular
     def update_order_after_deal(self, resp):
         factual_price = 0 if resp.get('dealStock', '0') == '0' else float(resp['dealMoney']) / float(resp['dealStock'])
-        self.orders.update({resp.get('orderId'): {'exchange_order_id': order_id,
+        self.orders.update({resp.get('orderId'): {'exchange_order_id': resp.get('orderId', 'default'),
                                                   'exchange': self.EXCHANGE_NAME,
                                                   'status': self.get_order_status(resp, 0),
                                                   'factual_price': factual_price,
@@ -820,18 +821,26 @@ if __name__ == '__main__':
 
     async def test_order():
         async with aiohttp.ClientSession() as session:
-            ob = client.get_orderbook('BTC_PERP')
-            loop = asyncio.get_event_loop()
+
+            ### MULTIORDER TEST
+            # loop = asyncio.get_event_loop()
+            # tasks = []
+            # for price in ob['bids'][3:6]:
+            #   client.price = price[0]
+            #   tasks.append(loop.create_task(client.create_order('BTC_PERP', 'buy', session))))
             # price = ob['bids'][8][0]
-            client.amount = client.instruments['BTC_PERP']['min_size']
-            tasks = []
+            # data = await asyncio.gather(*tasks)
+            # print(data)
+
             time_start = time.time()
-            for price in ob['bids'][3:6]:
-                client.price = price[0]
-                tasks.append(loop.create_task(client.create_order('BTC_PERP', 'buy', session)))
-            data = await asyncio.gather(*tasks)
+            ob = client.get_orderbook('BTC_PERP')
+            client.amount = client.instruments['BTC_PERP']['min_size']
+            print(ob)
+            client.price = ob['bids'][4][0]
+
+            await client.create_order('BTC_PERP', 'buy', session)
+            print(client.orders)
             print(f"ALL TIME: {time.time() - time_start} sec")
-            print(data)
             # await client.create_order('BTC_PERP', 'buy', session)
             # print('CREATE_ORDER OUTPUT:', data)
             # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
@@ -860,6 +869,9 @@ if __name__ == '__main__':
     # client.get_position()
     # print(len(client.get_markets()))
     client.aver_time = []
+    time.sleep(1)
+    asyncio.run(test_order())
+
     while True:
         time.sleep(10)
         for order_id in client.own_orders.keys():
@@ -880,7 +892,6 @@ if __name__ == '__main__':
         #     print(ob)
         #     print()
         # print(client.get_all_tops())
-        # asyncio.run(test_order())
         # print(f"Aver. order create time: {sum(client.aver_time) / len(client.aver_time)} sec")
 
         # print(client.markets)
