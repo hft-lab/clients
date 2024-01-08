@@ -282,7 +282,7 @@ class BtseClient(BaseClient):
             params['clOrderID'] = cl_order_id
             final_path = f"/api/v2.1/order?clOrderID={cl_order_id}"
         self.get_private_headers(path)
-        response = self.session.get(url=self.BASE_URL + final_path)
+        response = self.session.get(url=self.BASE_URL + final_path, json=params)
         if response.status_code in ['200', 200, '201', 201]:
             order_data = response.json()
             # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID RESPONSE', response)
@@ -604,6 +604,24 @@ class BtseClient(BaseClient):
         self._wst_orderbooks.daemon = True
         self._wst_orderbooks.start()
 
+    @try_exc_regular
+    def get_fills(self, order_id, cl_order_id=None):
+        path = '/api/v2.1/user/trade_history'
+        params = {}
+        # if order_id:
+        #     params['orderID'] = order_id
+        #     final_path = path + f"?orderID={order_id}"
+        # else:
+        #     params['clOrderID'] = cl_order_id
+        #     final_path = path + f"?clOrderID={cl_order_id}"+ final_path
+        self.get_private_headers(path)
+        response = self.session.get(url=self.BASE_URL + path)
+        if response.status_code in ['200', 200, '201', 201]:
+            data = response.json()
+            print(data)
+        else:
+            print(f"ERROR IN GET_FILLS RESPONSE BTSE: {response.text=}")
+
 
 if __name__ == '__main__':
     import configparser
@@ -654,6 +672,7 @@ if __name__ == '__main__':
     client.aver_time = []
     while True:
         time.sleep(5)
+        client.get_fills('3252352', '324324')
         # for market in client.markets.values():
         # print(client.get_orderbook('BTCPFC'))
         # print()
