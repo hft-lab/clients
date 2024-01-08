@@ -742,8 +742,6 @@ class WhiteBitClient(BaseClient):
         flag = False
         # print(data)
         symbol = data['params'][2]
-        self.orderbook[symbol]['timestamp'] = data['params'][1]['timestamp']
-        self.orderbook[symbol]['ts_ms'] = time.time()
         for new_bid in data['params'][1].get('bids', []):
             if float(new_bid[0]) >= self.orderbook[symbol]['top_bid'][0]:
                 self.orderbook[symbol]['top_bid'] = [float(new_bid[0]), float(new_bid[1])]
@@ -770,7 +768,13 @@ class WhiteBitClient(BaseClient):
                     self.orderbook[symbol]['top_ask_timestamp'] = data['params'][1]['timestamp']
             else:
                 self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
-        if flag:
+        ts_ms = time.time()
+        self.orderbook[symbol]['ts_ms'] = ts_ms
+        ts_ob = data['params'][1]['timestamp']
+        if isinstance(ts_ob, int):
+            ts_ob = ts_ob / 1000
+        self.orderbook[symbol]['timestamp'] = ts_ob
+        if flag and ts_ms - ts_ob < 0.1:
             if self.finder:
                 coin = symbol.split('_')[0]
                 self.finder.coins_to_check.append(coin)

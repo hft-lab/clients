@@ -537,9 +537,13 @@ class BtseClient(BaseClient):
                     self.orderbook[symbol]['top_ask_timestamp'] = data['data']['timestamp']
             else:
                 self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
-        self.orderbook[symbol]['timestamp'] = data['data']['timestamp']
-        self.orderbook[symbol]['ts_ms'] = time.time()
-        if flag:
+        ts_ms = time.time()
+        self.orderbook[symbol]['ts_ms'] = ts_ms
+        ts_ob = data['data']['timestamp']
+        if isinstance(ts_ob, int):
+            ts_ob = ts_ob / 1000
+        self.orderbook[symbol]['timestamp'] = ts_ob
+        if flag and ts_ms - ts_ob < 0.1:
             coin = symbol.split('PFC')[0]
             if self.finder:
                 self.finder.coins_to_check.append(coin)
