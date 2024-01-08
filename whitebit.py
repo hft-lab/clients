@@ -155,6 +155,9 @@ class WhiteBitClient(BaseClient):
                                                  'datetime_update': dt_update,
                                                  'ts_update': ts_update,
                                                  'fills': fills}})
+        for deal_to_update in temp.keys():
+            if self.orders.get(deal_to_update):
+                self.orders.update(temp[deal_to_update])
         self.own_orders.update(temp)
 
     @try_exc_regular
@@ -657,6 +660,18 @@ class WhiteBitClient(BaseClient):
             #  'postOnly': False, 'price': '42511.7'}
             # example_failed = {'code': 17, 'message': 'Inner validation failed',
             #                   'errors': {'amount': ['Not enough balance.']}}
+
+    @try_exc_regular
+    def update_order_after_deal(self, resp):
+        factual_price = 0 if resp.get('dealStock', '0') == '0' else float(resp['dealMoney']) / float(resp['dealStock'])
+        self.orders.update({resp.get('orderId'): {'exchange_order_id': order_id,
+                                                  'exchange': self.EXCHANGE_NAME,
+                                                  'status': self.get_order_status(resp, 0),
+                                                  'factual_price': factual_price,
+                                                  'factual_amount_coin': float(resp.get('dealStock', 0)),
+                                                  'factual_amount_usd': float(resp.get('dealMoney', 0)),
+                                                  'datetime_update': datetime.utcnow(),
+                                                  'ts_update': datetime.utcnow().timestamp()}})
 
     @try_exc_regular
     def get_order_response_status(self, response):
