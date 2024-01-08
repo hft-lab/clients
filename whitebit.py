@@ -66,21 +66,29 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_regular
     def deals_thread_func(self):
+        markets_list = list(self.markets.values())
+        tot_markets_len = len(markets_list)
+        one_ws_len = int(tot_markets_len / 4)
         loop = asyncio.new_event_loop()
-        thread = threading.Thread(target=self.run_loopie_loop, args=[loop])
-        # for market in self.markets.values():
-        #     if first_market == market:
-        #         continue
-        #     loop.create_task(self._run_deals_ws_loop(loop, market))
+        first = True
+        for i in range(4):
+            if first:
+                thread = threading.Thread(target=self.run_loopie_loop, args=[loop, markets_list[0:one_ws_len]])
+                first = False
+                continue
+            if i == 3:
+                loop.create_task(self._run_deals_ws_loop(markets_list[i*one_ws_len:]))
+            else:
+                loop.create_task(self._run_deals_ws_loop(markets_list[i*one_ws_len:(i+1)*one_ws_len]))
         thread.daemon = True
         thread.start()
         # print(f"Thread {market} started")
 
     @try_exc_regular
-    def run_loopie_loop(self, loop):
+    def run_loopie_loop(self, loop, markets_list):
         while True:
             time.sleep(1)
-            loop.run_until_complete(self._run_deals_ws_loop())
+            loop.run_until_complete(self._run_deals_ws_loop(markets_list))
 
     # @try_exc_async
     # async def get_ws_executed_deals(self, market, websocket):
@@ -92,14 +100,14 @@ class WhiteBitClient(BaseClient):
     #     await websocket.send_json(method)
     #     self.subs.update({id: market})
     @try_exc_async
-    async def _run_deals_ws_loop(self):
+    async def _run_deals_ws_loop(self, markets_list):
         async with aiohttp.ClientSession() as s:
             async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
                 method_auth = {"id": 303, "method": "authorize", "params": [self.websocket_token, "public"]}
                 await ws.send_json(method_auth)
                 await ws.receive_json()
                 while True:
-                    for market in self.markets.values():
+                    for market in markets_list:
                     # print(auth_resp)
                     # id = randint(1, 10000000000000)
                         method = {"id": 101,
@@ -113,7 +121,7 @@ class WhiteBitClient(BaseClient):
                             self.update_own_orders(resp['result']['records'])
                         else:
                             print(resp)
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(0.5)
                 # data = {"error": None, "result": {"offset": 0, "limit": 100, "records": [
                 #     {"time": 1704523361.6664, "id": 3386587209, "side": 1, "role": 2, "price": "0.16806",
                 #      "amount": "80", "deal": "13.4448", "fee": "0.00470568", "order_id": 406582635829,
@@ -867,7 +875,7 @@ if __name__ == '__main__':
     # print(len(client.get_markets()))
     client.aver_time = []
     time.sleep(1)
-    asyncio.run(test_order())
+    # asyncio.run(test_order())
 
     while True:
         time.sleep(10)
