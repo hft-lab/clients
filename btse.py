@@ -281,7 +281,7 @@ class BtseClient(BaseClient):
         else:
             params['clOrderID'] = cl_order_id
             final_path = f"/api/v2.1/order?clOrderID={cl_order_id}"
-        self.get_private_headers(path)
+        self.get_private_headers(path, params)
         response = self.session.get(url=self.BASE_URL + final_path, json=params)
         if response.status_code in ['200', 200, '201', 201]:
             order_data = response.json()
