@@ -8,7 +8,6 @@ import threading
 import hmac
 import hashlib
 import base64
-import requests_cache
 from clients.core.enums import ResponseStatus, OrderStatus
 from core.wrappers import try_exc_regular, try_exc_async
 from clients.core.base_client import BaseClient
@@ -20,7 +19,6 @@ class WhiteBitClient(BaseClient):
     PUBLIC_WS_ENDPOINT = 'wss://api.whitebit.com/ws'
     BASE_URL = 'https://whitebit.com'
     EXCHANGE_NAME = 'WHITEBIT'
-    requests_cache.install_cache('dns_cache', backend='sqlite', expire_after=300)
 
     def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20, finder=None):
         super().__init__()
@@ -57,6 +55,8 @@ class WhiteBitClient(BaseClient):
         self.balance = {}
         self.positions = {}
         self.websocket_token = self.get_ws_token()
+        self.deals_thread_func()
+        self.own_orders = {}
         self.LAST_ORDER_ID = 'default'
         self.get_real_balance()
         self.message_queue = asyncio.Queue(loop=self._loop)
@@ -65,87 +65,94 @@ class WhiteBitClient(BaseClient):
         self.ob_push_limit = 0.1
 
     @try_exc_regular
-    def crazy_treading_func(self):
+    def deals_thread_func(self):
         loop = asyncio.new_event_loop()
-        first_market = self.markets[self.markets_list[0]]
+        first_market = list(self.markets.values())[0]
         thread = threading.Thread(target=self.run_loopie_loop, args=[loop, first_market])
-        for coin in self.markets_list:
-            market = self.markets[coin]
-            if first_market == market:
-                continue
-            loop.create_task(self._run_market_ws_loop(market, loop))
+        # for market in self.markets.values():
+        #     if first_market == market:
+        #         continue
+        #     loop.create_task(self._run_deals_ws_loop(loop, market))
         thread.daemon = True
         thread.start()
         # print(f"Thread {market} started")
 
     @try_exc_regular
-    def run_loopie_loop(self, loop, market):
+    def run_loopie_loop(self, loop, first_market):
         while True:
-            loop.run_until_complete(self._run_market_ws_loop(market, loop))
+            time.sleep(1)
+            loop.run_until_complete(self._run_deals_ws_loop(loop, first_market))
+            for market in self.markets.values():
+                if first_market == market:
+                    continue
+                loop.create_task(self._run_deals_ws_loop(loop, market))
 
     @try_exc_async
-    async def get_ws_orderbook(self, market, websocket):
+    async def get_ws_executed_deals(self, market, websocket):
         id = randint(1, 10000000000000)
         method = {"id": id,
-                  "method": "depth_request",
-                  "params": [market, 5, "0"]}
+                  "method": "ordersExecuted_request",
+                  "params": {"market": market,
+                             "order_types": [1, 2]}}
         await websocket.send_json(method)
         self.subs.update({id: market})
 
     @try_exc_async
-    async def _run_market_ws_loop(self, market, loop):
+    async def _run_deals_ws_loop(self, loop, market):
         async with aiohttp.ClientSession() as s:
-            while True:
-                async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
-                    while True:
-                        await loop.create_task(self.get_ws_orderbook(market, ws))
-                        try:
-                            data = await ws.receive_json()
-                        except:
-                            continue
-                        if not data['error']:
-                            if time.time() - data['result']['timestamp'] > 0.015:
-                                await asyncio.sleep(time.time() - data['result']['timestamp'] + 0.011)
-                                continue
-                            self.update_orderbook(data['result'], data['id'])
-                            await asyncio.sleep(0.989)
-                        else:
-                            print('ORDERBOOK WS UPDATE ERROR', data)
+            async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
+                method_auth = {"id": 303, "method": "authorize", "params": [self.websocket_token, "public"]}
+                await ws.send_json(method_auth)
+                auth_resp = await ws.receive_json()
+                print(auth_resp)
+                # id = randint(1, 10000000000000)
+                method = {"id": 101,
+                          # "method": "ordersExecuted_request",
+                          # "params": [{'market': market, "order_types": [1, 2]}, 0, 30]}
+                          "method": "deals_request",
+                          "params": [market, 0, 100]}
+                await ws.send_json(method)
+                resp = await ws.receive_json()
+                if not resp['error']:
+                    self.update_own_orders(resp['result']['records'])
+                print(resp)
+                await asyncio.sleep(1)
+                data = {"error": None, "result": {"offset": 0, "limit": 100, "records": [
+                    {"time": 1704523361.6664, "id": 3386587209, "side": 1, "role": 2, "price": "0.16806",
+                     "amount": "80", "deal": "13.4448", "fee": "0.00470568", "order_id": 406582635829,
+                     "deal_order_id": 406582569838, "market": "GRT_PERP", "client_order_id": ""},
+                    {"time": 1704523285.8136549, "id": 3386582439, "side": 2, "role": 2, "price": "0.16852",
+                     "amount": "170", "deal": "28.6484", "fee": "0.01002694", "order_id": 406581486894,
+                     "deal_order_id": 406581480011, "market": "GRT_PERP", "client_order_id": ""},
+                    {"time": 1704520372.1594241, "id": 3386386367, "side": 1, "role": 2, "price": "0.17101",
+                     "amount": "90", "deal": "15.3909", "fee": "0.005386815", "order_id": 406535978735,
+                     "deal_order_id": 406535915525, "market": "GRT_PERP", "client_order_id": ""}]}}
 
     @try_exc_regular
-    def update_orderbook(self, data, id):
-        market = self.subs[id]
-        self.subs.pop(id)
-        # if time.time() - data['timestamp'] < 0.03:
-            # print(f"Market update {market}. OB AGE: {time.time() - data['timestamp']}")
-        if self.orderbook.get(market):
-            old_top_ask = self.orderbook[market]['asks'][0]
-            old_top_bid = self.orderbook[market]['bids'][0]
-            new_ob = {'asks': [[float(ask[0]), float(ask[1])] for ask in data['asks']],
-                      'bids': [[float(bid[0]), float(bid[1])] for bid in data['bids']],
-                      'timestamp': data['timestamp'],
-                      'ts_ms': time.time()}
-            if old_top_ask != new_ob['asks'][0]:
-                new_ob['timestamp_top_ask'] = data['timestamp']
-            if old_top_bid != new_ob['bids'][0]:
-                new_ob['timestamp_top_bid'] = data['timestamp']
-            if old_top_bid[0] < new_ob['bids'][0][0] or old_top_bid[1] != new_ob['bids'][0][1]:
-                if self.finder and time.time() - data['timestamp'] < 0.03:
-                    coin = market.split('_')[0]
-                    self.finder.coins_to_check.append(coin)
-                    self.finder.update = True
-            elif old_top_ask[0] > new_ob['asks'][0][0] or old_top_ask[1] != new_ob['asks'][0][1]:
-                if self.finder and time.time() - data['timestamp'] < 0.03:
-                    coin = market.split('_')[0]
-                    self.finder.coins_to_check.append(coin)
-                    self.finder.update = True
-        else:
-            self.orderbook.update({market: {'asks': [[float(ask[0]), float(ask[1])] for ask in data['asks']],
-                                            'bids': [[float(bid[0]), float(bid[1])] for bid in data['bids']],
-                                            'timestamp': data['timestamp'],
-                                            'timestamp_top_ask': data['timestamp'],
-                                            'timestamp_top_bid': data['timestamp'],
-                                            'ts_ms': time.time()}})
+    def update_own_orders(self, data):
+        temp = {}
+        for deal in data:
+            if exist_deal := temp.get(deal['deal_order_id']):
+                tot_amnt_usd = exist_deal['factual_amount_usd'] + float(deal["deal"])
+                tot_amnt_coin = exist_deal['factual_amount_coin'] + float(deal['amount'])
+                av_price = tot_amnt_usd / tot_amnt_coin
+                ts_update = deal["time"]
+                dt_update = datetime.fromtimestamp(ts_update)
+            else:
+                tot_amnt_usd = float(deal["deal"])
+                tot_amnt_coin = float(deal['amount'])
+                av_price = float(deal['price'])
+                ts_update = deal["time"]
+                dt_update = datetime.fromtimestamp(ts_update)
+            temp.update({deal['deal_order_id']: {'exchange_order_id': deal['deal_order_id'],
+                                                 'exchange': self.EXCHANGE_NAME,
+                                                 'status': OrderStatus.FULLY_EXECUTED,
+                                                 'factual_price': av_price,
+                                                 'factual_amount_coin': tot_amnt_coin,
+                                                 'factual_amount_usd': tot_amnt_usd,
+                                                 'datetime_update': dt_update,
+                                                 'ts_update': ts_update}})
+
 
     @try_exc_regular
     def get_markets(self):
@@ -227,25 +234,25 @@ class WhiteBitClient(BaseClient):
 
         # print(self.EXCHANGE_NAME, 'POSITIONS AFTER UPDATE:', self.positions)
 
-            # example = [{'positionId': 3634420, 'market': 'BTC_PERP', 'openDate': 1703664697.619855,
-            #             'modifyDate': 1703664697.619855,
-            #             'amount': '0.001', 'basePrice': '42523.8', 'liquidationPrice': '0', 'pnl': '0.2',
-            #             'pnlPercent': '0.47',
-            #             'margin': '8.6', 'freeMargin': '41.6', 'funding': '0', 'unrealizedFunding': '0',
-            #             'liquidationState': None},
-            #            {'positionId': 3642507, 'market': 'BTC_PERP', 'openDate': 1703752465.897688,
-            #             'modifyDate': 1703752465.897688, 'amount': '0', 'basePrice': '', 'liquidationPrice': None,
-            #             'pnl': None,
-            #             'pnlPercent': None, 'margin': '8.7', 'freeMargin': '13.6', 'funding': '0',
-            #             'unrealizedFunding': '0',
-            #             'liquidationState': None}]
-            # example_negative_pos = [
-            #     {'positionId': 3635477, 'market': 'BTC_PERP', 'openDate': 1703677698.102418,
-            #      'modifyDate': 1703677698.102418,
-            #      'amount': '-0.002', 'basePrice': '43131.7', 'liquidationPrice': '66743.8', 'pnl': '0',
-            #      'pnlPercent': '0.00',
-            #      'margin': '17.3', 'freeMargin': '33.2', 'funding': '0', 'unrealizedFunding': '0',
-            #      'liquidationState': None}]
+        # example = [{'positionId': 3634420, 'market': 'BTC_PERP', 'openDate': 1703664697.619855,
+        #             'modifyDate': 1703664697.619855,
+        #             'amount': '0.001', 'basePrice': '42523.8', 'liquidationPrice': '0', 'pnl': '0.2',
+        #             'pnlPercent': '0.47',
+        #             'margin': '8.6', 'freeMargin': '41.6', 'funding': '0', 'unrealizedFunding': '0',
+        #             'liquidationState': None},
+        #            {'positionId': 3642507, 'market': 'BTC_PERP', 'openDate': 1703752465.897688,
+        #             'modifyDate': 1703752465.897688, 'amount': '0', 'basePrice': '', 'liquidationPrice': None,
+        #             'pnl': None,
+        #             'pnlPercent': None, 'margin': '8.7', 'freeMargin': '13.6', 'funding': '0',
+        #             'unrealizedFunding': '0',
+        #             'liquidationState': None}]
+        # example_negative_pos = [
+        #     {'positionId': 3635477, 'market': 'BTC_PERP', 'openDate': 1703677698.102418,
+        #      'modifyDate': 1703677698.102418,
+        #      'amount': '-0.002', 'basePrice': '43131.7', 'liquidationPrice': '66743.8', 'pnl': '0',
+        #      'pnlPercent': '0.00',
+        #      'margin': '17.3', 'freeMargin': '33.2', 'funding': '0', 'unrealizedFunding': '0',
+        #      'liquidationState': None}]
 
     @try_exc_regular
     def get_real_balance(self):
@@ -258,6 +265,7 @@ class WhiteBitClient(BaseClient):
         self.balance = {'timestamp': datetime.utcnow().timestamp(),
                         'total': float(response['USDT']),
                         'free': float(response['USDT'])}
+
     # example = {'ADA': '0', 'APE': '0', 'ARB': '0', 'ATOM': '0', 'AVAX': '0', 'BCH': '0', 'BTC': '0', 'DOGE': '0',
     #            'DOT': '0', 'EOS': '0', 'ETC': '0', 'ETH': '0', 'LINK': '0', 'LTC': '0', 'MATIC': '0', 'NEAR': '0',
     #            'OP': '0', 'SHIB': '0', 'SOL': '0', 'TRX': '0', 'UNI': '0', 'USDC': '0', 'USDT': '50', 'WBT': '0',
@@ -616,8 +624,8 @@ class WhiteBitClient(BaseClient):
             except ContentTypeError as e:
                 content = await resp.text()
                 print(f"{self.EXCHANGE_NAME} CREATE ORDER ERROR\nAPI RESPONSE: {content}")
-        # resp = self.session.post(url=self.BASE_URL + path, json=params)
-        # response = resp.json()
+            # resp = self.session.post(url=self.BASE_URL + path, json=params)
+            # response = resp.json()
             print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
             print(f"ORDER PLACING TIME: {time.time() - time_start}")
             # self.aver_time.append(time.time() - time_start)
@@ -667,11 +675,11 @@ class WhiteBitClient(BaseClient):
         orders_ex = {"id": 2, "method": "ordersExecuted_subscribe", "params": [list(self.markets.values()), 0]}
         # orders_pend = {"id": 3, "method": "ordersPending_subscribe", "params": []}
         balance = {"id": 3, "method": "balanceMargin_subscribe", "params": ["USDT"]}
-        deals = {"id": 4, "method": "deals_subscribe", "params": list(self.markets.values())}
+        # deals = {"id": 4, "method": "deals_subscribe", "params": list(self.markets.values())}
         await self._connected.wait()
         await self._ws.send_json(method_auth)
         time.sleep(1)
-        await self._ws.send_json(deals)
+        # await self._ws.send_json(deals)
         # for market in list(self.markets.values()):
         #     id = randint(1, 1000)
         #     # print(f"SUBSCRIPTION: {id}: {market}")
@@ -808,7 +816,7 @@ if __name__ == '__main__':
     client.markets_list = list(client.markets.keys())
     client.run_updater()
 
-    time.sleep(1)
+    # time.sleep(1)
 
     # time.sleep(1)
     # client.get_real_balance()
@@ -823,19 +831,18 @@ if __name__ == '__main__':
     # print(len(client.get_markets()))
     client.aver_time = []
     while True:
-
-        time.sleep(0.1)
-        ob = client.get_orderbook('BTC_PERP')
-        print('ASK', client.get_orderbook('BTC_PERP')['asks'][0], client.get_orderbook('BTC_PERP')['asks'][1])
-        print('BID', client.get_orderbook('BTC_PERP')['bids'][0], client.get_orderbook('BTC_PERP')['asks'][1])
-        print()
-
-        # time.sleep(5)
-        for market in client.markets.values():
-            ob = client.get_orderbook(market)
-            # if ob['asks'][0][0] < ob['bids'][0][0]:
-            #     print(ob)
-            #     print()
+        time.sleep(1)
+        # ob = client.get_orderbook('BTC_PERP')
+        # print('ASK', client.get_orderbook('BTC_PERP')['asks'][0], client.get_orderbook('BTC_PERP')['asks'][1])
+        # print('BID', client.get_orderbook('BTC_PERP')['bids'][0], client.get_orderbook('BTC_PERP')['asks'][1])
+        # print()
+        #
+        # # time.sleep(5)
+        # for market in client.markets.values():
+        #     ob = client.get_orderbook(market)
+        # if ob['asks'][0][0] < ob['bids'][0][0]:
+        #     print(ob)
+        #     print()
         # print(client.get_all_tops())
         # asyncio.run(test_order())
         # print(f"Aver. order create time: {sum(client.aver_time) / len(client.aver_time)} sec")
