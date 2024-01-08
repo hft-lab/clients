@@ -55,7 +55,7 @@ class WhiteBitClient(BaseClient):
         self.balance = {}
         self.positions = {}
         self.websocket_token = self.get_ws_token()
-        # self.deals_thread_func()
+        self.deals_thread_func()
         self.own_orders = {}
         self.LAST_ORDER_ID = 'default'
         self.get_real_balance()
@@ -87,15 +87,15 @@ class WhiteBitClient(BaseClient):
                     continue
                 loop.create_task(self._run_deals_ws_loop(loop, market))
 
-    @try_exc_async
-    async def get_ws_executed_deals(self, market, websocket):
-        id = randint(1, 10000000000000)
-        method = {"id": id,
-                  "method": "ordersExecuted_request",
-                  "params": {"market": market,
-                             "order_types": [1, 2]}}
-        await websocket.send_json(method)
-        self.subs.update({id: market})
+    # @try_exc_async
+    # async def get_ws_executed_deals(self, market, websocket):
+    #     id = randint(1, 10000000000000)
+    #     method = {"id": id,
+    #               "method": "ordersExecuted_request",
+    #               "params": {"market": market,
+    #                          "order_types": [1, 2]}}
+    #     await websocket.send_json(method)
+    #     self.subs.update({id: market})
 
     @try_exc_async
     async def _run_deals_ws_loop(self, loop, market):
@@ -104,7 +104,7 @@ class WhiteBitClient(BaseClient):
                 method_auth = {"id": 303, "method": "authorize", "params": [self.websocket_token, "public"]}
                 await ws.send_json(method_auth)
                 auth_resp = await ws.receive_json()
-                print(auth_resp)
+                # print(auth_resp)
                 # id = randint(1, 10000000000000)
                 method = {"id": 101,
                           # "method": "ordersExecuted_request",
@@ -115,18 +115,18 @@ class WhiteBitClient(BaseClient):
                 resp = await ws.receive_json()
                 if not resp['error']:
                     self.update_own_orders(resp['result']['records'])
-                print(resp)
+                # print(resp)
                 await asyncio.sleep(1)
-                data = {"error": None, "result": {"offset": 0, "limit": 100, "records": [
-                    {"time": 1704523361.6664, "id": 3386587209, "side": 1, "role": 2, "price": "0.16806",
-                     "amount": "80", "deal": "13.4448", "fee": "0.00470568", "order_id": 406582635829,
-                     "deal_order_id": 406582569838, "market": "GRT_PERP", "client_order_id": ""},
-                    {"time": 1704523285.8136549, "id": 3386582439, "side": 2, "role": 2, "price": "0.16852",
-                     "amount": "170", "deal": "28.6484", "fee": "0.01002694", "order_id": 406581486894,
-                     "deal_order_id": 406581480011, "market": "GRT_PERP", "client_order_id": ""},
-                    {"time": 1704520372.1594241, "id": 3386386367, "side": 1, "role": 2, "price": "0.17101",
-                     "amount": "90", "deal": "15.3909", "fee": "0.005386815", "order_id": 406535978735,
-                     "deal_order_id": 406535915525, "market": "GRT_PERP", "client_order_id": ""}]}}
+                # data = {"error": None, "result": {"offset": 0, "limit": 100, "records": [
+                #     {"time": 1704523361.6664, "id": 3386587209, "side": 1, "role": 2, "price": "0.16806",
+                #      "amount": "80", "deal": "13.4448", "fee": "0.00470568", "order_id": 406582635829,
+                #      "deal_order_id": 406582569838, "market": "GRT_PERP", "client_order_id": ""},
+                #     {"time": 1704523285.8136549, "id": 3386582439, "side": 2, "role": 2, "price": "0.16852",
+                #      "amount": "170", "deal": "28.6484", "fee": "0.01002694", "order_id": 406581486894,
+                #      "deal_order_id": 406581480011, "market": "GRT_PERP", "client_order_id": ""},
+                #     {"time": 1704520372.1594241, "id": 3386386367, "side": 1, "role": 2, "price": "0.17101",
+                #      "amount": "90", "deal": "15.3909", "fee": "0.005386815", "order_id": 406535978735,
+                #      "deal_order_id": 406535915525, "market": "GRT_PERP", "client_order_id": ""}]}}
 
     @try_exc_regular
     def update_own_orders(self, data):
@@ -138,12 +138,14 @@ class WhiteBitClient(BaseClient):
                 av_price = tot_amnt_usd / tot_amnt_coin
                 ts_update = deal["time"]
                 dt_update = datetime.fromtimestamp(ts_update)
+                fills = exist_deal['fills'] + 1
             else:
                 tot_amnt_usd = float(deal["deal"])
                 tot_amnt_coin = float(deal['amount'])
                 av_price = float(deal['price'])
                 ts_update = deal["time"]
                 dt_update = datetime.fromtimestamp(ts_update)
+                fills = 1
             temp.update({deal['deal_order_id']: {'exchange_order_id': deal['deal_order_id'],
                                                  'exchange': self.EXCHANGE_NAME,
                                                  'status': OrderStatus.FULLY_EXECUTED,
@@ -151,8 +153,9 @@ class WhiteBitClient(BaseClient):
                                                  'factual_amount_coin': tot_amnt_coin,
                                                  'factual_amount_usd': tot_amnt_usd,
                                                  'datetime_update': dt_update,
-                                                 'ts_update': ts_update}})
-
+                                                 'ts_update': ts_update,
+                                                 'fills': fills}})
+        self.own_orders.update(temp)
 
     @try_exc_regular
     def get_markets(self):
@@ -565,36 +568,48 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_regular
     def get_order_by_id(self, symbol: str, order_id: int):
-        path = '/api/v1/account/order_history'
-        params = {'limit': 100}
-        params = self.get_auth_for_request(params, path)
-        path += self._create_uri(params)
-        res = self.session.post(url=self.BASE_URL + path, json=params)
-        response = res.json()
-        # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID STARTED')
-        # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID RESPONSE', response)
-        right_order = {}
-        factual_price = 0
-        if response.get('success'):
-            for market in response['result']:
-                if not right_order:
-                    for order in response['result'][market]:
-                        if order['id'] == order_id:
-                            right_order = order
-                            # print(f"GET_ORDER_BY_ID ORDER FOUND: {right_order}")
-                            if right_order['dealStock'] != '0':
-                                factual_price = float(right_order['dealMoney']) / float(right_order['dealStock'])
-                            break
-                else:
-                    break
-        return {'exchange_order_id': order_id,
-                'exchange': self.EXCHANGE_NAME,
-                'status': self.get_order_status(right_order, 0),
-                'factual_price': factual_price,
-                'factual_amount_coin': float(right_order.get('dealStock', 0)),
-                'factual_amount_usd': float(right_order.get('dealMoney', 0)),
-                'datetime_update': datetime.utcnow(),
-                'ts_update': right_order.get('ftime', datetime.utcnow().timestamp())}
+        if order := self.own_orders.get(order_id):
+            return order
+        else:
+            return {'exchange_order_id': order_id,
+                    'exchange': self.EXCHANGE_NAME,
+                    'status': OrderStatus.NOT_EXECUTED,
+                    'factual_price': 0,
+                    'factual_amount_coin': 0,
+                    'factual_amount_usd': 0,
+                    'datetime_update': datetime.utcnow(),
+                    'ts_update': datetime.utcnow().timestamp()}
+
+        # path = '/api/v1/account/order_history'
+        # params = {'limit': 100}
+        # params = self.get_auth_for_request(params, path)
+        # path += self._create_uri(params)
+        # res = self.session.post(url=self.BASE_URL + path, json=params)
+        # response = res.json()
+        # # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID STARTED')
+        # # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID RESPONSE', response)
+        # right_order = {}
+        # factual_price = 0
+        # if response.get('success'):
+        #     for market in response['result']:
+        #         if not right_order:
+        #             for order in response['result'][market]:
+        #                 if order['id'] == order_id:
+        #                     right_order = order
+        #                     # print(f"GET_ORDER_BY_ID ORDER FOUND: {right_order}")
+        #                     if right_order['dealStock'] != '0':
+        #                         factual_price = float(right_order['dealMoney']) / float(right_order['dealStock'])
+        #                     break
+        #         else:
+        #             break
+        # return {'exchange_order_id': order_id,
+        #         'exchange': self.EXCHANGE_NAME,
+        #         'status': self.get_order_status(right_order, 0),
+        #         'factual_price': factual_price,
+        #         'factual_amount_coin': float(right_order.get('dealStock', 0)),
+        #         'factual_amount_usd': float(right_order.get('dealMoney', 0)),
+        #         'datetime_update': datetime.utcnow(),
+        #         'ts_update': right_order.get('ftime', datetime.utcnow().timestamp())}
         # example = {'success': True, 'message': '', 'result': {'BTC_PERP': [
         #     {'amount': '0.001', 'price': '43192.7', 'type': 'margin_limit', 'id': 395373055942, 'clientOrderId': '',
         #      'side': 'buy', 'ctime': 1703673670.631547, 'takerFee': '0.00035', 'ftime': 1703673672.240763,
@@ -831,7 +846,13 @@ if __name__ == '__main__':
     # print(len(client.get_markets()))
     client.aver_time = []
     while True:
-        time.sleep(1)
+        time.sleep(10)
+        for order_id in client.own_orders.keys():
+            print(client.get_order_by_id('asdf', order_id))
+            print()
+
+        print(client.get_order_by_id('asdf', 123314))
+        # print(client.own_orders)
         # ob = client.get_orderbook('BTC_PERP')
         # print('ASK', client.get_orderbook('BTC_PERP')['asks'][0], client.get_orderbook('BTC_PERP')['asks'][1])
         # print('BID', client.get_orderbook('BTC_PERP')['bids'][0], client.get_orderbook('BTC_PERP')['asks'][1])
