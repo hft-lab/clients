@@ -55,7 +55,7 @@ class WhiteBitClient(BaseClient):
         self.balance = {}
         self.positions = {}
         self.websocket_token = self.get_ws_token()
-        self.deals_thread_func()
+        # self.deals_thread_func()
         self.own_orders = {}
         self.LAST_ORDER_ID = 'default'
         self.get_real_balance()
