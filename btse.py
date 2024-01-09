@@ -609,17 +609,13 @@ class BtseClient(BaseClient):
         self._wst_orderbooks.start()
 
     @try_exc_regular
-    def get_fills(self, order_id, cl_order_id=None):
+    def get_fills(self, symbol: str, order_id: str):
         path = '/api/v2.1/user/trade_history'
-        params = {}
-        # if order_id:
-        #     params['orderID'] = order_id
-        #     final_path = path + f"?orderID={order_id}"
-        # else:
-        #     params['clOrderID'] = cl_order_id
-        #     final_path = path + f"?clOrderID={cl_order_id}"+ final_path
-        self.get_private_headers(path)
-        response = self.session.get(url=self.BASE_URL + path)
+        params = {'orderID': order_id,
+                  'symbol': symbol}
+        final_path = path + f"?orderID={order_id}&symbol={symbol}"
+        self.get_private_headers(path, params)
+        response = self.session.get(url=self.BASE_URL + final_path, json=params)
         if response.status_code in ['200', 200, '201', 201]:
             data = response.json()
             print(data)
@@ -676,7 +672,7 @@ if __name__ == '__main__':
     client.aver_time = []
     while True:
         time.sleep(5)
-        client.get_fills('3252352', '324324')
+        client.get_fills('LTCPFC', '539ff78f-b341-45d3-886c-7b6042248f8c')
         # for market in client.markets.values():
         # print(client.get_orderbook('BTCPFC'))
         # print()

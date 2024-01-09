@@ -1,4 +1,5 @@
 import time
+import traceback
 import aiohttp
 import json
 import requests
@@ -116,7 +117,11 @@ class WhiteBitClient(BaseClient):
                                   "method": "deals_request",
                                   "params": [market, 0, 100]}
                         await ws.send_json(method)
-                        resp = await ws.receive_json()
+                        try:
+                            resp = await ws.receive_json()
+                        except Exception:
+                            traceback.print_exc()
+                            continue
                         if not resp['error']:
                             self.update_own_orders(resp['result']['records'])
                         else:
