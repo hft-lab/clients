@@ -116,17 +116,18 @@ class WhiteBitClient(BaseClient):
                                   # "params": [{'market': market, "order_types": [1, 2]}, 0, 30]}
                                   "method": "deals_request",
                                   "params": [market, 0, 100]}
-                        await ws.send_json(method)
                         try:
+                            await ws.send_json(method)
                             resp = await ws.receive_json()
                         except Exception:
                             traceback.print_exc()
-                            continue
+                            await ws.close()
                         if not resp['error']:
                             self.update_own_orders(resp['result']['records'])
                         else:
                             print(resp)
                         await asyncio.sleep(0.5)
+
                 # data = {"error": None, "result": {"offset": 0, "limit": 100, "records": [
                 #     {"time": 1704523361.6664, "id": 3386587209, "side": 1, "role": 2, "price": "0.16806",
                 #      "amount": "80", "deal": "13.4448", "fee": "0.00470568", "order_id": 406582635829,
@@ -452,8 +453,6 @@ class WhiteBitClient(BaseClient):
                 self.update_balances(data)
             elif data.get('method') in ['ordersExecuted_update', 'ordersPending_update']:
                 self.update_orders(data)
-            else:
-                print(data)
             self.message_queue.task_done()
             if self.message_queue.qsize() > 100:
                 print(f'ALERT! {self.EXCHANGE_NAME} WS LINE LENGTH:', self.message_queue.qsize())
@@ -491,6 +490,7 @@ class WhiteBitClient(BaseClient):
                         await self._loop.create_task(self.subscribe_orderbooks(market))
                 async for msg in ws:
                     await self.message_queue.put(msg)
+                await ws.close()
 
     @try_exc_regular
     def update_balances(self, data):

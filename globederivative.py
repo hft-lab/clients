@@ -132,7 +132,8 @@ class GlobeClient:
             self.orderbook.update({market: {'asks': [], 'bids': []}})
         self.orderbook[market].update({'asks': [[x['price'], x['volume']] for x in data['data']['asks']],
                                        'bids': [[x['price'], x['volume']] for x in data['data']['bids']],
-                                       'timestamp': data['data']['timestamp']})
+                                       'timestamp': data['data']['timestamp'],
+                                       'ts_ms': time.time()})
 
     @try_exc_regular
     def __generate_signature(self, data):

@@ -115,7 +115,8 @@ class BitmakeClient:
         symbol = ob['s']
         self.orderbook[symbol] = {'asks': {x[0]: x[1] for x in ob['a']},
                                   'bids': {x[0]: x[1] for x in ob['b']},
-                                  'timestamp': ob['t']}
+                                  'timestamp': ob['t'],
+                                  'ts_ms': time.time()}
 
     @try_exc_regular
     def get_orderbook(self, symbol) -> dict:

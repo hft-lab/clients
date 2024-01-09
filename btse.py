@@ -348,6 +348,7 @@ class BtseClient(BaseClient):
                     await self._loop.create_task(self.subscribe_orderbooks())
                 async for msg in ws:
                     await self.message_queue.put(msg)
+            await ws.close()
 
     @try_exc_async
     async def cancel_order(self, symbol: str, order_id: str, session: aiohttp.ClientSession):
