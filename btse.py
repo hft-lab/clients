@@ -246,7 +246,7 @@ class BtseClient(BaseClient):
                 self.orig_sizes.update({self.LAST_ORDER_ID: res[0].get('originalSize')})
                 return {'exchange_name': self.EXCHANGE_NAME,
                         'exchange_order_id': self.LAST_ORDER_ID,
-                        'timestamp': res[0].get('timestamp', datetime.utcnow().timestamp()),
+                        'timestamp': res[0]['timestamp'] / 1000 if res[0].get('timestamp') else time.time(),
                         'status': status}
             # res_example = [{'status': 2, 'symbol': 'BTCPFC', 'orderType': 76, 'price': 43490, 'side': 'BUY', 'size': 1,
             #             'orderID': '13a82711-f6e2-4228-bf9f-3755cd8d7885', 'timestamp': 1703535543583,

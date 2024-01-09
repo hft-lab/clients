@@ -662,7 +662,7 @@ class WhiteBitClient(BaseClient):
             self.LAST_ORDER_ID = response.get('orderId', 'default')
             return {'exchange_name': self.EXCHANGE_NAME,
                     'exchange_order_id': response.get('orderId'),
-                    'timestamp': response.get('timestamp', datetime.utcnow().timestamp()),
+                    'timestamp': response.get('timestamp', time.time()),
                     'status': status}
             # example_executed = {'orderId': 395248275015, 'clientOrderId': '', 'market': 'BTC_PERP', 'side': 'buy',
             # 'type': 'margin limit',
