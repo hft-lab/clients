@@ -12,7 +12,6 @@ import base64
 from clients.core.enums import ResponseStatus, OrderStatus
 from core.wrappers import try_exc_regular, try_exc_async
 from clients.core.base_client import BaseClient
-from random import randint
 from aiohttp.client_exceptions import ContentTypeError
 
 
@@ -85,9 +84,9 @@ class WhiteBitClient(BaseClient):
                 first = False
                 continue
             if i == 3:
-                loop.create_task(self._run_deals_ws_loop(markets_list[i*one_ws_len:]))
+                asyncio.run_coroutine_threadsafe(self._run_deals_ws_loop(markets_list[i*one_ws_len:]), loop)
             else:
-                loop.create_task(self._run_deals_ws_loop(markets_list[i*one_ws_len:(i+1)*one_ws_len]))
+                asyncio.run_coroutine_threadsafe(self._run_deals_ws_loop(markets_list[i*one_ws_len:(i+1)*one_ws_len]), loop)
         thread.daemon = True
         thread.start()
         # print(f"Thread {market} started")
@@ -477,7 +476,7 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_regular
     def _process_ws_line(self):
-        self._loop.create_task(self.process_messages())
+        asyncio.run_coroutine_threadsafe(self.process_messages(), self._loop)
 
     @try_exc_async
     async def process_messages(self):
@@ -526,10 +525,11 @@ class WhiteBitClient(BaseClient):
             async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
                 self._connected.set()
                 self._ws = ws
-                await self._loop.create_task(self.subscribe_privates())
+                # await self._loop.create_task(self.subscribe_privates())
+                asyncio.run_coroutine_threadsafe(self.subscribe_privates(), self._loop)
                 for symbol in self.markets_list:
                     if market := self.markets.get(symbol):
-                        await self._loop.create_task(self.subscribe_orderbooks(market))
+                        asyncio.run_coroutine_threadsafe(self.subscribe_orderbooks(market), self._loop)
                 async for msg in ws:
                     await self.message_queue.put(msg)
                 await ws.close()

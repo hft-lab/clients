@@ -121,7 +121,8 @@ class BtseClient(BaseClient):
         if ws_type == 'public':
             self._loop.run_until_complete(self._run_ws_loop(ws_type))
         else:
-            self._loop.create_task(self._run_ws_loop(ws_type))
+            asyncio.run_coroutine_threadsafe(self._run_ws_loop(ws_type), self._loop)
+            # self._loop.create_task(self._run_ws_loop(ws_type))
 
     @try_exc_regular
     def generate_signature(self, path, nonce, data=''):
@@ -343,10 +344,14 @@ class BtseClient(BaseClient):
                 self._connected.set()
                 if ws_type == 'private':
                     self._ws_private = ws
-                    await self._loop.create_task(self.subscribe_privates())
+                    # await self._loop.create_task(self.subscribe_privates())
+                    asyncio.run_coroutine_threadsafe(self.subscribe_privates(), self._loop)
+
                 else:
                     self._ws_public = ws
-                    await self._loop.create_task(self.subscribe_orderbooks())
+                    # await self._loop.create_task(self.subscribe_orderbooks())
+                    asyncio.run_coroutine_threadsafe(self.subscribe_orderbooks(), self._loop)
+
                 async for msg in ws:
                     await self.message_queue.put(msg)
             await ws.close()
@@ -364,7 +369,8 @@ class BtseClient(BaseClient):
 
     @try_exc_regular
     def _process_ws_line(self):
-        self._loop.create_task(self.process_messages())
+        # self._loop.create_task(self.process_messages())
+        asyncio.run_coroutine_threadsafe(self.process_messages(), self._loop)
 
     @try_exc_async
     async def process_messages(self):
