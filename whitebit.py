@@ -143,30 +143,33 @@ class WhiteBitClient(BaseClient):
     @try_exc_async
     async def _run_deals_ws_loop(self, markets_list):
         async with aiohttp.ClientSession() as s:
-            async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
-                method_auth = {"id": 303, "method": "authorize", "params": [self.websocket_token, "public"]}
-                await ws.send_json(method_auth)
-                await ws.receive_json()
-                while True:
-                    for market in markets_list:
-                    # print(auth_resp)
-                    # id = randint(1, 10000000000000)
-                        method = {"id": 101,
-                                  # "method": "ordersExecuted_request",
-                                  # "params": [{'market': market, "order_types": [1, 2]}, 0, 30]}
-                                  "method": "deals_request",
-                                  "params": [market, 0, 100]}
-                        try:
-                            await ws.send_json(method)
-                            resp = await ws.receive_json()
-                        except Exception:
-                            traceback.print_exc()
-                            await ws.close()
-                        if not resp['error']:
-                            self.update_own_orders(resp['result']['records'])
-                        else:
-                            print(resp)
-                        await asyncio.sleep(0.5)
+            while True:
+                await asyncio.sleep(1)
+                async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
+                    method_auth = {"id": 303, "method": "authorize", "params": [self.websocket_token, "public"]}
+                    await ws.send_json(method_auth)
+                    await ws.receive_json()
+                    while True:
+                        for market in markets_list:
+                        # print(auth_resp)
+                        # id = randint(1, 10000000000000)
+                            method = {"id": 101,
+                                      # "method": "ordersExecuted_request",
+                                      # "params": [{'market': market, "order_types": [1, 2]}, 0, 30]}
+                                      "method": "deals_request",
+                                      "params": [market, 0, 100]}
+                            try:
+                                await ws.send_json(method)
+                                resp = await ws.receive_json()
+                            except Exception:
+                                traceback.print_exc()
+                                await ws.close()
+                                break
+                            if not resp['error']:
+                                self.update_own_orders(resp['result']['records'])
+                            else:
+                                print(resp)
+                            await asyncio.sleep(0.5)
 
                 # data = {"error": None, "result": {"offset": 0, "limit": 100, "records": [
                 #     {"time": 1704523361.6664, "id": 3386587209, "side": 1, "role": 2, "price": "0.16806",
