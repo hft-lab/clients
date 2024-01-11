@@ -858,7 +858,8 @@ class WhiteBitClient(BaseClient):
               'top_bid_timestamp': snap['top_bid_timestamp'],
               'ts_ms': snap['ts_ms']}
         if snap['top_ask'][0] < snap['top_bid'][0]:
-            self.telegram_bot.send_message(f"WHITEBIT OB:\n {ob}. WSQueue: {self.message_queue.qsize()}", self.alert_id)
+            dest = {'chat_id': self.alert_id, 'bot_token': self.alert_token}
+            self.telegram_bot.send_message(f"WHITEBIT OB:\n {ob}. WSQueue: {self.message_queue.qsize()}", dest)
             self.orderbook[symbol]['asks'] = {x: snap['asks'].get(x, '0') for x in snap['asks'] if float(x) > snap['top_bid']}
             self.orderbook[symbol]['bids'] = {x: snap['bids'].get(x, '0') for x in snap['bids'] if float(x) < snap['top_ask']}
             return {}
