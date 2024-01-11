@@ -825,8 +825,8 @@ class WhiteBitClient(BaseClient):
             else:
                 new_ob['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol] = new_ob
-        # if new_ob['top_ask'][0] < new_ob['top_bid'][0]:
-        #     self.cut_extra_orders_from_ob(symbol)
+        if new_ob['top_ask'][0] <= new_ob['top_bid'][0]:
+            self.cut_extra_orders_from_ob(symbol)
         if flag and ts_ms - ts_ob < 0.1:
             if self.finder:
                 coin = symbol.split('_')[0]
@@ -860,7 +860,7 @@ class WhiteBitClient(BaseClient):
               'top_ask_timestamp': snap['top_ask_timestamp'],
               'top_bid_timestamp': snap['top_bid_timestamp'],
               'ts_ms': snap['ts_ms']}
-        if snap['top_ask'][0] < snap['top_bid'][0]:
+        if snap['top_ask'][0] <= snap['top_bid'][0]:
             dest = {'chat_id': self.alert_id, 'bot_token': self.alert_token}
             message = f"WHITEBIT OB:\n {ob}. WSQueue: {self.message_queue.qsize()}"
             self.finder.multibot.telegram.send_message(message, dest)
