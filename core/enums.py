@@ -28,20 +28,26 @@ class ResponseStatus:
     SUCCESS = 'success'
     NO_CONNECTION = 'no_connection'
     ERROR = 'error'
+    NEW = 'new'
 
 
 class OrderStatus:
+    NEW = 'New'
+    PROCESSING = 'Processing'
+    NOT_PLACED = 'Not Placed'
     NOT_EXECUTED = 'Not Executed'
     # DELAYED_FULLY_EXECUTED = 'Delayed Fully Executed'
     PARTIALLY_EXECUTED = 'Partially Executed'
     FULLY_EXECUTED = 'Fully Executed'
-    PROCESSING = 'Processing'
+
+
 
 
 class ClientsOrderStatuses:
+    NEW = 'NEW'
     FILLED = 'FILLED'
     CANCELED = 'CANCELED'
-    NEW = 'NEW'
     PARTIALLY_FILLED = 'PARTIALLY_FILLED'
     EXPIRED = 'EXPIRED'
     PENDING = 'PENDING'
+

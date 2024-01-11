@@ -12,14 +12,14 @@ from clients.btse import BtseClient
 from clients.whitebit import WhiteBitClient
 
 ALL_CLIENTS = {
-    'BITMEX': BitmexClient,
-    'DYDX': DydxClient,
-    'BINANCE': BinanceClient,
-    'APOLLOX': ApolloxClient,
-    'OKX': OkxClient,
-    'KRAKEN': KrakenClient,
-    'HITBTC': HitbtcClient,
-    'BITMAKE': BitmakeClient,
+    # 'BITMEX': BitmexClient,
+    # 'DYDX': DydxClient,
+    # 'BINANCE': BinanceClient,
+    # 'APOLLOX': ApolloxClient,
+    # 'OKX': OkxClient,
+    # 'KRAKEN': KrakenClient,
+    # 'HITBTC': HitbtcClient,
+    # 'BITMAKE': BitmakeClient,
     'GLOBE': GlobeClient,
     'BIT': BitClient,
     'BTSE': BtseClient,
