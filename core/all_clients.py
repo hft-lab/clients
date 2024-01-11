@@ -20,7 +20,7 @@ ALL_CLIENTS = {
     # 'KRAKEN': KrakenClient,
     # 'HITBTC': HitbtcClient,
     # 'BITMAKE': BitmakeClient,
-    'GLOBE': GlobeClient,
-    'BIT': BitClient,
+    # 'GLOBE': GlobeClient,
+    # 'BIT': BitClient,
     'BTSE': BtseClient,
     'WHITEBIT': WhiteBitClient}
