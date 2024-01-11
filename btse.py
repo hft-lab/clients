@@ -520,6 +520,12 @@ class BtseClient(BaseClient):
     def update_orderbook(self, data):
         flag = False
         symbol = data['data']['symbol']
+        ts_ms = time.time()
+        self.orderbook[symbol]['ts_ms'] = ts_ms
+        ts_ob = data['data']['timestamp']
+        if isinstance(ts_ob, int):
+            ts_ob = ts_ob / 1000
+        self.orderbook[symbol]['timestamp'] = ts_ob
         for new_bid in data['data']['bids']:
             if float(new_bid[0]) >= self.orderbook[symbol]['top_bid'][0]:
                 self.orderbook[symbol]['top_bid'] = [float(new_bid[0]), float(new_bid[1])]
@@ -546,12 +552,6 @@ class BtseClient(BaseClient):
                     self.orderbook[symbol]['top_ask_timestamp'] = data['data']['timestamp']
             else:
                 self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
-        ts_ms = time.time()
-        self.orderbook[symbol]['ts_ms'] = ts_ms
-        ts_ob = data['data']['timestamp']
-        if isinstance(ts_ob, int):
-            ts_ob = ts_ob / 1000
-        self.orderbook[symbol]['timestamp'] = ts_ob
         if flag and ts_ms - ts_ob < 0.1:
             coin = symbol.split('PFC')[0]
             if self.finder:

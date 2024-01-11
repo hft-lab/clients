@@ -792,6 +792,12 @@ class WhiteBitClient(BaseClient):
         flag = False
         # print(data)
         symbol = data['params'][2]
+        ts_ms = time.time()
+        self.orderbook[symbol]['ts_ms'] = ts_ms
+        ts_ob = data['params'][1]['timestamp']
+        if isinstance(ts_ob, int):
+            ts_ob = ts_ob / 1000
+        self.orderbook[symbol]['timestamp'] = ts_ob
         for new_bid in data['params'][1].get('bids', []):
             if float(new_bid[0]) >= self.orderbook[symbol]['top_bid'][0]:
                 self.orderbook[symbol]['top_bid'] = [float(new_bid[0]), float(new_bid[1])]
@@ -818,12 +824,8 @@ class WhiteBitClient(BaseClient):
                     self.orderbook[symbol]['top_ask_timestamp'] = data['params'][1]['timestamp']
             else:
                 self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
-        ts_ms = time.time()
-        self.orderbook[symbol]['ts_ms'] = ts_ms
-        ts_ob = data['params'][1]['timestamp']
-        if isinstance(ts_ob, int):
-            ts_ob = ts_ob / 1000
-        self.orderbook[symbol]['timestamp'] = ts_ob
+        if self.orderbook[symbol]['top_ask'][0] < self.orderbook[symbol]['top_bid'][0]:
+            self.cut_extra_orders_from_ob(symbol)
         if flag and ts_ms - ts_ob < 0.1:
             if self.finder:
                 coin = symbol.split('_')[0]
@@ -859,11 +861,25 @@ class WhiteBitClient(BaseClient):
               'ts_ms': snap['ts_ms']}
         if snap['top_ask'][0] < snap['top_bid'][0]:
             dest = {'chat_id': self.alert_id, 'bot_token': self.alert_token}
-            self.finder.multibot.telegram(f"WHITEBIT OB:\n {ob}. WSQueue: {self.message_queue.qsize()}", dest)
-            self.orderbook[symbol]['asks'] = {x: snap['asks'].get(x, '0') for x in snap['asks'] if float(x) > snap['top_bid']}
-            self.orderbook[symbol]['bids'] = {x: snap['bids'].get(x, '0') for x in snap['bids'] if float(x) < snap['top_ask']}
+            message = f"WHITEBIT OB:\n {ob}. WSQueue: {self.message_queue.qsize()}"
+            self.finder.multibot.telegram.send_message(message, dest)
+            self.cut_extra_orders_from_ob(symbol)
             return {}
         return ob
+
+    @try_exc_regular
+    def cut_extra_orders_from_ob(self, symbol):
+        snap = self.orderbook[symbol]
+        if snap['top_ask_timestamp'] < snap['top_bid_timestamp']:
+            self.orderbook[symbol]['asks'] = {x: snap['asks'].get(x, '0') for x in snap['asks'] if
+                                              float(x) > snap['top_bid'][0]}
+            self.orderbook[symbol]['top_asks'] = [float(sorted(snap['asks'])[0]),
+                                                  float(snap['asks'][sorted(snap['asks'])[0]])]
+        else:
+            self.orderbook[symbol]['bids'] = {x: snap['bids'].get(x, '0') for x in snap['bids'] if
+                                              float(x) < snap['top_ask'][0]}
+            self.orderbook[symbol]['top_bid'] = [float(sorted(snap['bids'])[::-1][0]),
+                                                 float(snap['bids'][sorted(snap['bids'])[::-1][0]])]
 
     @try_exc_regular
     def first_positions_update(self):
