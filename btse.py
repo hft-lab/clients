@@ -520,38 +520,40 @@ class BtseClient(BaseClient):
     def update_orderbook(self, data):
         flag = False
         symbol = data['data']['symbol']
+        new_ob = self.orderbook[symbol].copy()
         ts_ms = time.time()
-        self.orderbook[symbol]['ts_ms'] = ts_ms
+        new_ob['ts_ms'] = ts_ms
         ts_ob = data['data']['timestamp']
         if isinstance(ts_ob, int):
             ts_ob = ts_ob / 1000
-        self.orderbook[symbol]['timestamp'] = ts_ob
+        new_ob['timestamp'] = ts_ob
         for new_bid in data['data']['bids']:
-            if float(new_bid[0]) >= self.orderbook[symbol]['top_bid'][0]:
-                self.orderbook[symbol]['top_bid'] = [float(new_bid[0]), float(new_bid[1])]
-                self.orderbook[symbol]['top_bid_timestamp'] = data['data']['timestamp']
+            if float(new_bid[0]) >= new_ob['top_bid'][0]:
+                new_ob['top_bid'] = [float(new_bid[0]), float(new_bid[1])]
+                new_ob['top_bid_timestamp'] = data['data']['timestamp']
                 flag = True
-            if self.orderbook[symbol]['bids'].get(new_bid[0]) and new_bid[1] == '0':
-                del self.orderbook[symbol]['bids'][new_bid[0]]
-                if float(new_bid[0]) == self.orderbook[symbol]['top_bid'][0] and len(self.orderbook[symbol]['bids']):
-                    top = sorted(self.orderbook[symbol]['bids'])[-1]
-                    self.orderbook[symbol]['top_bid'] = [float(top), float(self.orderbook[symbol]['bids'][top])]
-                    self.orderbook[symbol]['top_bid_timestamp'] = data['data']['timestamp']
+            if new_ob['bids'].get(new_bid[0]) and new_bid[1] == '0':
+                del new_ob['bids'][new_bid[0]]
+                if float(new_bid[0]) == new_ob['top_bid'][0] and len(new_ob['bids']):
+                    top = sorted(new_ob['bids'])[-1]
+                    new_ob['top_bid'] = [float(top), float(new_ob['bids'][top])]
+                    new_ob['top_bid_timestamp'] = data['data']['timestamp']
             else:
-                self.orderbook[symbol]['bids'][new_bid[0]] = new_bid[1]
+                new_ob['bids'][new_bid[0]] = new_bid[1]
         for new_ask in data['data']['asks']:
-            if float(new_ask[0]) <= self.orderbook[symbol]['top_ask'][0]:
-                self.orderbook[symbol]['top_ask'] = [float(new_ask[0]), float(new_ask[1])]
-                self.orderbook[symbol]['top_ask_timestamp'] = data['data']['timestamp']
+            if float(new_ask[0]) <= new_ob['top_ask'][0]:
+                new_ob['top_ask'] = [float(new_ask[0]), float(new_ask[1])]
+                new_ob['top_ask_timestamp'] = data['data']['timestamp']
                 flag = True
-            if self.orderbook[symbol]['asks'].get(new_ask[0]) and new_ask[1] == '0':
-                del self.orderbook[symbol]['asks'][new_ask[0]]
-                if float(new_ask[0]) == self.orderbook[symbol]['top_ask'][0] and len(self.orderbook[symbol]['asks']):
-                    top = sorted(self.orderbook[symbol]['asks'])[0]
-                    self.orderbook[symbol]['top_ask'] = [float(top), float(self.orderbook[symbol]['asks'][top])]
-                    self.orderbook[symbol]['top_ask_timestamp'] = data['data']['timestamp']
+            if new_ob['asks'].get(new_ask[0]) and new_ask[1] == '0':
+                del new_ob['asks'][new_ask[0]]
+                if float(new_ask[0]) == new_ob['top_ask'][0] and len(new_ob['asks']):
+                    top = sorted(new_ob['asks'])[0]
+                    new_ob['top_ask'] = [float(top), float(new_ob['asks'][top])]
+                    new_ob['top_ask_timestamp'] = data['data']['timestamp']
             else:
-                self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
+                new_ob['asks'][new_ask[0]] = new_ask[1]
+        self.orderbook[symbol] = new_ob
         if flag and ts_ms - ts_ob < 0.1:
             coin = symbol.split('PFC')[0]
             if self.finder:
