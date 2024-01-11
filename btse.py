@@ -29,7 +29,7 @@ class BtseClient(BaseClient):
                       16: 'Order Not Found',
                       17: 'Request failed'}
 
-    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20, finder=None):
+    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20, finder=None, ob_len=4):
         super().__init__()
         self.finder = None
         if finder:
@@ -43,6 +43,7 @@ class BtseClient(BaseClient):
                         "Content-Type": "application/json",
                         'Connection': 'keep-alive'}
         self.session = requests.session()
+        self.ob_len = ob_len
         self.session.headers.update(self.headers)
         self.markets_list = markets_list
         self.positions = {}
@@ -378,8 +379,9 @@ class BtseClient(BaseClient):
             else:
                 self.update_private_data(data)
             self.message_queue.task_done()
-            if self.message_queue.qsize() > 100:
-                print(f'ALERT! {self.EXCHANGE_NAME} WS LINE LENGTH:', self.message_queue.qsize())
+            # if self.message_queue.qsize() > 100:
+            #     message = f'ALERT! {self.EXCHANGE_NAME} WS LINE LENGTH: {self.message_queue.qsize()}'
+            #     self.telegram_bot.send_message(message, self.alert_id)
 
     @try_exc_regular
     def update_private_data(self, data):
@@ -570,13 +572,13 @@ class BtseClient(BaseClient):
     def get_orderbook(self, symbol) -> dict:
         if not self.orderbook.get(symbol):
             return {}
-        snap = self.orderbook[symbol]
+        snap = self.orderbook[symbol].copy()
         if isinstance(snap['asks'], list):
             return snap
         c_v = self.instruments[symbol]['contract_value']
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
-              'asks': [[float(x), float(snap['asks'][x]) * c_v] for x in sorted(snap['asks'])[:5]],
-              'bids': [[float(x), float(snap['bids'][x]) * c_v] for x in sorted(snap['bids'])[::-1][:5]],
+              'asks': [[float(x), float(snap['asks'].get(x, 0)) * c_v] for x in sorted(snap['asks'])[:self.ob_len]],
+              'bids': [[float(x), float(snap['bids'].get(x, 0)) * c_v] for x in sorted(snap['bids'])[::-1][:self.ob_len]],
               'top_ask_timestamp': self.orderbook[symbol]['top_ask_timestamp'],
               'top_bid_timestamp': self.orderbook[symbol]['top_bid_timestamp'],
               'ts_ms': self.orderbook[symbol]['ts_ms']}

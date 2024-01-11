@@ -21,7 +21,7 @@ class WhiteBitClient(BaseClient):
     BASE_URL = 'https://whitebit.com'
     EXCHANGE_NAME = 'WHITEBIT'
 
-    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20, finder=None):
+    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20, finder=None, ob_len=4):
         super().__init__()
         if keys:
             self.api_key = keys['API_KEY']
@@ -33,6 +33,7 @@ class WhiteBitClient(BaseClient):
                         "Content-Type": "application/json",
                         'User-Agent': 'python-whitebit-sdk',
                         'Connection': 'keep-alive'}
+        self.ob_len = ob_len
         self.markets_list = markets_list
         self.session = requests.session()
         self.session.headers.update(self.headers)
@@ -41,12 +42,18 @@ class WhiteBitClient(BaseClient):
         self.max_pos_part = max_pos_part
         self.price = 0
         self.amount = 0
+        self.side = None
+        self.symbol = None
         self.error_info = None
         self.markets = self.get_markets()
         self._loop = asyncio.new_event_loop()
+        # self._order_loop = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self._wst_ = threading.Thread(target=self._run_ws_forever, args=[self._loop])
         self._wst_processing_messages = threading.Thread(target=self._process_ws_line)
+        # self.run_order_loop = threading.Thread(target=self._run_order_loop, args=[self._loop])
+        # self.run_order_loop.daemon = True
+        # self.run_order_loop.start()
         # self._loop_supersonic = asyncio.new_event_loop()
         # self._extra_speed = threading.Thread(target=self.run_super_sonic)
         self.requestLimit = 600
@@ -70,9 +77,9 @@ class WhiteBitClient(BaseClient):
         markets_list = list(self.markets.values())
         tot_markets_len = len(markets_list)
         one_ws_len = int(tot_markets_len / 4)
-        loop = asyncio.new_event_loop()
         first = True
         for i in range(4):
+            loop = asyncio.new_event_loop()
             if first:
                 thread = threading.Thread(target=self.run_loopie_loop, args=[loop, markets_list[0:one_ws_len]])
                 first = False
@@ -84,6 +91,40 @@ class WhiteBitClient(BaseClient):
         thread.daemon = True
         thread.start()
         # print(f"Thread {market} started")
+
+    @try_exc_async
+    async def _run_order_loop(self):
+        async with aiohttp.ClientSession as session:
+            session.headers.update(self.headers)
+            i = 0
+            while True:
+                if not self.side or not self.symbol:
+                    await asyncio.sleep(0.001)
+                    i += 1
+                    if i == 25000:
+                        i = 0
+                        path = "/api/v4/order/collateral/limit"
+                        params = {'market': list(self.markets.values())[0],
+                                  'side': 'buy',
+                                  'amount': self.instruments[list(self.markets.values())[0]]['min_size'],
+                                  'price': self.instruments[list(self.markets.values())[0]]['tick_size']}
+                        params = self.get_auth_for_request(params, path)
+                        path += self._create_uri(params)
+                        async with session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
+                            try:
+                                response = await resp.json()
+                            except ContentTypeError as e:
+                                content = await resp.text()
+                            print(f"{self.EXCHANGE_NAME} CREATE ORDER ERROR\nAPI RESPONSE: {content}")
+                time_start = time.time()
+                # params = {"market": symbol,
+                #           "side": side,
+                #           "amount": self.amount,
+                #           "price": self.price}
+                # print(f"{self.EXCHANGE_NAME} SENDING ORDER: {params}")
+                # params = self.get_auth_for_request(params, path)
+                # path += self._create_uri(params)
+                # async session.post()
 
     @try_exc_regular
     def run_loopie_loop(self, loop, markets_list):
@@ -454,8 +495,9 @@ class WhiteBitClient(BaseClient):
             elif data.get('method') in ['ordersExecuted_update', 'ordersPending_update']:
                 self.update_orders(data)
             self.message_queue.task_done()
-            if self.message_queue.qsize() > 100:
-                print(f'ALERT! {self.EXCHANGE_NAME} WS LINE LENGTH:', self.message_queue.qsize())
+            # if self.message_queue.qsize() > 100:
+            #     message = f'ALERT! {self.EXCHANGE_NAME} WS LINE LENGTH: {self.message_queue.qsize()}'
+            #     self.telegram_bot.send_message(message, self.alert_id)
 
     @try_exc_regular
     def run_updater(self):
@@ -803,12 +845,12 @@ class WhiteBitClient(BaseClient):
     def get_orderbook(self, symbol) -> dict:
         if not self.orderbook.get(symbol):
             return {}
-        snap = self.orderbook[symbol]
+        snap = self.orderbook[symbol].copy()
         if isinstance(snap['asks'], list):
             return snap
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
-              'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks'])[:5]],
-              'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids'])[::-1][:5]],
+              'asks': [[float(x), float(snap['asks'].get(x, 0))] for x in sorted(snap['asks'])[:self.ob_len]],
+              'bids': [[float(x), float(snap['bids'].get(x, 0))] for x in sorted(snap['bids'])[::-1][:self.ob_len]],
               'top_ask_timestamp': snap['top_ask_timestamp'],
               'top_bid_timestamp': snap['top_bid_timestamp'],
               'ts_ms': snap['ts_ms']}
