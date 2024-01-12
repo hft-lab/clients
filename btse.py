@@ -557,7 +557,7 @@ class BtseClient(BaseClient):
         if flag and ts_ms - ts_ob < 0.1:
             coin = symbol.split('PFC')[0]
             if self.finder:
-                self.finder.coins_to_check.append(coin)
+                self.finder.coins_to_check.add(coin)
                 self.finder.update = True
 
     @try_exc_regular

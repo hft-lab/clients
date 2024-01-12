@@ -803,7 +803,7 @@ class WhiteBitClient(BaseClient):
         if flag and ts_ms - ts_ob < 0.1:
             if self.finder:
                 coin = symbol.split('_')[0]
-                self.finder.coins_to_check.append(coin)
+                self.finder.coins_to_check.add(coin)
                 self.finder.update = True
 
     @try_exc_regular
