@@ -21,8 +21,10 @@ class OrangexClient:
         self.markets_list = markets_list
         self.markets = self.get_markets()
         self._loop_public = asyncio.new_event_loop()
+        self.message_queue = asyncio.Queue(loop=self._loop_public)
         self._connected = asyncio.Event()
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=[self._loop_public])
+        self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
         self.requestLimit = 1200
         self.getting_ob = asyncio.Event()
         self.now_getting = ''
@@ -73,11 +75,22 @@ class OrangexClient:
                 self._ws_public = ws
                 await self._loop_public.create_task(self.subscribe_orderbooks())
                 async for msg in ws:
-                    if ',instrument_name:' in str(msg.data):
-                        parts = str(msg.data).split(',instrument_name:')
-                        data = json.loads(parts[0] + '}}}')
-                        symbol = parts[1].split('PERPETUAL')[0] + 'PERPETUAL'
-                        self.update_orderbook(data, symbol)
+                    await self.message_queue.put(msg)
+
+    @try_exc_regular
+    def _process_ws_line(self):
+        # self._loop.create_task(self.process_messages())
+        asyncio.run_coroutine_threadsafe(self.process_messages(), self._loop_public)
+
+    @try_exc_async
+    async def process_messages(self):
+        while True:
+            msg = await self.message_queue.get()
+            if ',instrument_name:' in str(msg.data):
+                parts = str(msg.data).split(',instrument_name:')
+                data = json.loads(parts[0] + '}}}')
+                symbol = parts[1].split('PERPETUAL')[0] + 'PERPETUAL'
+                self.update_orderbook(data, symbol)
 
     @try_exc_async
     async def subscribe_orderbooks(self):
@@ -142,6 +155,8 @@ class OrangexClient:
     def run_updater(self):
         self.wst_public.daemon = True
         self.wst_public.start()
+        self._wst_orderbooks.daemon = True
+        self._wst_orderbooks.start()
 
 
 if __name__ == '__main__':
