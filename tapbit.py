@@ -13,7 +13,7 @@ class TapbitClient:
     BASE_URL = 'https://openapi.tapbit.com/swap/'
     EXCHANGE_NAME = 'TAPBIT'
 
-    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20):
+    def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20):
         if keys:
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
@@ -123,6 +123,7 @@ class TapbitClient:
             else:
                 self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol]['timestamp'] = ob['timestamp']
+        self.orderbook[symbol]['ts_ms'] = time.time()
 
     @try_exc_regular
     def update_orderbook_snapshot(self, data):
@@ -130,7 +131,8 @@ class TapbitClient:
         symbol = data['topic'].split('.')[1]
         self.orderbook[symbol] = {'asks': {x[0]: x[1] for x in ob['asks']},
                                   'bids': {x[0]: x[1] for x in ob['bids']},
-                                  'timestamp': ob['timestamp']}
+                                  'timestamp': ob['timestamp'],
+                                  'ts_ms': time.time()}
 
     @try_exc_regular
     def get_orderbook(self, symbol) -> dict:
@@ -139,9 +141,10 @@ class TapbitClient:
         self.getting_ob.set()
         self.now_getting = symbol
         snap = self.orderbook[symbol]
-        ob = {'timestamp': self.orderbook[symbol]['timestamp'],
+        ob = {'timestamp': snap['timestamp'],
               'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks']) if snap['asks'].get(x)],
-              'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids']) if snap['bids'].get(x)][::-1]}
+              'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids']) if snap['bids'].get(x)][::-1],
+              'ts_ms': snap['ts_ms']}
         self.now_getting = ''
         self.getting_ob.clear()
         return ob

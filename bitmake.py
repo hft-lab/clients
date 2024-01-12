@@ -13,7 +13,7 @@ class BitmakeClient:
     PUBLIC_WS_ENDPOINT = 'wss://ws.bitmake.com/t/v1/ws'
     EXCHANGE_NAME = 'BITMAKE'
 
-    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20):
+    def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20):
         self.headers = {'Content-Type': 'application/json'}
         self.markets = self.get_markets()
         self._loop_public = asyncio.new_event_loop()
@@ -122,6 +122,7 @@ class BitmakeClient:
             else:
                 self.orderbook[symbol]['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol]['timestamp'] = ob['t']
+        self.orderbook[symbol]['ts_ms'] = time.time()
 
     @try_exc_regular
     def update_orderbook_snapshot(self, data):
@@ -139,9 +140,10 @@ class BitmakeClient:
         self.getting_ob.set()
         self.now_getting = symbol
         snap = self.orderbook[symbol]
-        ob = {'timestamp': self.orderbook[symbol]['timestamp'],
+        ob = {'timestamp': snap['timestamp'],
               'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks']) if snap['asks'].get(x)],
-              'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids']) if snap['bids'].get(x)][::-1]}
+              'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids']) if snap['bids'].get(x)][::-1],
+              'ts_ms': snap['ts_ms']}
         self.now_getting = ''
         self.getting_ob.clear()
         return ob

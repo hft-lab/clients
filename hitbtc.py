@@ -12,7 +12,7 @@ class HitbtcClient:
     PUBLIC_WS_ENDPOINT = 'wss://api.hitbtc.com/api/3/ws/public'
     EXCHANGE_NAME = 'HITBTC'
 
-    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20):
+    def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20):
         self.headers = {'Content-Type': 'application/json'}
         self.markets = self.get_markets()
         self._loop_public = asyncio.new_event_loop()
@@ -96,7 +96,8 @@ class HitbtcClient:
                 self.orderbook.update({market: {'asks': [], 'bids': []}})
             self.orderbook[market].update({'asks': [[float(x[0]), float(x[1])] for x in orders['a']],
                                            'bids': [[float(x[0]), float(x[1])] for x in orders['b']],
-                                           'timestamp': datetime.utcnow().timestamp()})
+                                           'timestamp': time.time(),
+                                           'ts_ms': time.time()})
 
     @try_exc_regular
     def run_updater(self):

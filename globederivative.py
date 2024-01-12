@@ -16,7 +16,7 @@ class GlobeClient:
     BASE_URL = 'https://globe.exchange'
     EXCHANGE_NAME = 'GLOBE'
 
-    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20):
+    def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20):
         if keys:
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
