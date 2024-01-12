@@ -871,7 +871,8 @@ class WhiteBitClient(BaseClient):
             return {}
         snap = self.orderbook[symbol].copy()
         if snap['top_ask'][0] <= snap['top_bid'][0]:
-            print(f"ALARM! IDK HOW THIS SHIT WORKS BUT: {snap}")
+            # print(f"ALARM! IDK HOW THIS SHIT WORKS BUT: {snap}")
+            return {}
         #     self.cut_extra_orders_from_ob(symbol)
         # snap = self.orderbook[symbol].copy()
         if isinstance(snap['asks'], list):
