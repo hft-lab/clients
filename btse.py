@@ -46,12 +46,12 @@ class BtseClient(BaseClient):
         if self.state == 'Bot':
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
+            self.positions = {}
+            self.balance = {}
             self.get_real_balance()
             self.get_position()
         self.ob_len = ob_len
         self.markets_list = markets_list
-        self.positions = {}
-        self.balance = {}
         self.error_info = None
         self._connected = asyncio.Event()
         self.getting_ob = asyncio.Event()

@@ -24,7 +24,7 @@ class WhiteBitClient(BaseClient):
                'User-Agent': 'python-whitebit-sdk',
                'Connection': 'keep-alive'}
 
-    def __init__(self, keys=None, leverage=None, state = 'Bot',markets_list=[], max_pos_part=20, finder=None, ob_len=5):
+    def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20, finder=None, ob_len=5):
         super().__init__()
         self.state = state
         self.finder = finder
@@ -38,6 +38,9 @@ class WhiteBitClient(BaseClient):
             self.api_secret = keys['API_SECRET']
             self.websocket_token = self.get_ws_token()
             # self.deals_thread_func()
+            self.orders = {}
+            self.balance = {}
+            self.positions = {}
             self.get_real_balance()
         self.ob_len = ob_len
         self.leverage = leverage
@@ -60,9 +63,6 @@ class WhiteBitClient(BaseClient):
         self.requestLimit = 600
         self.orderbook = {}
         self.last_price = {}
-        self.orders = {}
-        self.balance = {}
-        self.positions = {}
         # self.own_orders = {}
         self.LAST_ORDER_ID = 'default'
         self.message_queue = asyncio.Queue(loop=self._loop)
