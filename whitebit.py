@@ -825,6 +825,7 @@ class WhiteBitClient(BaseClient):
                         top_ask = [float(new_ask[0]), float(new_ask[1])]
 
             snap['asks'] = new_asks
+            snap['top_ask'] = top_ask
             snap['top_ask_timestamp'] = data['params'][1]['timestamp']
             #                                   float(x) > snap['top_bid'][0]}
             # self.orderbook[symbol]['top_asks'] = [float(sorted(snap['asks'])[0]),
@@ -842,6 +843,7 @@ class WhiteBitClient(BaseClient):
                     else:
                         top_bid = [float(new_bid[0]), float(new_bid[1])]
             snap['bids'] = new_bids
+            snap['top_bid'] = top_bid
             snap['top_bid_timestamp'] = data['params'][1]['timestamp']
         self.orderbook[symbol] = snap
         # self.orderbook[symbol]['bids'] = {x: snap['bids'].get(x, '0') for x in snap['bids'] if
@@ -865,8 +867,8 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_regular
     def get_orderbook(self, symbol) -> dict:
-        if not self.orderbook.get(symbol):
-            return {}
+        while not self.orderbook.get(symbol):
+            time.sleep(0.01)
         snap = self.orderbook[symbol].copy()
         if snap['top_ask'][0] <= snap['top_bid'][0]:
             print(f"ALARM! IDK HOW THIS SHIT WORKS BUT: {snap}")
