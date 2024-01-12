@@ -24,7 +24,7 @@ class WhiteBitClient(BaseClient):
                'User-Agent': 'python-whitebit-sdk',
                'Connection': 'keep-alive'}
 
-    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20, finder=None, ob_len=4):
+    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20, finder=None, ob_len=5):
         super().__init__()
         self.markets_list = markets_list
         self.session = requests.session()
@@ -36,13 +36,12 @@ class WhiteBitClient(BaseClient):
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
             self.websocket_token = self.get_ws_token()
-            self.deals_thread_func()
+            # self.deals_thread_func()
             self.get_real_balance()
         self.finder = None
         if finder:
             self.finder = finder
         self.ob_len = ob_len
-
         self.leverage = leverage
         self.max_pos_part = max_pos_part
         self.price = 0
@@ -66,29 +65,18 @@ class WhiteBitClient(BaseClient):
         self.orders = {}
         self.balance = {}
         self.positions = {}
-        self.own_orders = {}
+        # self.own_orders = {}
         self.LAST_ORDER_ID = 'default'
         self.message_queue = asyncio.Queue(loop=self._loop)
         self.taker_fee = 0.00035
         self.subs = {}
         self.ob_push_limit = 0.1
+        # self.market_to_check = {}
 
     @try_exc_regular
     def deals_thread_func(self):
-        markets_list = list(self.markets.values())
-        tot_markets_len = len(markets_list)
-        one_ws_len = int(tot_markets_len / 4)
-        first = True
-        for i in range(4):
-            loop = asyncio.new_event_loop()
-            if first:
-                thread = threading.Thread(target=self.run_loopie_loop, args=[loop, markets_list[0:one_ws_len]])
-                first = False
-                continue
-            if i == 3:
-                asyncio.run_coroutine_threadsafe(self._run_deals_ws_loop(markets_list[i*one_ws_len:]), loop)
-            else:
-                asyncio.run_coroutine_threadsafe(self._run_deals_ws_loop(markets_list[i*one_ws_len:(i+1)*one_ws_len]), loop)
+        loop = asyncio.new_event_loop()
+        thread = threading.Thread(target=self._run_order_loop, args=[loop])
         thread.daemon = True
         thread.start()
         # print(f"Thread {market} started")
@@ -127,11 +115,11 @@ class WhiteBitClient(BaseClient):
                 # path += self._create_uri(params)
                 # async session.post()
 
-    @try_exc_regular
-    def run_loopie_loop(self, loop, markets_list):
-        while True:
-            time.sleep(1)
-            loop.run_until_complete(self._run_deals_ws_loop(markets_list))
+    # @try_exc_regular
+    # def run_loopie_loop(self, loop):
+    #     while True:
+    #         time.sleep(1)
+    #         loop.run_until_complete(self._run_deals_ws_loop())
 
     # @try_exc_async
     # async def get_ws_executed_deals(self, market, websocket):
@@ -142,38 +130,30 @@ class WhiteBitClient(BaseClient):
     #                          "order_types": [1, 2]}}
     #     await websocket.send_json(method)
     #     self.subs.update({id: market})
-    @try_exc_async
-    async def _run_deals_ws_loop(self, markets_list):
-        async with aiohttp.ClientSession() as s:
-            while True:
-                await asyncio.sleep(1)
-                async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
-                    method_auth = {"id": 303, "method": "authorize", "params": [self.websocket_token, "public"]}
-                    await ws.send_json(method_auth)
-                    await ws.receive_json()
-                    while True:
-                        for market in markets_list:
-                        # print(auth_resp)
-                        # id = randint(1, 10000000000000)
-                            method = {"id": 101,
-                                      # "method": "ordersExecuted_request",
-                                      # "params": [{'market': market, "order_types": [1, 2]}, 0, 30]}
-                                      "method": "deals_request",
-                                      "params": [market, 0, 100]}
-                            try:
-                                await ws.send_json(method)
-                                resp = await ws.receive_json()
-                            except Exception:
-                                traceback.print_exc()
-                                await ws.close()
-                                break
-                            if not resp['error']:
-                                self.update_own_orders(resp['result']['records'])
-                            else:
-                                print(resp)
-                            await asyncio.sleep(0.5)
+    # @try_exc_async
+    # async def _run_deals_ws_loop(self):
+    #     async with aiohttp.ClientSession() as s:
+    #         while True:
+    #             if not self.market_to_check:
+    #                 await asyncio.sleep(0.01)
+    #                 continue
+    #             await asyncio.sleep(1)
+    #             async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
+    #                 method_auth = {"id": 303, "method": "authorize", "params": [self.websocket_token, "public"]}
+    #                 await ws.send_json(method_auth)
+    #                 await ws.receive_json()
+    #                 market = self.market_to_check
+    #                 self.market_to_check = None
+    #                 method = {"id": 101,
+    #                           "method": "deals_request",
+    #                           "params": [market, 0, 100]}
+    #                 await ws.send_json(method)
+    #                 resp = await ws.receive_json()
+    #                 if not resp['error']:
+    #                     self.update_own_orders(resp['result']['records'])
+    #             await ws.close()
 
-                # data = {"error": None, "result": {"offset": 0, "limit": 100, "records": [
+    # data = {"error": None, "result": {"offset": 0, "limit": 100, "records": [
                 #     {"time": 1704523361.6664, "id": 3386587209, "side": 1, "role": 2, "price": "0.16806",
                 #      "amount": "80", "deal": "13.4448", "fee": "0.00470568", "order_id": 406582635829,
                 #      "deal_order_id": 406582569838, "market": "GRT_PERP", "client_order_id": ""},
@@ -184,37 +164,37 @@ class WhiteBitClient(BaseClient):
                 #      "amount": "90", "deal": "15.3909", "fee": "0.005386815", "order_id": 406535978735,
                 #      "deal_order_id": 406535915525, "market": "GRT_PERP", "client_order_id": ""}]}}
 
-    @try_exc_regular
-    def update_own_orders(self, data):
-        temp = {}
-        for deal in data:
-            if exist_deal := temp.get(deal['deal_order_id']):
-                tot_amnt_usd = exist_deal['factual_amount_usd'] + float(deal["deal"])
-                tot_amnt_coin = exist_deal['factual_amount_coin'] + float(deal['amount'])
-                av_price = tot_amnt_usd / tot_amnt_coin
-                ts_update = deal["time"]
-                dt_update = datetime.fromtimestamp(ts_update)
-                fills = exist_deal['fills'] + 1
-            else:
-                tot_amnt_usd = float(deal["deal"])
-                tot_amnt_coin = float(deal['amount'])
-                av_price = float(deal['price'])
-                ts_update = deal["time"]
-                dt_update = datetime.fromtimestamp(ts_update)
-                fills = 1
-            temp.update({deal['deal_order_id']: {'exchange_order_id': deal['deal_order_id'],
-                                                 'exchange': self.EXCHANGE_NAME,
-                                                 'status': OrderStatus.FULLY_EXECUTED,
-                                                 'factual_price': av_price,
-                                                 'factual_amount_coin': tot_amnt_coin,
-                                                 'factual_amount_usd': tot_amnt_usd,
-                                                 'datetime_update': dt_update,
-                                                 'ts_update': ts_update,
-                                                 'fills': fills}})
-        for deal_to_update in temp.keys():
-            if self.orders.get(deal_to_update):
-                self.orders.update(temp[deal_to_update])
-        self.own_orders.update(temp)
+    # @try_exc_regular
+    # def update_own_orders(self, data):
+    #     temp = {}
+    #     for deal in data:
+    #         if exist_deal := temp.get(deal['deal_order_id']):
+    #             tot_amnt_usd = exist_deal['factual_amount_usd'] + float(deal["deal"])
+    #             tot_amnt_coin = exist_deal['factual_amount_coin'] + float(deal['amount'])
+    #             av_price = tot_amnt_usd / tot_amnt_coin
+    #             ts_update = deal["time"]
+    #             dt_update = datetime.fromtimestamp(ts_update)
+    #             fills = exist_deal['fills'] + 1
+    #         else:
+    #             tot_amnt_usd = float(deal["deal"])
+    #             tot_amnt_coin = float(deal['amount'])
+    #             av_price = float(deal['price'])
+    #             ts_update = deal["time"]
+    #             dt_update = datetime.fromtimestamp(ts_update)
+    #             fills = 1
+    #         temp.update({deal['deal_order_id']: {'exchange_order_id': deal['deal_order_id'],
+    #                                              'exchange': self.EXCHANGE_NAME,
+    #                                              'status': OrderStatus.FULLY_EXECUTED,
+    #                                              'factual_price': av_price,
+    #                                              'factual_amount_coin': tot_amnt_coin,
+    #                                              'factual_amount_usd': tot_amnt_usd,
+    #                                              'datetime_update': dt_update,
+    #                                              'ts_update': ts_update,
+    #                                              'fills': fills}})
+    #     for deal_to_update in temp.keys():
+    #         if self.orders.get(deal_to_update):
+    #             self.orders.update(temp[deal_to_update])
+    #     self.own_orders.update(temp)
 
     @try_exc_regular
     def get_markets(self):
@@ -629,48 +609,50 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_regular
     def get_order_by_id(self, symbol: str, order_id: int):
-        if order := self.own_orders.get(order_id):
-            return order
-        else:
-            return {'exchange_order_id': order_id,
-                    'exchange': self.EXCHANGE_NAME,
-                    'status': OrderStatus.NOT_EXECUTED,
-                    'factual_price': 0,
-                    'factual_amount_coin': 0,
-                    'factual_amount_usd': 0,
-                    'datetime_update': datetime.utcnow(),
-                    'ts_update': datetime.utcnow().timestamp()}
-
-        # path = '/api/v1/account/order_history'
-        # params = {'limit': 100}
-        # params = self.get_auth_for_request(params, path)
-        # path += self._create_uri(params)
-        # res = self.session.post(url=self.BASE_URL + path, json=params)
-        # response = res.json()
-        # # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID STARTED')
-        # # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID RESPONSE', response)
-        # right_order = {}
-        # factual_price = 0
-        # if response.get('success'):
-        #     for market in response['result']:
-        #         if not right_order:
-        #             for order in response['result'][market]:
-        #                 if order['id'] == order_id:
-        #                     right_order = order
-        #                     # print(f"GET_ORDER_BY_ID ORDER FOUND: {right_order}")
-        #                     if right_order['dealStock'] != '0':
-        #                         factual_price = float(right_order['dealMoney']) / float(right_order['dealStock'])
-        #                     break
-        #         else:
-        #             break
-        # return {'exchange_order_id': order_id,
-        #         'exchange': self.EXCHANGE_NAME,
-        #         'status': self.get_order_status(right_order, 0),
-        #         'factual_price': factual_price,
-        #         'factual_amount_coin': float(right_order.get('dealStock', 0)),
-        #         'factual_amount_usd': float(right_order.get('dealMoney', 0)),
-        #         'datetime_update': datetime.utcnow(),
-        #         'ts_update': right_order.get('ftime', datetime.utcnow().timestamp())}
+        # self.market_to_check = symbol
+        # time.sleep(1.2)
+        # if order := self.own_orders.get(order_id):
+        #     return order
+        # else:
+        #     return {'exchange_order_id': order_id,
+        #             'exchange': self.EXCHANGE_NAME,
+        #             'status': OrderStatus.NOT_EXECUTED,
+        #             'factual_price': 0,
+        #             'factual_amount_coin': 0,
+        #             'factual_amount_usd': 0,
+        #             'datetime_update': datetime.utcnow(),
+        #             'ts_update': datetime.utcnow().timestamp()}
+        time.sleep(0.5)
+        path = '/api/v1/account/order_history'
+        params = {'limit': 100}
+        params = self.get_auth_for_request(params, path)
+        path += self._create_uri(params)
+        res = self.session.post(url=self.BASE_URL + path, json=params)
+        response = res.json()
+        # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID STARTED')
+        # print(self.EXCHANGE_NAME, 'GET_ORDER_BY_ID RESPONSE', response)
+        right_order = {}
+        factual_price = 0
+        if response.get('success'):
+            for market in response['result']:
+                if not right_order:
+                    for order in response['result'][market]:
+                        if order['id'] == order_id:
+                            right_order = order
+                            # print(f"GET_ORDER_BY_ID ORDER FOUND: {right_order}")
+                            if right_order['dealStock'] != '0':
+                                factual_price = float(right_order['dealMoney']) / float(right_order['dealStock'])
+                            break
+                else:
+                    break
+        return {'exchange_order_id': order_id,
+                'exchange': self.EXCHANGE_NAME,
+                'status': self.get_order_status(right_order, 0),
+                'factual_price': factual_price,
+                'factual_amount_coin': float(right_order.get('dealStock', 0)),
+                'factual_amount_usd': float(right_order.get('dealMoney', 0)),
+                'datetime_update': datetime.utcnow(),
+                'ts_update': right_order.get('ftime', datetime.utcnow().timestamp())}
         # example = {'success': True, 'message': '', 'result': {'BTC_PERP': [
         #     {'amount': '0.001', 'price': '43192.7', 'type': 'margin_limit', 'id': 395373055942, 'clientOrderId': '',
         #      'side': 'buy', 'ctime': 1703673670.631547, 'takerFee': '0.00035', 'ftime': 1703673672.240763,
@@ -829,12 +811,49 @@ class WhiteBitClient(BaseClient):
                 new_ob['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol] = new_ob
         if new_ob['top_ask'][0] <= new_ob['top_bid'][0]:
-            self.cut_extra_orders_from_ob(symbol)
+            self.cut_extra_orders_from_ob(symbol, data)
         if flag and ts_ms - ts_ob < 0.1:
             if self.finder:
                 coin = symbol.split('_')[0]
                 self.finder.coins_to_check.append(coin)
                 self.finder.update = True
+
+    @try_exc_regular
+    def cut_extra_orders_from_ob(self, symbol, data):
+        snap = self.orderbook[symbol].copy()
+        if snap['top_ask_timestamp'] < snap['top_bid_timestamp']:
+            top_ask = None
+            new_asks = {}
+            for new_ask in data['params'][1].get('asks', []):
+                if top_ask:
+                    if float(new_ask[0]) < top_ask[0]:
+                        top_ask = [float(new_ask[0]), float(new_ask[1])]
+                else:
+                    top_ask = [float(new_ask[0]), float(new_ask[1])]
+                new_asks[new_ask[0]] = new_ask[1]
+            snap['asks'] = new_asks
+            snap['top_ask_timestamp'] = data['params'][1]['timestamp']
+            #                                   float(x) > snap['top_bid'][0]}
+            # self.orderbook[symbol]['top_asks'] = [float(sorted(snap['asks'])[0]),
+            #                                       float(snap['asks'][sorted(snap['asks'])[0]])]
+
+        else:
+            top_bid = None
+            new_bids = {}
+            for new_bid in data['params'][1].get('bids', []):
+                if top_bid:
+                    if float(new_bid[0]) > top_bid[0]:
+                        top_bid = [float(new_bid[0]), float(new_bid[1])]
+                else:
+                    top_bid = [float(new_bid[0]), float(new_bid[1])]
+                new_bids[new_bid[0]] = new_bid[1]
+            snap['bids'] = new_bids
+            snap['top_bid_timestamp'] = data['params'][1]['timestamp']
+        self.orderbook[symbol] = snap
+            # self.orderbook[symbol]['bids'] = {x: snap['bids'].get(x, '0') for x in snap['bids'] if
+            #                                   float(x) < snap['top_ask'][0]}
+            # self.orderbook[symbol]['top_bid'] = [float(sorted(snap['bids'])[::-1][0]),
+            #                                      float(snap['bids'][sorted(snap['bids'])[::-1][0]])]
 
     @try_exc_regular
     def update_orderbook_snapshot(self, data):
@@ -856,8 +875,9 @@ class WhiteBitClient(BaseClient):
             return {}
         snap = self.orderbook[symbol].copy()
         if snap['top_ask'][0] <= snap['top_bid'][0]:
-            self.cut_extra_orders_from_ob(symbol)
-        snap = self.orderbook[symbol].copy()
+            print(f"ALARM! IDK HOW THIS SHIT WORKS BUT: {snap}")
+        #     self.cut_extra_orders_from_ob(symbol)
+        # snap = self.orderbook[symbol].copy()
         if isinstance(snap['asks'], list):
             return snap
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
@@ -867,20 +887,6 @@ class WhiteBitClient(BaseClient):
               'top_bid_timestamp': snap['top_bid_timestamp'],
               'ts_ms': snap['ts_ms']}
         return ob
-
-    @try_exc_regular
-    def cut_extra_orders_from_ob(self, symbol):
-        snap = self.orderbook[symbol]
-        if snap['top_ask_timestamp'] < snap['top_bid_timestamp']:
-            self.orderbook[symbol]['asks'] = {x: snap['asks'].get(x, '0') for x in snap['asks'] if
-                                              float(x) > snap['top_bid'][0]}
-            self.orderbook[symbol]['top_asks'] = [float(sorted(snap['asks'])[0]),
-                                                  float(snap['asks'][sorted(snap['asks'])[0]])]
-        else:
-            self.orderbook[symbol]['bids'] = {x: snap['bids'].get(x, '0') for x in snap['bids'] if
-                                              float(x) < snap['top_ask'][0]}
-            self.orderbook[symbol]['top_bid'] = [float(sorted(snap['bids'])[::-1][0]),
-                                                 float(snap['bids'][sorted(snap['bids'])[::-1][0]])]
 
     @try_exc_regular
     def first_positions_update(self):
@@ -898,7 +904,7 @@ if __name__ == '__main__':
     client = WhiteBitClient(keys=config['WHITEBIT'],
                             leverage=float(config['SETTINGS']['LEVERAGE']),
                             max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
-                            markets_list=['BTC'])
+                            markets_list=['ETH'])
 
 
     async def test_order():
@@ -914,18 +920,21 @@ if __name__ == '__main__':
             # data = await asyncio.gather(*tasks)
             # print(data)
 
-            time_start = time.time()
-            ob = client.get_orderbook('BTC_PERP')
-            client.amount = client.instruments['BTC_PERP']['min_size']
-            print(ob)
+            # time_start = time.time()
+            ob = client.get_orderbook('ETH_PERP')
+            client.amount = client.instruments['ETH_PERP']['min_size']
+            # print(ob)
             client.price = ob['bids'][4][0]
 
-            await client.create_order('BTC_PERP', 'buy', session)
+            data = await client.create_order('ETH_PERP', 'sell', session)
             print(client.orders)
-            print(f"ALL TIME: {time.time() - time_start} sec")
-            # await client.create_order('BTC_PERP', 'buy', session)
+            # print(f"ALL TIME: {time.time() - time_start} sec")
+            # print(data)
+            # await client.create_order('ETH_PERP', 'buy', session)
             # print('CREATE_ORDER OUTPUT:', data)
-            # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
+            print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('ETH_PERP', data['exchange_order_id']))
+            # print(f"OWN ORDERS VARIABLE: {client.own_orders}")
+
             time.sleep(1)
             client.cancel_all_orders()
             # print('CANCEL_ALL_ORDERS OUTPUT:', data_cancel)
@@ -952,15 +961,15 @@ if __name__ == '__main__':
     # print(len(client.get_markets()))
     client.aver_time = []
     time.sleep(1)
-    # asyncio.run(test_order())
+    asyncio.run(test_order())
 
     while True:
         time.sleep(10)
-        for order_id in client.own_orders.keys():
-            print(client.get_order_by_id('asdf', order_id))
-            print()
+        # for order_id in client.own_orders.keys():
+        #     print(client.get_order_by_id('asdf', order_id))
+        #     print()
 
-        print(client.get_order_by_id('asdf', 123314))
+        # print(client.get_order_by_id('asdf', 123314))
         # print(client.own_orders)
         # ob = client.get_orderbook('BTC_PERP')
         # print('ASK', client.get_orderbook('BTC_PERP')['asks'][0], client.get_orderbook('BTC_PERP')['asks'][1])
