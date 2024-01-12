@@ -19,23 +19,28 @@ class WhiteBitClient(BaseClient):
     PUBLIC_WS_ENDPOINT = 'wss://api.whitebit.com/ws'
     BASE_URL = 'https://whitebit.com'
     EXCHANGE_NAME = 'WHITEBIT'
+    headers = {"Accept": "application/json;charset=UTF-8",
+               "Content-Type": "application/json",
+               'User-Agent': 'python-whitebit-sdk',
+               'Connection': 'keep-alive'}
 
     def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20, finder=None, ob_len=4):
         super().__init__()
-        if keys:
-            self.api_key = keys['API_KEY']
-            self.api_secret = keys['API_SECRET']
-        self.finder = None
-        if finder:
-            self.finder = finder
-        self.headers = {"Accept": "application/json;charset=UTF-8",
-                        "Content-Type": "application/json",
-                        'User-Agent': 'python-whitebit-sdk',
-                        'Connection': 'keep-alive'}
-        self.ob_len = ob_len
         self.markets_list = markets_list
         self.session = requests.session()
         self.session.headers.update(self.headers)
+        self.markets = self.get_markets()
+        self.api_key = None
+        if keys:
+            self.api_key = keys['API_KEY']
+            self.api_secret = keys['API_SECRET']
+            self.websocket_token = self.get_ws_token()
+            self.deals_thread_func()
+            self.get_real_balance()
+        self.finder = None
+        if finder:
+            self.finder = finder
+        self.ob_len = ob_len
         self.instruments = {}
         self.leverage = leverage
         self.max_pos_part = max_pos_part
@@ -44,7 +49,6 @@ class WhiteBitClient(BaseClient):
         self.side = None
         self.symbol = None
         self.error_info = None
-        self.markets = self.get_markets()
         self._loop = asyncio.new_event_loop()
         # self._order_loop = asyncio.new_event_loop()
         self._connected = asyncio.Event()
@@ -61,11 +65,8 @@ class WhiteBitClient(BaseClient):
         self.orders = {}
         self.balance = {}
         self.positions = {}
-        self.websocket_token = self.get_ws_token()
-        self.deals_thread_func()
         self.own_orders = {}
         self.LAST_ORDER_ID = 'default'
-        self.get_real_balance()
         self.message_queue = asyncio.Queue(loop=self._loop)
         self.taker_fee = 0.00035
         self.subs = {}
@@ -529,7 +530,8 @@ class WhiteBitClient(BaseClient):
                 self._connected.set()
                 self._ws = ws
                 # await self._loop.create_task(self.subscribe_privates())
-                asyncio.run_coroutine_threadsafe(self.subscribe_privates(), self._loop)
+                if self.api_key:
+                    asyncio.run_coroutine_threadsafe(self.subscribe_privates(), self._loop)
                 for symbol in self.markets_list:
                     if market := self.markets.get(symbol):
                         asyncio.run_coroutine_threadsafe(self.subscribe_orderbooks(market), self._loop)

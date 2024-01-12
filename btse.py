@@ -17,6 +17,9 @@ class BtseClient(BaseClient):
     PRIVATE_WS_ENDPOINT = 'wss://ws.btse.com/ws/futures'
     BASE_URL = f"https://api.btse.com/futures"
     EXCHANGE_NAME = 'BTSE'
+    headers = {"Accept": "application/json;charset=UTF-8",
+               "Content-Type": "application/json",
+               'Connection': 'keep-alive'}
     order_statuses = {2: 'Order Inserted',
                       3: 'Order Transacted',
                       4: 'Order Fully Transacted',
@@ -36,30 +39,28 @@ class BtseClient(BaseClient):
             self.finder = finder
         self.max_pos_part = max_pos_part
         self.leverage = leverage
+        self.session = requests.session()
+        self.session.headers.update(self.headers)
+        self.markets = self.get_markets()
+        self._loop = asyncio.new_event_loop()
+        self.api_key = None
         if keys:
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
-        self.headers = {"Accept": "application/json;charset=UTF-8",
-                        "Content-Type": "application/json",
-                        'Connection': 'keep-alive'}
-        self.session = requests.session()
+            self.get_real_balance()
+            self.get_position()
         self.ob_len = ob_len
-        self.session.headers.update(self.headers)
         self.markets_list = markets_list
         self.positions = {}
         self.instruments = {}
-        self.markets = self.get_markets()
         self.balance = {}
-        self.get_real_balance()
-        self.get_position()
         self.error_info = None
-        self._loop = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self.getting_ob = asyncio.Event()
         self.now_getting = ''
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=['public'])
-        self.wst_private = threading.Thread(target=self._run_ws_forever, args=['private'])
         self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
+        self.wst_private = threading.Thread(target=self._run_ws_forever, args=['private'])
         self.price = 0
         self.amount = 0
         self.requestLimit = 1200
@@ -614,10 +615,11 @@ class BtseClient(BaseClient):
     def run_updater(self):
         self.wst_public.daemon = True
         self.wst_public.start()
-        self.wst_private.daemon = True
-        self.wst_private.start()
         self._wst_orderbooks.daemon = True
         self._wst_orderbooks.start()
+        if self.api_key:
+            self.wst_private.daemon = True
+            self.wst_private.start()
 
     @try_exc_regular
     def get_fills(self, symbol: str, order_id: str):
