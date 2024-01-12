@@ -31,8 +31,6 @@ class WhiteBitClient(BaseClient):
         self.markets_list = markets_list
         self.session = requests.session()
         self.session.headers.update(self.headers)
-        self.instruments = {}
-        self.markets = self.get_markets()
         if self.state == 'Bot':
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
@@ -42,6 +40,8 @@ class WhiteBitClient(BaseClient):
             self.balance = {}
             self.positions = {}
             self.get_real_balance()
+        self.instruments = {}
+        self.markets = self.get_markets()
         self.ob_len = ob_len
         self.leverage = leverage
         self.max_pos_part = max_pos_part
