@@ -29,6 +29,7 @@ class WhiteBitClient(BaseClient):
         self.markets_list = markets_list
         self.session = requests.session()
         self.session.headers.update(self.headers)
+        self.instruments = {}
         self.markets = self.get_markets()
         self.api_key = None
         if keys:
@@ -41,7 +42,7 @@ class WhiteBitClient(BaseClient):
         if finder:
             self.finder = finder
         self.ob_len = ob_len
-        self.instruments = {}
+
         self.leverage = leverage
         self.max_pos_part = max_pos_part
         self.price = 0

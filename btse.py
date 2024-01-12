@@ -41,6 +41,7 @@ class BtseClient(BaseClient):
         self.leverage = leverage
         self.session = requests.session()
         self.session.headers.update(self.headers)
+        self.instruments = {}
         self.markets = self.get_markets()
         self._loop = asyncio.new_event_loop()
         self.api_key = None
@@ -52,7 +53,6 @@ class BtseClient(BaseClient):
         self.ob_len = ob_len
         self.markets_list = markets_list
         self.positions = {}
-        self.instruments = {}
         self.balance = {}
         self.error_info = None
         self._connected = asyncio.Event()

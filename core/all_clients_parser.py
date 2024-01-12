@@ -1,5 +1,5 @@
 from clients.hitbtc import HitbtcClient
-# from clients.dydx import DydxClient
+from clients.dydx import DydxClient
 from clients.bitmake import BitmakeClient
 from clients.globederivative import GlobeClient
 from clients.bit import BitClient
@@ -16,5 +16,6 @@ ALL_CLIENTS = {
     'BTSE': BtseClient,
     'WHITEBIT': WhiteBitClient,
     'TAPBIT': TapbitClient,
-    'ORANGEX': OrangexClient
+    'ORANGEX': OrangexClient,
+    'DYDX': DydxClient
 }
