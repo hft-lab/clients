@@ -24,12 +24,12 @@ class TapbitClient:
         self._connected = asyncio.Event()
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=[self._loop_public])
         self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
+        self.message_queue = asyncio.Queue(loop=self._loop_public)
         self.requestLimit = 1200
         self.getting_ob = asyncio.Event()
         self.now_getting = ''
         self.orderbook = {}
         self.taker_fee = 0.0006
-        self.message_queue = asyncio.Queue(loop=self._loop_public)
 
     @try_exc_regular
     def get_markets(self):
@@ -50,8 +50,6 @@ class TapbitClient:
     def _process_ws_line(self):
         # self._loop.create_task(self.process_messages())
         asyncio.run_coroutine_threadsafe(self.process_messages(), self._loop_public)
-
-
 
     @try_exc_regular
     def get_all_tops(self):
@@ -76,7 +74,7 @@ class TapbitClient:
             async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
                 self._connected.set()
                 self._ws_public = ws
-                await self._loop_public.create_task(self.subscribe_orderbooks())
+                asyncio.run_coroutine_threadsafe(self.subscribe_orderbooks(), self._loop_public)
                 async for msg in ws:
                     if msg.data == 'ping':
                         await ws.pong(b'pong')

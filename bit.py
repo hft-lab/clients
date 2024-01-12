@@ -18,9 +18,16 @@ class BitClient:
         self._loop_public = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=[self._loop_public])
+        self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
+        self.message_queue = asyncio.Queue(loop=self._loop_public)
         self.requestLimit = 1200
         self.orderbook = {}
         self.taker_fee = 0.0006
+
+    @try_exc_regular
+    def _process_ws_line(self):
+        # self._loop.create_task(self.process_messages())
+        asyncio.run_coroutine_threadsafe(self.process_messages(), self._loop_public)
 
     @try_exc_regular
     def get_markets(self):
@@ -55,11 +62,17 @@ class BitClient:
             async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
                 self._connected.set()
                 self._ws_public = ws
-                self._loop_public.create_task(self.subscribe_orderbooks())
+                asyncio.run_coroutine_threadsafe(self.subscribe_orderbooks(), self._loop_public)
                 async for msg in ws:
-                    data = json.loads(msg.data)
-                    if 'order_book' in data['channel']:
-                        self.update_orderbook(data)
+                    await self.message_queue.put(msg)
+
+    @try_exc_async
+    async def process_messages(self):
+        while True:
+            msg = await self.message_queue.get()
+            data = json.loads(msg.data)
+            if 'order_book' in data['channel']:
+                self.update_orderbook(data)
 
     @try_exc_regular
     def get_orderbook(self, symbol):
@@ -91,6 +104,8 @@ class BitClient:
     def run_updater(self):
         self.wst_public.daemon = True
         self.wst_public.start()
+        self._wst_orderbooks.daemon = True
+        self._wst_orderbooks.start()
 
 
 if __name__ == '__main__':

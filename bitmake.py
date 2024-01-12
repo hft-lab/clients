@@ -19,11 +19,18 @@ class BitmakeClient:
         self._loop_public = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=[self._loop_public])
+        self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
+        self.message_queue = asyncio.Queue(loop=self._loop_public)
         self.requestLimit = 1200
         self.getting_ob = asyncio.Event()
         self.now_getting = ''
         self.orderbook = {}
         self.taker_fee = 0.0006
+
+    @try_exc_regular
+    def _process_ws_line(self):
+        # self._loop.create_task(self.process_messages())
+        asyncio.run_coroutine_threadsafe(self.process_messages(), self._loop_public)
 
     @try_exc_regular
     def get_markets(self):
@@ -59,19 +66,26 @@ class BitmakeClient:
                 self._connected.set()
                 self._ws_public = ws
                 for symbol in self.markets.values():
-                    await self._loop_public.create_task(self.subscribe_orderbooks(symbol))
+                    asyncio.run_coroutine_threadsafe(self.subscribe_orderbooks(symbol), self._loop_public)
                 async for msg in ws:
-                    data = json.loads(self.decode_gzip_data(msg.data))
-                    if data.get('d') and data['f']:
-                        if data['d'][0]['s'] == self.now_getting:
-                            while self.getting_ob.is_set():
-                                time.sleep(0.00001)
-                        self.update_orderbook_snapshot(data)
-                    if data.get('d') and not data['f']:
-                        if data['d'][0]['s'] == self.now_getting:
-                            while self.getting_ob.is_set():
-                                time.sleep(0.00001)
-                        self.update_orderbook(data)
+                    await self.message_queue.put(msg)
+
+    @try_exc_async
+    async def process_messages(self):
+        while True:
+            msg = await self.message_queue.get()
+            data = json.loads(self.decode_gzip_data(msg.data))
+            if data.get('d') and data['f']:
+                if data['d'][0]['s'] == self.now_getting:
+                    while self.getting_ob.is_set():
+                        time.sleep(0.00001)
+                self.update_orderbook_snapshot(data)
+            if data.get('d') and not data['f']:
+                if data['d'][0]['s'] == self.now_getting:
+                    while self.getting_ob.is_set():
+                        time.sleep(0.00001)
+                self.update_orderbook(data)
+
     @staticmethod
     @try_exc_regular
     def decode_gzip_data(data):
@@ -136,6 +150,8 @@ class BitmakeClient:
     def run_updater(self):
         self.wst_public.daemon = True
         self.wst_public.start()
+        self._wst_orderbooks.daemon = True
+        self._wst_orderbooks.start()
 
 
 if __name__ == '__main__':
