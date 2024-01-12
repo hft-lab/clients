@@ -867,8 +867,8 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_regular
     def get_orderbook(self, symbol) -> dict:
-        while not self.orderbook.get(symbol):
-            time.sleep(0.01)
+        if not self.orderbook.get(symbol):
+            return {}
         snap = self.orderbook[symbol].copy()
         if snap['top_ask'][0] <= snap['top_bid'][0]:
             print(f"ALARM! IDK HOW THIS SHIT WORKS BUT: {snap}")
