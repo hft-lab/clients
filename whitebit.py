@@ -785,7 +785,7 @@ class WhiteBitClient(BaseClient):
                     top = sorted(new_ob['bids'])[-1]
                     new_ob['top_bid'] = [float(top), float(new_ob['bids'][top])]
                     new_ob['top_bid_timestamp'] = data['params'][1]['timestamp']
-            else:
+            elif new_bid[1] != '0':
                 new_ob['bids'][new_bid[0]] = new_bid[1]
         for new_ask in data['params'][1].get('asks', []):
             if float(new_ask[0]) <= new_ob['top_ask'][0]:
@@ -798,7 +798,7 @@ class WhiteBitClient(BaseClient):
                     top = sorted(new_ob['asks'])[0]
                     new_ob['top_ask'] = [float(top), float(new_ob['asks'][top])]
                     new_ob['top_ask_timestamp'] = data['params'][1]['timestamp']
-            else:
+            elif new_ask[1] != '0':
                 new_ob['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol] = new_ob
         if new_ob['top_ask'][0] <= new_ob['top_bid'][0]:
