@@ -41,6 +41,8 @@ class BtseClient(BaseClient):
         self.session = requests.session()
         self.session.headers.update(self.headers)
         self._loop = asyncio.new_event_loop()
+        self.instruments = {}
+        self.markets = self.get_markets()
         if self.state == 'Bot':
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
@@ -48,13 +50,10 @@ class BtseClient(BaseClient):
             self.balance = {}
             self.get_real_balance()
             self.get_position()
-        self.instruments = {}
-        self.markets = self.get_markets()
         self.ob_len = ob_len
         self.markets_list = markets_list
         self.error_info = None
         self._connected = asyncio.Event()
-        self.getting_ob = asyncio.Event()
         self.now_getting = ''
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=['public'])
         self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
@@ -322,6 +321,8 @@ class BtseClient(BaseClient):
 
     @try_exc_regular
     def get_balance(self):
+        if not self.balance.get('total'):
+            self.get_real_balance()
         return self.balance['total']
 
     @try_exc_regular
