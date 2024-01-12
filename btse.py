@@ -58,7 +58,8 @@ class BtseClient(BaseClient):
         self.now_getting = ''
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=['public'])
         self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
-        self.wst_private = threading.Thread(target=self._run_ws_forever, args=['private'])
+        if self.state == 'Bot':
+            self.wst_private = threading.Thread(target=self._run_ws_forever, args=['private'])
         self.price = 0
         self.amount = 0
         self.requestLimit = 1200
@@ -381,7 +382,7 @@ class BtseClient(BaseClient):
                     self.update_orderbook_snapshot(data)
                 elif data.get('data') and data['data']['type'] == 'delta':
                     self.update_orderbook(data)
-            else:
+            elif self.state == 'Bot':
                 self.update_private_data(data)
             self.message_queue.task_done()
             # if self.message_queue.qsize() > 100:
