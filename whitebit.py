@@ -852,6 +852,9 @@ class WhiteBitClient(BaseClient):
         if not self.orderbook.get(symbol):
             return {}
         snap = self.orderbook[symbol].copy()
+        if snap['top_ask'][0] <= snap['top_bid'][0]:
+            self.cut_extra_orders_from_ob(symbol)
+        snap = self.orderbook[symbol].copy()
         if isinstance(snap['asks'], list):
             return snap
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
@@ -860,12 +863,6 @@ class WhiteBitClient(BaseClient):
               'top_ask_timestamp': snap['top_ask_timestamp'],
               'top_bid_timestamp': snap['top_bid_timestamp'],
               'ts_ms': snap['ts_ms']}
-        if snap['top_ask'][0] <= snap['top_bid'][0]:
-            dest = {'chat_id': self.alert_id, 'bot_token': self.alert_token}
-            message = f"WHITEBIT OB:\n {ob}. WSQueue: {self.message_queue.qsize()}"
-            self.finder.multibot.telegram.send_message(message, dest)
-            self.cut_extra_orders_from_ob(symbol)
-            return {}
         return ob
 
     @try_exc_regular
