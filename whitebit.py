@@ -31,6 +31,9 @@ class WhiteBitClient(BaseClient):
         self.markets_list = markets_list
         self.session = requests.session()
         self.session.headers.update(self.headers)
+        self.instruments = {}
+        self.markets = self.get_markets()
+        self.orderbook = {}
         if self.state == 'Bot':
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
@@ -39,9 +42,8 @@ class WhiteBitClient(BaseClient):
             self.orders = {}
             self.balance = {}
             self.positions = {}
+            self.get_position()
             self.get_real_balance()
-        self.instruments = {}
-        self.markets = self.get_markets()
         self.ob_len = ob_len
         self.leverage = leverage
         self.max_pos_part = max_pos_part
@@ -61,7 +63,6 @@ class WhiteBitClient(BaseClient):
         # self._loop_supersonic = asyncio.new_event_loop()
         # self._extra_speed = threading.Thread(target=self.run_super_sonic)
         self.requestLimit = 600
-        self.orderbook = {}
         self.last_price = {}
         # self.own_orders = {}
         self.LAST_ORDER_ID = 'default'
@@ -490,6 +491,8 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_regular
     def get_balance(self):
+        if not self.balance.get('total'):
+            self.get_real_balance()
         return self.balance['total']
 
     @try_exc_async
@@ -813,13 +816,16 @@ class WhiteBitClient(BaseClient):
             top_ask = None
             new_asks = {}
             for new_ask in data['params'][1].get('asks', []):
-                if top_ask:
-                    if float(new_ask[0]) < top_ask[0]:
+                if new_ask[1] != '0':
+                    new_asks[new_ask[0]] = new_ask[1]
+                    if top_ask:
+                        if float(new_ask[0]) < top_ask[0]:
+                            top_ask = [float(new_ask[0]), float(new_ask[1])]
+                    else:
                         top_ask = [float(new_ask[0]), float(new_ask[1])]
-                else:
-                    top_ask = [float(new_ask[0]), float(new_ask[1])]
-                new_asks[new_ask[0]] = new_ask[1]
+
             snap['asks'] = new_asks
+            snap['top_ask'] = top_ask
             snap['top_ask_timestamp'] = data['params'][1]['timestamp']
             #                                   float(x) > snap['top_bid'][0]}
             # self.orderbook[symbol]['top_asks'] = [float(sorted(snap['asks'])[0]),
@@ -829,19 +835,21 @@ class WhiteBitClient(BaseClient):
             top_bid = None
             new_bids = {}
             for new_bid in data['params'][1].get('bids', []):
-                if top_bid:
-                    if float(new_bid[0]) > top_bid[0]:
+                if new_bid[1] != '0':
+                    new_bids[new_bid[0]] = new_bid[1]
+                    if top_bid:
+                        if float(new_bid[0]) > top_bid[0]:
+                            top_bid = [float(new_bid[0]), float(new_bid[1])]
+                    else:
                         top_bid = [float(new_bid[0]), float(new_bid[1])]
-                else:
-                    top_bid = [float(new_bid[0]), float(new_bid[1])]
-                new_bids[new_bid[0]] = new_bid[1]
             snap['bids'] = new_bids
+            snap['top_bid'] = top_bid
             snap['top_bid_timestamp'] = data['params'][1]['timestamp']
         self.orderbook[symbol] = snap
-            # self.orderbook[symbol]['bids'] = {x: snap['bids'].get(x, '0') for x in snap['bids'] if
-            #                                   float(x) < snap['top_ask'][0]}
-            # self.orderbook[symbol]['top_bid'] = [float(sorted(snap['bids'])[::-1][0]),
-            #                                      float(snap['bids'][sorted(snap['bids'])[::-1][0]])]
+        # self.orderbook[symbol]['bids'] = {x: snap['bids'].get(x, '0') for x in snap['bids'] if
+        #                                   float(x) < snap['top_ask'][0]}
+        # self.orderbook[symbol]['top_bid'] = [float(sorted(snap['bids'])[::-1][0]),
+        #                                      float(snap['bids'][sorted(snap['bids'])[::-1][0]])]
 
     @try_exc_regular
     def update_orderbook_snapshot(self, data):
