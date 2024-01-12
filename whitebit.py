@@ -24,23 +24,21 @@ class WhiteBitClient(BaseClient):
                'User-Agent': 'python-whitebit-sdk',
                'Connection': 'keep-alive'}
 
-    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20, finder=None, ob_len=4):
+    def __init__(self, keys=None, leverage=None, state = 'Bot',markets_list=[], max_pos_part=20, finder=None, ob_len=4):
         super().__init__()
+        self.state = state
+        self.finder = finder
         self.markets_list = markets_list
         self.session = requests.session()
         self.session.headers.update(self.headers)
         self.instruments = {}
         self.markets = self.get_markets()
-        self.api_key = None
-        if keys:
+        if self.state == 'Bot':
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
             self.websocket_token = self.get_ws_token()
             self.deals_thread_func()
             self.get_real_balance()
-        self.finder = None
-        if finder:
-            self.finder = finder
         self.ob_len = ob_len
 
         self.leverage = leverage
@@ -274,6 +272,7 @@ class WhiteBitClient(BaseClient):
         })
         return params
 
+
     @try_exc_regular
     def get_position(self):
         path = "/api/v4/collateral-account/positions/open"
@@ -393,18 +392,6 @@ class WhiteBitClient(BaseClient):
         data += '&'.join(strl)
         return f'?{data}'.replace(' ', '%20')
 
-    @try_exc_regular
-    def get_auth_for_request(self, params, uri):
-        params['request'] = uri
-        params['nonce'] = int(time.time() * 1000)
-        params['nonceWindow'] = True
-        signature, payload = self.get_signature(params)
-        self.session.headers.update({
-            'X-TXC-APIKEY': self.api_key,
-            'X-TXC-SIGNATURE': signature,
-            'X-TXC-PAYLOAD': payload.decode('ascii')
-        })
-        return params
 
     # ### SUPERSONIC FEATURE ###
     # @try_exc_async
@@ -494,10 +481,11 @@ class WhiteBitClient(BaseClient):
                     self.update_orderbook_snapshot(data)
                 else:
                     self.update_orderbook(data)
-            elif data.get('method') == 'balanceMargin_update':
-                self.update_balances(data)
-            elif data.get('method') in ['ordersExecuted_update', 'ordersPending_update']:
-                self.update_orders(data)
+            if self.state == 'Bot':
+                if data.get('method') == 'balanceMargin_update':
+                    self.update_balances(data)
+                elif data.get('method') in ['ordersExecuted_update', 'ordersPending_update']:
+                    self.update_orders(data)
             self.message_queue.task_done()
             # if self.message_queue.qsize() > 100:
             #     message = f'ALERT! {self.EXCHANGE_NAME} WS LINE LENGTH: {self.message_queue.qsize()}'
@@ -531,7 +519,7 @@ class WhiteBitClient(BaseClient):
                 self._connected.set()
                 self._ws = ws
                 # await self._loop.create_task(self.subscribe_privates())
-                if self.api_key:
+                if self.state == 'Bot':
                     asyncio.run_coroutine_threadsafe(self.subscribe_privates(), self._loop)
                 for symbol in self.markets_list:
                     if market := self.markets.get(symbol):
@@ -887,7 +875,8 @@ class WhiteBitClient(BaseClient):
         while set(self.orderbook.keys()) < set([self.markets[x] for x in self.markets_list if self.markets.get(x)]):
             time.sleep(0.01)
         print('GOT ALL MARKETS')
-        self.get_position()
+        if self.state == 'Bot':
+            self.get_position()
 
 
 if __name__ == '__main__':

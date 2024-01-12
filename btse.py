@@ -32,11 +32,10 @@ class BtseClient(BaseClient):
                       16: 'Order Not Found',
                       17: 'Request failed'}
 
-    def __init__(self, keys=None, leverage=None, markets_list=[], max_pos_part=20, finder=None, ob_len=4):
+    def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20, finder=None, ob_len=4):
         super().__init__()
-        self.finder = None
-        if finder:
-            self.finder = finder
+        self.state = state
+        self.finder = finder
         self.max_pos_part = max_pos_part
         self.leverage = leverage
         self.session = requests.session()
@@ -44,8 +43,7 @@ class BtseClient(BaseClient):
         self.instruments = {}
         self.markets = self.get_markets()
         self._loop = asyncio.new_event_loop()
-        self.api_key = None
-        if keys:
+        if self.state == 'Bot':
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
             self.get_real_balance()
@@ -617,7 +615,7 @@ class BtseClient(BaseClient):
         self.wst_public.start()
         self._wst_orderbooks.daemon = True
         self._wst_orderbooks.start()
-        if self.api_key:
+        if self.state == 'Bot':
             self.wst_private.daemon = True
             self.wst_private.start()
 
