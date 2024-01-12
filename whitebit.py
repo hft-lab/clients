@@ -827,6 +827,8 @@ class WhiteBitClient(BaseClient):
             snap['asks'] = new_asks
             snap['top_ask'] = top_ask
             snap['top_ask_timestamp'] = data['params'][1]['timestamp']
+            self.orderbook[symbol]['asks'] = snap
+
             #                                   float(x) > snap['top_bid'][0]}
             # self.orderbook[symbol]['top_asks'] = [float(sorted(snap['asks'])[0]),
             #                                       float(snap['asks'][sorted(snap['asks'])[0]])]
@@ -845,7 +847,7 @@ class WhiteBitClient(BaseClient):
             snap['bids'] = new_bids
             snap['top_bid'] = top_bid
             snap['top_bid_timestamp'] = data['params'][1]['timestamp']
-        self.orderbook[symbol] = snap
+            self.orderbook[symbol]['bids'] = snap
         # self.orderbook[symbol]['bids'] = {x: snap['bids'].get(x, '0') for x in snap['bids'] if
         #                                   float(x) < snap['top_ask'][0]}
         # self.orderbook[symbol]['top_bid'] = [float(sorted(snap['bids'])[::-1][0]),
