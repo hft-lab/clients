@@ -582,6 +582,9 @@ class BtseClient(BaseClient):
         if not self.orderbook.get(symbol):
             return {}
         snap = self.orderbook[symbol].copy()
+        if snap['top_ask'][0] <= snap['top_bid'][0]:
+            print(f"ALARM! ORDERBOOK ERROR {self.EXCHANGE_NAME}: {snap}")
+            return {}
         if isinstance(snap['asks'], list):
             return snap
         c_v = self.instruments[symbol]['contract_value']

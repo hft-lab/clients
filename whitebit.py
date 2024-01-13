@@ -812,7 +812,7 @@ class WhiteBitClient(BaseClient):
     @try_exc_regular
     def cut_extra_orders_from_ob(self, symbol, data):
         if self.orderbook[symbol]['top_ask_timestamp'] < self.orderbook[symbol]['top_bid_timestamp']:
-            top_ask = None
+            top_ask = [999999999, 0]
             new_asks = {}
             for new_ask in data['params'][1].get('asks', []):
                 if new_ask[1] != '0':
@@ -826,7 +826,7 @@ class WhiteBitClient(BaseClient):
                                            'top_ask': top_ask,
                                            'top_ask_timestamp': data['params'][1]['timestamp']})
         else:
-            top_bid = None
+            top_bid = [0, 0]
             new_bids = {}
             for new_bid in data['params'][1].get('bids', []):
                 if new_bid[1] != '0':
@@ -867,8 +867,8 @@ class WhiteBitClient(BaseClient):
         if isinstance(snap['asks'], list):
             return snap
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
-              'asks': [[float(x), float(snap['asks'].get(x, 0))] for x in sorted(snap['asks'])[:self.ob_len]],
-              'bids': [[float(x), float(snap['bids'].get(x, 0))] for x in sorted(snap['bids'])[::-1][:self.ob_len]],
+              'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks'])[:self.ob_len]],
+              'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids'])[::-1][:self.ob_len]],
               'top_ask_timestamp': snap['top_ask_timestamp'],
               'top_bid_timestamp': snap['top_bid_timestamp'],
               'ts_ms': snap['ts_ms']}
