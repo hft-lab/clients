@@ -13,7 +13,9 @@ class OrangexClient:
     BASE_URL = 'https://api.orangex.com/api/v1'
     EXCHANGE_NAME = 'ORANGEX'
 
-    def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20):
+    def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20, finder=None, ob_len=4):
+        self.finder = finder
+        self.ob_len = ob_len
         if keys:
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
@@ -104,23 +106,50 @@ class OrangexClient:
 
     @try_exc_regular
     def update_orderbook(self, data, symbol):
+        flag = False
         ob = data['params']['data']
         if not self.orderbook.get(symbol):
-            self.orderbook.update({symbol: {'asks': {}, 'bids': {}, 'timestamp': ob['timestamp']}})
+            new_ob = {symbol: {'asks': {}, 'bids': {}, 'timestamp': ob['timestamp']}}
+        else:
+            new_ob = self.orderbook[symbol].copy()
+        ts_ms = time.time()
+        new_ob['ts_ms'] = ts_ms
+        ts_ob = ob['timestamp']
+        if isinstance(ts_ob, int):
+            ts_ob = ts_ob / 1000
+        new_ob['timestamp'] = ts_ob
         for new_bid in ob['bids']:
-            res = self.orderbook[symbol]['bids']
-            if res.get(new_bid[1]) and new_bid[0] == 'delete':
-                del res[new_bid[1]]
-            else:
-                self.orderbook[symbol]['bids'][new_bid[1]] = new_bid[2]
+            if float(new_bid[0]) >= new_ob['top_bid'][0]:
+                new_ob['top_bid'] = [float(new_bid[0]), float(new_bid[1])]
+                new_ob['top_bid_timestamp'] = ob['timestamp']
+                flag = True
+            if new_ob['bids'].get(new_bid[0]) and new_bid[1] == '0':
+                del new_ob['bids'][new_bid[0]]
+                if float(new_bid[0]) == new_ob['top_bid'][0] and len(new_ob['bids']):
+                    top = sorted(new_ob['bids'])[-1]
+                    new_ob['top_bid'] = [float(top), float(new_ob['bids'][top])]
+                    new_ob['top_bid_timestamp'] = ob['timestamp']
+            elif new_bid[1] != '0':
+                new_ob['bids'][new_bid[0]] = new_bid[1]
         for new_ask in ob['asks']:
-            res = self.orderbook[symbol]['asks']
-            if res.get(new_ask[1]) and new_ask[0] == 'delete':
-                del res[new_ask[1]]
-            else:
-                self.orderbook[symbol]['asks'][new_ask[1]] = new_ask[2]
-        self.orderbook[symbol]['timestamp'] = ob['timestamp']
-        self.orderbook[symbol]['ts_ms'] = time.time()
+            if float(new_ask[0]) <= new_ob['top_ask'][0]:
+                new_ob['top_ask'] = [float(new_ask[0]), float(new_ask[1])]
+                new_ob['top_ask_timestamp'] = ob['timestamp']
+                flag = True
+            if new_ob['asks'].get(new_ask[0]) and new_ask[1] == '0':
+                del new_ob['asks'][new_ask[0]]
+                if float(new_ask[0]) == new_ob['top_ask'][0] and len(new_ob['asks']):
+                    top = sorted(new_ob['asks'])[0]
+                    new_ob['top_ask'] = [float(top), float(new_ob['asks'][top])]
+                    new_ob['top_ask_timestamp'] = ob['timestamp']
+            elif new_ask[1] != '0':
+                new_ob['asks'][new_ask[0]] = new_ask[1]
+        self.orderbook[symbol] = new_ob
+        if flag and ts_ms - ts_ob < 0.1:
+            coin = symbol.split('-')[0]
+            if self.finder:
+                self.finder.coins_to_check.add(coin)
+                self.finder.update = True
         # example = {"params": {"data":
         #                           {"timestamp": 1704141351600, "change_id": 34369840,
         #                            "asks": [["delete", "2.34060000", "0"],
@@ -136,6 +165,8 @@ class OrangexClient:
         symbol = data['topic'].split('.')[1]
         self.orderbook[symbol] = {'asks': {x[0]: x[1] for x in ob['asks']},
                                   'bids': {x[0]: x[1] for x in ob['bids']},
+                                  'top_ask': [float(sorted(ob['asks'])[0]), 0],
+                                  'top_bid': [float(sorted(ob['bids'])[::-1][0]), 0],
                                   'timestamp': ob['timestamp'],
                                   'ts_ms': time.time()}
 
@@ -147,9 +178,12 @@ class OrangexClient:
         self.now_getting = symbol
         snap = self.orderbook[symbol]
         ob = {'timestamp': snap['timestamp'],
-              'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks']) if snap['asks'].get(x)],
-              'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids']) if snap['bids'].get(x)][::-1],
+              'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks'])[:self.ob_len]],
+              'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids'])[::-1][:self.ob_len]],
               'ts_ms': snap['ts_ms']}
+        if ob['asks'][0][0] <= ob['bids'][0][0]:
+            print(f"ALARM! ORDERBOOK ERROR {self.EXCHANGE_NAME}: {snap}")
+            return {}
         self.now_getting = ''
         self.getting_ob.clear()
         return ob

@@ -539,7 +539,7 @@ class BtseClient(BaseClient):
                     top = sorted(new_ob['bids'])[-1]
                     new_ob['top_bid'] = [float(top), float(new_ob['bids'][top])]
                     new_ob['top_bid_timestamp'] = data['data']['timestamp']
-            else:
+            elif new_bid[1] != '0':
                 new_ob['bids'][new_bid[0]] = new_bid[1]
         for new_ask in data['data']['asks']:
             if float(new_ask[0]) <= new_ob['top_ask'][0]:
@@ -552,7 +552,7 @@ class BtseClient(BaseClient):
                     top = sorted(new_ob['asks'])[0]
                     new_ob['top_ask'] = [float(top), float(new_ob['asks'][top])]
                     new_ob['top_ask_timestamp'] = data['data']['timestamp']
-            else:
+            elif new_ask[1] != '0':
                 new_ob['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol] = new_ob
         if flag and ts_ms - ts_ob < 0.1:
@@ -589,8 +589,8 @@ class BtseClient(BaseClient):
             return {}
         c_v = self.instruments[symbol]['contract_value']
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
-              'asks': [[float(x), float(snap['asks'].get(x, 0)) * c_v] for x in sorted(snap['asks'])[:self.ob_len]],
-              'bids': [[float(x), float(snap['bids'].get(x, 0)) * c_v] for x in sorted(snap['bids'])[::-1][:self.ob_len]],
+              'asks': [[float(x), float(snap['asks'][x]) * c_v] for x in sorted(snap['asks'])[:self.ob_len]],
+              'bids': [[float(x), float(snap['bids'][x]) * c_v] for x in sorted(snap['bids'])[::-1][:self.ob_len]],
               'top_ask_timestamp': self.orderbook[symbol]['top_ask_timestamp'],
               'top_bid_timestamp': self.orderbook[symbol]['top_bid_timestamp'],
               'ts_ms': self.orderbook[symbol]['ts_ms']}

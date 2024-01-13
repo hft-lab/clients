@@ -12,7 +12,9 @@ class BitClient:
     PUBLIC_WS_ENDPOINT = 'wss://ws.bit.com'
     EXCHANGE_NAME = 'BIT'
 
-    def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20):
+    def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20, finder=None, ob_len=4):
+        self.finder = finder
+        self.ob_len = ob_len
         self.headers = {'Content-Type': 'application/json'}
         self.markets = self.get_markets()
         self._loop_public = asyncio.new_event_loop()
@@ -76,7 +78,11 @@ class BitClient:
 
     @try_exc_regular
     def get_orderbook(self, symbol):
-        return self.orderbook[symbol]
+        ob = self.orderbook[symbol]
+        if ob['asks'][0][0] <= ob['bids'][0][0]:
+            print(f"ALARM! ORDERBOOK ERROR {self.EXCHANGE_NAME}: {ob}")
+            return {}
+        return ob
 
     @try_exc_async
     async def subscribe_orderbooks(self):
@@ -96,10 +102,18 @@ class BitClient:
         if data['data']['asks'] and data['data']['bids']:
             if not self.orderbook.get(market):
                 self.orderbook.update({market: {'asks': [], 'bids': []}})
+            snap = self.orderbook[market].copy()
             self.orderbook[market].update({'asks': [[float(x[0]), float(x[1])] for x in data['data']['asks']],
                                            'bids': [[float(x[0]), float(x[1])] for x in data['data']['bids']],
                                            'timestamp': data['timestamp'],
                                            'ts_ms': time.time()})
+            if self.finder and snap['asks']:
+                if_new_top_ask = snap['asks'][0][0] > self.orderbook[market]['asks'][0][0]
+                if_new_top_bid = snap['bids'][0][0] < self.orderbook[market]['bids'][0][0]
+                if if_new_top_ask or if_new_top_bid:
+                    coin = market.split('USDT')[0]
+                    self.finder.coins_to_check.add(coin)
+                    self.finder.update = True
 
     @try_exc_regular
     def run_updater(self):
