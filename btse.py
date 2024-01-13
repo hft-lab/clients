@@ -582,11 +582,11 @@ class BtseClient(BaseClient):
         if not self.orderbook.get(symbol):
             return {}
         snap = self.orderbook[symbol].copy()
+        if isinstance(snap['asks'], list):
+            return snap
         if snap['top_ask'][0] <= snap['top_bid'][0]:
             print(f"ALARM! ORDERBOOK ERROR {self.EXCHANGE_NAME}: {snap}")
             return {}
-        if isinstance(snap['asks'], list):
-            return snap
         c_v = self.instruments[symbol]['contract_value']
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
               'asks': [[float(x), float(snap['asks'].get(x, 0)) * c_v] for x in sorted(snap['asks'])[:self.ob_len]],

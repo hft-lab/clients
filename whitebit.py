@@ -859,13 +859,13 @@ class WhiteBitClient(BaseClient):
         if not self.orderbook.get(symbol):
             return {}
         snap = self.orderbook[symbol].copy()
-        if snap['top_ask'][0] <= snap['top_bid'][0]:
-            # print(f"ALARM! IDK HOW THIS SHIT WORKS BUT: {snap}")
-            return {}
         #     self.cut_extra_orders_from_ob(symbol)
         # snap = self.orderbook[symbol].copy()
         if isinstance(snap['asks'], list):
             return snap
+        if snap['top_ask'][0] <= snap['top_bid'][0]:
+            # print(f"ALARM! IDK HOW THIS SHIT WORKS BUT: {snap}")
+            return {}
         ob = {'timestamp': self.orderbook[symbol]['timestamp'],
               'asks': [[float(x), float(snap['asks'][x])] for x in sorted(snap['asks'])[:self.ob_len]],
               'bids': [[float(x), float(snap['bids'][x])] for x in sorted(snap['bids'])[::-1][:self.ob_len]],
