@@ -396,7 +396,7 @@ class BtseClient(BaseClient):
                         if data.get('data') and data['data']['type'] == 'snapshot':
                             await update_orderbook_snapshot(data)
                         elif data.get('data') and data['data']['type'] == 'delta':
-                            await update_orderbook(data, self.finder.count_one_coin)
+                            await update_orderbook(data)
                         elif data.get('topic') == 'allPosition':
                             await update_positions(data)
                         elif data.get('topic') == 'fills':
@@ -562,7 +562,7 @@ class BtseClient(BaseClient):
         await self._ws_private.send_json(method_fills)
 
     @try_exc_async
-    async def update_orderbook(self, data, count_one_coin):
+    async def update_orderbook(self, data):
         flag = False
         symbol = data['data']['symbol']
         new_ob = self.orderbook[symbol].copy()
@@ -599,9 +599,9 @@ class BtseClient(BaseClient):
             elif new_ask[1] != '0':
                 new_ob['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol] = new_ob
-        if flag and ts_ms - ts_ob < 0.1:
+        if flag and ts_ms - ts_ob < 0.1:  # and self.finder:
             coin = symbol.split('PFC')[0]
-            await count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
+            await self.finder.count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
         elif ts_ms - self.last_keep_alive > 25:
             self.last_keep_alive = ts_ms
             self.amount = self.instruments[symbol]['min_size']
@@ -702,16 +702,18 @@ if __name__ == '__main__':
 
 
     async def test_order():
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession as session:
             client.aver_time = []
             client.aver_time_response = []
             while True:
                 # time.sleep(1)
+
                 ob = client.get_orderbook('MANAPFC')
                 # loop = asyncio.get_event_loop()
                 client.amount = client.instruments['MANAPFC']['min_size']
                 tick = client.instruments['MANAPFC']['tick_size']
                 client.price = ob['bids'][2][0] - (100 * tick)
+                print(f"SESSION CREATE TIME: {time_create}")
 
                 # client.price = price
                 # await client.create_order('MANAPFC', 'buy', session)
@@ -728,16 +730,16 @@ if __name__ == '__main__':
             # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
                 time.sleep(1)
                 client.cancel_all_orders()
-                print(f"Repeats (1 sec each): {len(client.aver_time)}")
-                print('OWN')
-                print(f"Min order create time: {min(client.aver_time)} sec")
-                print(f"Max order create time: {max(client.aver_time)} sec")
-                print(f"Aver. order create time: {sum(client.aver_time) / len(client.aver_time)} sec")
-                print('RESPONSE')
-                print(f"Min order create time: {min(client.aver_time_response)} sec")
-                print(f"Max order create time: {max(client.aver_time_response)} sec")
-                print(f"Aver. order create time: {sum(client.aver_time_response) / len(client.aver_time_response)} sec")
-                print()
+                # print(f"Repeats (1 sec each): {len(client.aver_time)}")
+                # print('OWN')
+                # print(f"Min order create time: {min(client.aver_time)} sec")
+                # print(f"Max order create time: {max(client.aver_time)} sec")
+                # print(f"Aver. order create time: {sum(client.aver_time) / len(client.aver_time)} sec")
+                # print('RESPONSE')
+                # print(f"Min order create time: {min(client.aver_time_response)} sec")
+                # print(f"Max order create time: {max(client.aver_time_response)} sec")
+                # print(f"Aver. order create time: {sum(client.aver_time_response) / len(client.aver_time_response)} sec")
+                # print()
             # time.sleep(1)
             #
             # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
@@ -749,7 +751,7 @@ if __name__ == '__main__':
     # time.sleep(1)
     # # client.get_real_balance()
     # print(client.get_positions())
-    # time.sleep(2)
+    time.sleep(2)
     asyncio.run(test_order())
     # client.get_position()
 

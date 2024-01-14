@@ -519,7 +519,7 @@ class WhiteBitClient(BaseClient):
                         if data['params'][0]:
                             await update_orderbook_snapshot(data)
                         else:
-                            await update_orderbook(data, self.finder.count_one_coin)
+                            await update_orderbook(data)
                     elif data.get('method') == 'balanceMargin_update':
                         await update_balances(data)
                     elif data.get('method') in ['ordersExecuted_update', 'ordersPending_update']:
@@ -806,7 +806,7 @@ class WhiteBitClient(BaseClient):
         return tops
 
     @try_exc_async
-    async def update_orderbook(self, data, count_one_coin):
+    async def update_orderbook(self, data):
         flag = False
         symbol = data['params'][2]
         new_ob = self.orderbook[symbol].copy()
@@ -845,9 +845,9 @@ class WhiteBitClient(BaseClient):
         self.orderbook[symbol] = new_ob
         if new_ob['top_ask'][0] <= new_ob['top_bid'][0]:
             self.cut_extra_orders_from_ob(symbol, data)
-        if flag and ts_ms - ts_ob < 0.1:
+        if flag and ts_ms - ts_ob < 0.1:  # and self.finder:
             coin = symbol.split('_')[0]
-            await count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
+            await self.finder.count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
         elif ts_ms - self.last_keep_alive > 25:
             self.last_keep_alive = ts_ms
             self.amount = self.instruments[symbol]['min_size']
