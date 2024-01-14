@@ -604,12 +604,12 @@ class BtseClient(BaseClient):
             await count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
         elif ts_ms - self.last_keep_alive > 25:
             self.last_keep_alive = ts_ms
-            self.amount = client.instruments[symbol]['min_size']
-            tick = client.instruments[symbol]['tick_size']
+            self.amount = self.instruments[symbol]['min_size']
+            tick = self.instruments[symbol]['tick_size']
             self.price = new_ob['top_bid'][0] - (100 * tick)
             order = await self.create_fast_order(symbol, 'buy')
             self.LAST_ORDER_ID = 'default'
-            await self.cancel_order(order['exchange_order_id'], self.async_session)
+            await self.cancel_order(symbol, order['exchange_order_id'], self.async_session)
 
     @try_exc_async
     async def update_orderbook_snapshot(self, data):
