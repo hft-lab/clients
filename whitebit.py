@@ -72,6 +72,7 @@ class WhiteBitClient(BaseClient):
         self.taker_fee = 0.00035
         self.subs = {}
         self.ob_push_limit = 0.1
+        self.last_keep_alive = 0
         # self.market_to_check = {}
 
     @try_exc_regular
@@ -669,7 +670,31 @@ class WhiteBitClient(BaseClient):
         #      'marketName': 'BTC_PERP'}]}}
 
     @try_exc_async
-    async def create_order(self, symbol, side, expire=10000, client_id=None):
+    async def create_order(self, symbol, side, session, expire=10000, client_id=None):
+        path = "/api/v4/order/collateral/limit"
+        params = {"market": symbol,
+                  "side": side,
+                  "amount": self.amount,
+                  "price": self.price}
+        params = self.get_auth_for_request(params, path)
+        path += self._create_uri(params)
+        async with session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
+            try:
+                response = await resp.json()
+            except ContentTypeError as e:
+                content = await resp.text()
+                print(f"{self.EXCHANGE_NAME} CREATE ORDER ERROR\nAPI RESPONSE: {content}")
+            print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
+            self.update_order_after_deal(response)
+            status = self.get_order_response_status(response)
+            self.LAST_ORDER_ID = response.get('orderId', 'default')
+            return {'exchange_name': self.EXCHANGE_NAME,
+                    'exchange_order_id': response.get('orderId'),
+                    'timestamp': response.get('timestamp', time.time()),
+                    'status': status}
+
+    @try_exc_async
+    async def create_fast_order(self, symbol, side, expire=10000, client_id=None):
         # time_start = time.time()
         path = "/api/v4/order/collateral/limit"
         params = {"market": symbol,
@@ -681,27 +706,27 @@ class WhiteBitClient(BaseClient):
         #     params['clientOrderId'] = client_id
         params = self.get_auth_for_request(params, path)
         path += self._create_uri(params)
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
-                try:
-                    response = await resp.json()
-                except ContentTypeError as e:
-                    content = await resp.text()
-                    print(f"{self.EXCHANGE_NAME} CREATE ORDER ERROR\nAPI RESPONSE: {content}")
-                # resp = self.session.post(url=self.BASE_URL + path, json=params)
-                # response = resp.json()
-                print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
-                # print(f"ORDER PLACING TIME: {time.time() - time_start}")
-                # self.aver_time.append(time.time() - time_start)
-                # self.aver_time_response.append(response['timestamp'] - time_start)
-                # self.aver_time.append(time.time() - time_start)
-                self.update_order_after_deal(response)
-                status = self.get_order_response_status(response)
-                self.LAST_ORDER_ID = response.get('orderId', 'default')
-                return {'exchange_name': self.EXCHANGE_NAME,
-                        'exchange_order_id': response.get('orderId'),
-                        'timestamp': response.get('timestamp', time.time()),
-                        'status': status}
+        # async with aiohttp.ClientSession() as session:
+        async with self.async_session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
+            try:
+                response = await resp.json()
+            except ContentTypeError as e:
+                content = await resp.text()
+                print(f"{self.EXCHANGE_NAME} CREATE ORDER ERROR\nAPI RESPONSE: {content}")
+            # resp = self.session.post(url=self.BASE_URL + path, json=params)
+            # response = resp.json()
+            print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
+            # print(f"ORDER PLACING TIME: {time.time() - time_start}")
+            # self.aver_time.append(time.time() - time_start)
+            # self.aver_time_response.append(response['timestamp'] - time_start)
+            # self.aver_time.append(time.time() - time_start)
+            self.update_order_after_deal(response)
+            status = self.get_order_response_status(response)
+            self.LAST_ORDER_ID = response.get('orderId', 'default')
+            return {'exchange_name': self.EXCHANGE_NAME,
+                    'exchange_order_id': response.get('orderId'),
+                    'timestamp': response.get('timestamp', time.time()),
+                    'status': status}
             # example_executed = {'orderId': 395248275015, 'clientOrderId': '', 'market': 'BTC_PERP', 'side': 'buy',
             # 'type': 'margin limit',
             #  'timestamp': 1703664697.619855, 'dealMoney': '42.509', 'dealStock': '0.001', 'amount': '0.001',
@@ -823,6 +848,14 @@ class WhiteBitClient(BaseClient):
         if flag and ts_ms - ts_ob < 0.1:
             coin = symbol.split('_')[0]
             await count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
+        elif ts_ms - self.last_keep_alive > 25:
+            self.last_keep_alive = ts_ms
+            self.amount = client.instruments[symbol]['min_size']
+            tick = client.instruments[symbol]['tick_size']
+            self.price = new_ob['top_bid'][0] - (100 * tick)
+            order = await self.create_fast_order(symbol, 'buy')
+            self.LAST_ORDER_ID = 'default'
+            await self.cancel_order(order['exchange_order_id'], self.async_session)
 
     @try_exc_regular
     def cut_extra_orders_from_ob(self, symbol, data):
