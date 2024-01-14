@@ -24,8 +24,10 @@ class WhiteBitClient(BaseClient):
                'User-Agent': 'python-whitebit-sdk',
                'Connection': 'keep-alive'}
 
-    def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20, finder=None, ob_len=5):
+    def __init__(self, multibot=None, keys=None, leverage=None, state='Bot',
+                 markets_list=[], max_pos_part=20, finder=None, ob_len=5):
         super().__init__()
+        self.multibot = multibot
         self.state = state
         self.finder = finder
         self.markets_list = markets_list
@@ -55,8 +57,8 @@ class WhiteBitClient(BaseClient):
         self._loop = asyncio.new_event_loop()
         # self._order_loop = asyncio.new_event_loop()
         self._connected = asyncio.Event()
-        self._wst_ = threading.Thread(target=self._run_ws_forever, args=[self._loop])
-        self._wst_processing_messages = threading.Thread(target=self._process_ws_line)
+        self._wst_ = threading.Thread(target=self._run_ws_forever)
+        # self._wst_processing_messages = threading.Thread(target=self._process_ws_line)
         # self.run_order_loop = threading.Thread(target=self._run_order_loop, args=[self._loop])
         # self.run_order_loop.daemon = True
         # self.run_order_loop.start()
@@ -66,7 +68,7 @@ class WhiteBitClient(BaseClient):
         self.last_price = {}
         # self.own_orders = {}
         self.LAST_ORDER_ID = 'default'
-        self.message_queue = asyncio.Queue(loop=self._loop)
+        # self.message_queue = asyncio.Queue(loop=self._loop)
         self.taker_fee = 0.00035
         self.subs = {}
         self.ob_push_limit = 0.1
@@ -89,7 +91,7 @@ class WhiteBitClient(BaseClient):
                 if not self.side or not self.symbol:
                     await asyncio.sleep(0.001)
                     i += 1
-                    if i == 25000:
+                    if i > 25000:
                         i = 0
                         path = "/api/v4/order/collateral/limit"
                         params = {'market': list(self.markets.values())[0],
@@ -253,7 +255,6 @@ class WhiteBitClient(BaseClient):
         })
         return params
 
-
     @try_exc_regular
     def get_position(self):
         path = "/api/v4/collateral-account/positions/open"
@@ -373,7 +374,6 @@ class WhiteBitClient(BaseClient):
         data += '&'.join(strl)
         return f'?{data}'.replace(' ', '%20')
 
-
     # ### SUPERSONIC FEATURE ###
     # @try_exc_async
     # async def super_sonic_ob_update(self, market, coin, session):
@@ -441,11 +441,13 @@ class WhiteBitClient(BaseClient):
     #                 # count += 1
     #                 # print(f"REAL REQUESTS FREQUENCY DATA:\nTIME: {time.time() - time_start}\nREQUESTS: {count}")
     # ### SUPERSONIC FEATURE ###
-
     @try_exc_regular
-    def _run_ws_forever(self, loop):
+    def _run_ws_forever(self):
         while True:
-            loop.run_until_complete(self._run_ws_loop())
+            self._loop.run_until_complete(self._run_ws_loop(self.update_orders,
+                                                            self.update_orderbook,
+                                                            self.update_balances,
+                                                            self.update_orderbook_snapshot))
 
     @try_exc_regular
     def _process_ws_line(self):
@@ -476,8 +478,8 @@ class WhiteBitClient(BaseClient):
     def run_updater(self):
         self._wst_.daemon = True
         self._wst_.start()
-        self._wst_processing_messages.daemon = True
-        self._wst_processing_messages.start()
+        # self._wst_processing_messages.daemon = True
+        # self._wst_processing_messages.start()
         # self.crazy_treading_func()
         # if self.finder:
         #     self._extra_speed.daemon = True
@@ -496,23 +498,35 @@ class WhiteBitClient(BaseClient):
         return self.balance['total']
 
     @try_exc_async
-    async def _run_ws_loop(self):
-        async with aiohttp.ClientSession() as s:
-            async with s.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
+    async def _run_ws_loop(self, update_orders, update_orderbook, update_balances, update_orderbook_snapshot):
+        async with aiohttp.ClientSession() as self.async_session:
+            async with self.async_session.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
                 self._connected.set()
                 self._ws = ws
                 # await self._loop.create_task(self.subscribe_privates())
                 if self.state == 'Bot':
-                    asyncio.run_coroutine_threadsafe(self.subscribe_privates(), self._loop)
+                    # asyncio.run_coroutine_threadsafe(self.subscribe_privates(), self._loop)
+                    await self._loop.create_task(self.subscribe_privates())
                 for symbol in self.markets_list:
                     if market := self.markets.get(symbol):
-                        asyncio.run_coroutine_threadsafe(self.subscribe_orderbooks(market), self._loop)
+                        # asyncio.run_coroutine_threadsafe(self.subscribe_orderbooks(market), self._loop)
+                        await self._loop.create_task(self.subscribe_orderbooks(market))
                 async for msg in ws:
-                    await self.message_queue.put(msg)
+                    data = json.loads(msg.data)
+                    if data.get('method') == 'depth_update':
+                        # print(data)
+                        if data['params'][0]:
+                            await update_orderbook_snapshot(data)
+                        else:
+                            await update_orderbook(data, self.finder.count_one_coin)
+                    elif data.get('method') == 'balanceMargin_update':
+                        await update_balances(data)
+                    elif data.get('method') in ['ordersExecuted_update', 'ordersPending_update']:
+                        await update_orders(data)
                 await ws.close()
 
-    @try_exc_regular
-    def update_balances(self, data):
+    @try_exc_async
+    async def update_balances(self, data):
         # print('BALANCES', data)
         self.balance = {'timestamp': datetime.utcnow().timestamp(),
                         'total': float(data['params'][0]['B']),
@@ -520,8 +534,8 @@ class WhiteBitClient(BaseClient):
         # example = {'method': 'balanceMargin_update',
         #            'params': [{'a': 'USDT', 'B': '50', 'b': '0', 'av': '41.4684437', 'ab': '41.4684437'}], 'id': None}
 
-    @try_exc_regular
-    def update_orders(self, data):
+    @try_exc_async
+    async def update_orders(self, data):
         # print('ORDERS', data)
         status_id = 0
         for order in data['params']:
@@ -655,36 +669,39 @@ class WhiteBitClient(BaseClient):
         #      'marketName': 'BTC_PERP'}]}}
 
     @try_exc_async
-    async def create_order(self, symbol, side, session=None, expire=10000, client_id=None):
-        time_start = time.time()
+    async def create_order(self, symbol, side, expire=10000, client_id=None):
+        # time_start = time.time()
         path = "/api/v4/order/collateral/limit"
         params = {"market": symbol,
                   "side": side,
                   "amount": self.amount,
                   "price": self.price}
-        print(f"{self.EXCHANGE_NAME} SENDING ORDER: {params}")
+        # print(f"{self.EXCHANGE_NAME} SENDING ORDER: {params}")
         # if client_id:
         #     params['clientOrderId'] = client_id
         params = self.get_auth_for_request(params, path)
         path += self._create_uri(params)
-        async with session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
-            try:
-                response = await resp.json()
-            except ContentTypeError as e:
-                content = await resp.text()
-                print(f"{self.EXCHANGE_NAME} CREATE ORDER ERROR\nAPI RESPONSE: {content}")
-            # resp = self.session.post(url=self.BASE_URL + path, json=params)
-            # response = resp.json()
-            print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
-            print(f"ORDER PLACING TIME: {time.time() - time_start}")
-            # self.aver_time.append(time.time() - time_start)
-            self.update_order_after_deal(response)
-            status = self.get_order_response_status(response)
-            self.LAST_ORDER_ID = response.get('orderId', 'default')
-            return {'exchange_name': self.EXCHANGE_NAME,
-                    'exchange_order_id': response.get('orderId'),
-                    'timestamp': response.get('timestamp', time.time()),
-                    'status': status}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
+                try:
+                    response = await resp.json()
+                except ContentTypeError as e:
+                    content = await resp.text()
+                    print(f"{self.EXCHANGE_NAME} CREATE ORDER ERROR\nAPI RESPONSE: {content}")
+                # resp = self.session.post(url=self.BASE_URL + path, json=params)
+                # response = resp.json()
+                print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
+                # print(f"ORDER PLACING TIME: {time.time() - time_start}")
+                # self.aver_time.append(time.time() - time_start)
+                # self.aver_time_response.append(response['timestamp'] - time_start)
+                # self.aver_time.append(time.time() - time_start)
+                self.update_order_after_deal(response)
+                status = self.get_order_response_status(response)
+                self.LAST_ORDER_ID = response.get('orderId', 'default')
+                return {'exchange_name': self.EXCHANGE_NAME,
+                        'exchange_order_id': response.get('orderId'),
+                        'timestamp': response.get('timestamp', time.time()),
+                        'status': status}
             # example_executed = {'orderId': 395248275015, 'clientOrderId': '', 'market': 'BTC_PERP', 'side': 'buy',
             # 'type': 'margin limit',
             #  'timestamp': 1703664697.619855, 'dealMoney': '42.509', 'dealStock': '0.001', 'amount': '0.001',
@@ -763,8 +780,8 @@ class WhiteBitClient(BaseClient):
                     'ts_exchange': orderbook['timestamp']}})
         return tops
 
-    @try_exc_regular
-    def update_orderbook(self, data):
+    @try_exc_async
+    async def update_orderbook(self, data, count_one_coin):
         flag = False
         symbol = data['params'][2]
         new_ob = self.orderbook[symbol].copy()
@@ -804,10 +821,8 @@ class WhiteBitClient(BaseClient):
         if new_ob['top_ask'][0] <= new_ob['top_bid'][0]:
             self.cut_extra_orders_from_ob(symbol, data)
         if flag and ts_ms - ts_ob < 0.1:
-            if self.finder:
-                coin = symbol.split('_')[0]
-                self.finder.coins_to_check.add(coin)
-                self.finder.update = True
+            coin = symbol.split('_')[0]
+            await count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
 
     @try_exc_regular
     def cut_extra_orders_from_ob(self, symbol, data):
@@ -840,8 +855,8 @@ class WhiteBitClient(BaseClient):
                                            'top_bid': top_bid,
                                            'top_bid_timestamp': data['params'][1]['timestamp']})
 
-    @try_exc_regular
-    def update_orderbook_snapshot(self, data):
+    @try_exc_async
+    async def update_orderbook_snapshot(self, data):
         symbol = data['params'][2]
         ob = data['params'][1]
         if ob.get('asks') and ob.get('bids'):
@@ -891,7 +906,7 @@ if __name__ == '__main__':
     client = WhiteBitClient(keys=config['WHITEBIT'],
                             leverage=float(config['SETTINGS']['LEVERAGE']),
                             max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
-                            markets_list=['ETH'])
+                            markets_list=['EOS'])
 
 
     async def test_order():
@@ -908,18 +923,18 @@ if __name__ == '__main__':
             # print(data)
 
             # time_start = time.time()
-            ob = client.get_orderbook('ETH_PERP')
-            client.amount = client.instruments['ETH_PERP']['min_size']
+            ob = client.get_orderbook('EOS_PERP')
+            client.amount = client.instruments['EOS_PERP']['min_size']
             # print(ob)
-            client.price = ob['bids'][4][0]
+            client.price = ob['bids'][4][0] - (client.instruments['EOS_PERP']['tick_size'] * 100)
 
-            data = await client.create_order('ETH_PERP', 'sell', session)
-            print(client.orders)
+            await client.create_order('EOS_PERP', 'buy', session)
+            # print(client.orders)
             # print(f"ALL TIME: {time.time() - time_start} sec")
             # print(data)
             # await client.create_order('ETH_PERP', 'buy', session)
             # print('CREATE_ORDER OUTPUT:', data)
-            print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('ETH_PERP', data['exchange_order_id']))
+            # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('EOS_PERP', data['exchange_order_id']))
             # print(f"OWN ORDERS VARIABLE: {client.own_orders}")
 
             time.sleep(1)
@@ -946,12 +961,23 @@ if __name__ == '__main__':
 
     # client.get_position()
     # print(len(client.get_markets()))
-    client.aver_time = []
-    time.sleep(1)
-    asyncio.run(test_order())
-
+    # client.aver_time = []
+    # client.aver_time_response = []
     while True:
-        time.sleep(10)
+        time.sleep(1)
+        print(client.get_orderbook('EOS_PERP'))
+        # asyncio.run(test_order())
+        # print(f"Repeats (1 sec each): {len(client.aver_time)}")
+        # print('OWN')
+        # print(f"Min order create time: {min(client.aver_time)} sec")
+        # print(f"Max order create time: {max(client.aver_time)} sec")
+        # print(f"Aver. order create time: {sum(client.aver_time) / len(client.aver_time)} sec")
+        # print('RESPONSE')
+        # print(f"Min order create time: {min(client.aver_time_response)} sec")
+        # print(f"Max order create time: {max(client.aver_time_response)} sec")
+        # print(f"Aver. order create time: {sum(client.aver_time_response) / len(client.aver_time_response)} sec")
+        # print()
+
         # for order_id in client.own_orders.keys():
         #     print(client.get_order_by_id('asdf', order_id))
         #     print()
@@ -970,7 +996,6 @@ if __name__ == '__main__':
         #     print(ob)
         #     print()
         # print(client.get_all_tops())
-        # print(f"Aver. order create time: {sum(client.aver_time) / len(client.aver_time)} sec")
 
         # print(client.markets)
         # for market in client.markets.values():

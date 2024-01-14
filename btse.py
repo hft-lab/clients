@@ -32,8 +32,10 @@ class BtseClient(BaseClient):
                       16: 'Order Not Found',
                       17: 'Request failed'}
 
-    def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20, finder=None, ob_len=4):
+    def __init__(self, multibot=None, keys=None, leverage=None, state='Bot', markets_list=[],
+                 max_pos_part=20, finder=None, ob_len=4):
         super().__init__()
+        self.multibot = multibot
         self.state = state
         self.finder = finder
         self.max_pos_part = max_pos_part
@@ -55,10 +57,10 @@ class BtseClient(BaseClient):
         self.error_info = None
         self._connected = asyncio.Event()
         self._loop = asyncio.new_event_loop()
-        self.wst_public = threading.Thread(target=self._run_ws_forever, args=['public'])
-        self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
-        if self.state == 'Bot':
-            self.wst_private = threading.Thread(target=self._run_ws_forever, args=['private'])
+        self.wst_public = threading.Thread(target=self._run_ws_forever)
+        # self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
+        # if self.state == 'Bot':
+        #     self.wst_private = threading.Thread(target=self._run_ws_forever)
         self.price = 0
         self.amount = 0
         self.requestLimit = 1200
@@ -67,7 +69,7 @@ class BtseClient(BaseClient):
         self.last_price = {}
         self.taker_fee = 0.0005
         self.orig_sizes = {}
-        self.message_queue = asyncio.Queue(loop=self._loop)
+        # self.message_queue = asyncio.Queue(loop=self._loop)
         self.LAST_ORDER_ID = 'default'
         self.ob_push_limit = None
 
@@ -116,11 +118,20 @@ class BtseClient(BaseClient):
         return tops
 
     @try_exc_regular
-    def _run_ws_forever(self, ws_type):
-        if ws_type == 'public':
-            self._loop.run_until_complete(self._run_ws_loop(ws_type))
-        else:
-            asyncio.run_coroutine_threadsafe(self._run_ws_loop(ws_type), self._loop)
+    def _run_ws_forever(self):
+        self._loop.run_until_complete(self._run_ws_loop('public',
+                                                        self.update_orderbook_snapshot,
+                                                        self.update_orderbook,
+                                                        self.update_positions,
+                                                        self.update_fills))
+        if self.state == 'Bot':
+            asyncio.run_coroutine_threadsafe(self._run_ws_loop('private',
+                                                               self.update_orderbook_snapshot,
+                                                               self.update_orderbook,
+                                                               self.update_positions,
+                                                               self.update_fills
+                                                               ),
+                                             self._loop)
             # self._loop.create_task(self._run_ws_loop(ws_type))
 
     @try_exc_regular
@@ -223,8 +234,8 @@ class BtseClient(BaseClient):
         self.price = round(rounded_price, price_precision)
 
     @try_exc_async
-    async def create_order(self, symbol, side, session=None, expire=10000, client_id=None, expiration=None):
-        time_start = time.time()
+    async def create_order(self, symbol, side, expire=10000, client_id=None, expiration=None):
+        # time_start = time.time()
         path = '/api/v2.1/order'
         contract_value = self.instruments[symbol]['contract_value']
         body = {"symbol": symbol,
@@ -232,14 +243,18 @@ class BtseClient(BaseClient):
                 "price": self.price,
                 "type": "LIMIT",
                 'size': int(self.amount / contract_value)}
-        print(f"{self.EXCHANGE_NAME} SENDING ORDER: {body}")
+        # print(f"{self.EXCHANGE_NAME} SENDING ORDER: {body}")
         self.get_private_headers(path, body)
-        async with session.post(url=self.BASE_URL + path, headers=self.session.headers, json=body) as resp:
-            res = await resp.json()
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url=self.BASE_URL + path, headers=self.session.headers, json=body) as resp:
+                res = await resp.json()
         # resp = self.session.post(url=self.BASE_URL + path, json=body)
         # res = resp.json()
             print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {res}")
-            print(f"ORDER PLACING TIME: {time.time() - time_start}")
+            # self.aver_time.append(time.time() - time_start)
+            # self.aver_time_response.append((res[0]['timestamp'] / 1000) - time_start)
+
+            # print(f"ORDER PLACING TIME: {time.time() - time_start}")
             # self.aver_time.append(time.time() - time_start)
             if len(res):
                 status = self.get_order_response_status(res)
@@ -334,27 +349,35 @@ class BtseClient(BaseClient):
             balance=self.balance)
 
     @try_exc_async
-    async def _run_ws_loop(self, ws_type):
+    async def _run_ws_loop(self, ws_type, update_orderbook_snapshot, update_orderbook, update_positions, update_fills):
         async with aiohttp.ClientSession() as s:
             if ws_type == 'private':
                 endpoint = self.PRIVATE_WS_ENDPOINT
             else:
                 endpoint = self.PUBLIC_WS_ENDPOINT
+                self.async_session = s
             async with s.ws_connect(endpoint) as ws:
                 print(f"BTSE: connected {ws_type}")
                 self._connected.set()
                 if ws_type == 'private':
                     self._ws_private = ws
-                    # await self._loop.create_task(self.subscribe_privates())
-                    asyncio.run_coroutine_threadsafe(self.subscribe_privates(), self._loop)
-
+                    await self._loop.create_task(self.subscribe_privates())
+                    # asyncio.run_coroutine_threadsafe(self.subscribe_privates(), self._loop)
                 else:
                     self._ws_public = ws
-                    # await self._loop.create_task(self.subscribe_orderbooks())
-                    asyncio.run_coroutine_threadsafe(self.subscribe_orderbooks(), self._loop)
-
+                    await self._loop.create_task(self.subscribe_orderbooks())
+                    # asyncio.run_coroutine_threadsafe(self.subscribe_orderbooks(), self._loop)
                 async for msg in ws:
-                    await self.message_queue.put(msg)
+                    data = json.loads(msg.data)
+                    if 'update' in data.get('topic', ''):
+                        if data.get('data') and data['data']['type'] == 'snapshot':
+                            await update_orderbook_snapshot(data)
+                        elif data.get('data') and data['data']['type'] == 'delta':
+                            await update_orderbook(data, self.finder.count_one_coin)
+                        elif data.get('topic') == 'allPosition':
+                            await update_positions(data)
+                        elif data.get('topic') == 'fills':
+                            await update_fills(data)
             await ws.close()
 
     @try_exc_async
@@ -384,18 +407,16 @@ class BtseClient(BaseClient):
                 elif data.get('data') and data['data']['type'] == 'delta':
                     self.update_orderbook(data)
             elif self.state == 'Bot':
-                self.update_private_data(data)
+                if data.get('topic') == 'allPosition':
+                    self.update_positions(data)
+                elif data.get('topic') == 'fills':
+                    self.update_fills(data)
             self.message_queue.task_done()
             # if self.message_queue.qsize() > 100:
             #     message = f'ALERT! {self.EXCHANGE_NAME} WS LINE LENGTH: {self.message_queue.qsize()}'
             #     self.telegram_bot.send_message(message, self.alert_id)
-
-    @try_exc_regular
-    def update_private_data(self, data):
-        if data.get('topic') == 'allPosition':
-            self.update_positions(data)
-        elif data.get('topic') == 'fills':
-            self.update_fills(data)
+    # @try_exc_regular
+    # def update_private_data(self, data):
 
     @try_exc_regular
     def get_order_status_by_fill(self, order_id, size):
@@ -405,8 +426,8 @@ class BtseClient(BaseClient):
         else:
             return OrderStatus.PARTIALLY_EXECUTED
 
-    @try_exc_regular
-    def update_fills(self, data):
+    @try_exc_async
+    async def update_fills(self, data):
         for fill in data['data']:
             self.last_price.update({fill['side'].lower(): float(fill['price'])})
             order_id = fill['orderId']
@@ -438,8 +459,8 @@ class BtseClient(BaseClient):
         #      'feeCurrency': 'USDT', 'base': 'ETHPFC', 'quote': 'USD', 'maker': False, 'timestamp': 1703580743141,
         #      'tradeId': 'd6201931-446d-4a1c-ab83-e3ebdcf2f077'}]}
 
-    @try_exc_regular
-    def update_positions(self, data):
+    @try_exc_async
+    async def update_positions(self, data):
         for pos in data['data']:
             market = pos['marketName'].split('-')[0]
             contract_value = self.instruments[market]['contract_value']
@@ -517,8 +538,8 @@ class BtseClient(BaseClient):
         await self._ws_private.send_json(method_pos)
         await self._ws_private.send_json(method_fills)
 
-    @try_exc_regular
-    def update_orderbook(self, data):
+    @try_exc_async
+    async def update_orderbook(self, data, count_one_coin):
         flag = False
         symbol = data['data']['symbol']
         new_ob = self.orderbook[symbol].copy()
@@ -557,12 +578,10 @@ class BtseClient(BaseClient):
         self.orderbook[symbol] = new_ob
         if flag and ts_ms - ts_ob < 0.1:
             coin = symbol.split('PFC')[0]
-            if self.finder:
-                self.finder.coins_to_check.add(coin)
-                self.finder.update = True
+            await count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
 
-    @try_exc_regular
-    def update_orderbook_snapshot(self, data):
+    @try_exc_async
+    async def update_orderbook_snapshot(self, data):
         symbol = data['data']['symbol']
         self.orderbook[symbol] = {'asks': {x[0]: x[1] for x in data['data']['asks']},
                                   'bids': {x[0]: x[1] for x in data['data']['bids']},
@@ -618,11 +637,11 @@ class BtseClient(BaseClient):
     def run_updater(self):
         self.wst_public.daemon = True
         self.wst_public.start()
-        self._wst_orderbooks.daemon = True
-        self._wst_orderbooks.start()
-        if self.state == 'Bot':
-            self.wst_private.daemon = True
-            self.wst_private.start()
+        # self._wst_orderbooks.daemon = True
+        # self._wst_orderbooks.start()
+        # if self.state == 'Bot':
+        #     self.wst_private.daemon = True
+        #     self.wst_private.start()
 
     @try_exc_regular
     def get_fills(self, symbol: str, order_id: str):
@@ -647,30 +666,46 @@ if __name__ == '__main__':
     client = BtseClient(keys=config['BTSE'],
                         leverage=float(config['SETTINGS']['LEVERAGE']),
                         max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
-                        markets_list=['BTC'])
+                        markets_list=['MANA'])
 
 
-    # async def test_order():
-    #     async with aiohttp.ClientSession() as session:
-    #         ob = await client.get_orderbook_by_symbol('ETHPFC')
-    #         price = ob['bids'][8][0]
-    #         loop = asyncio.get_event_loop()
-    #         client.amount = client.instruments['ETHPFC']['min_size']
-    #         tick = client.instruments['ETHPFC']['tick_size']
-    #         # client.price = price
-    #         # await client.create_order('ETHPFC', 'buy', session)
-    #         # print('CREATE_ORDER OUTPUT:', data)
-    #         tasks = []
-    #         time_start = time.time()
-    #         for price in ob['bids'][3:6]:
-    #             client.price = price[0] - tick
-    #             tasks.append(loop.create_task(client.create_order('ETHPFC', 'buy', session)))
-    #         data = await asyncio.gather(*tasks)
-    #         print(f"ALL TIME: {time.time() - time_start} sec")
-    #         print(data)
-    #         # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
-    #         time.sleep(1)
-    #         client.cancel_all_orders()
+    async def test_order():
+        async with aiohttp.ClientSession() as session:
+            client.aver_time = []
+            client.aver_time_response = []
+            while True:
+                # time.sleep(1)
+                ob = client.get_orderbook('MANAPFC')
+                # loop = asyncio.get_event_loop()
+                client.amount = client.instruments['MANAPFC']['min_size']
+                tick = client.instruments['MANAPFC']['tick_size']
+                client.price = ob['bids'][2][0] - (100 * tick)
+
+                # client.price = price
+                # await client.create_order('MANAPFC', 'buy', session)
+                # print('CREATE_ORDER OUTPUT:', data)
+                await client.create_order('MANAPFC', 'buy', session)
+            # tasks = []
+            # time_start = time.time()
+            # for price in ob['bids'][3:6]:
+            #     client.price = price[0] - tick
+            #     tasks.append(loop.create_task())
+            # data = await asyncio.gather(*tasks)
+            # print(f"ALL TIME: {time.time() - time_start} sec")
+            # print(data)
+            # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
+                time.sleep(1)
+                client.cancel_all_orders()
+                print(f"Repeats (1 sec each): {len(client.aver_time)}")
+                print('OWN')
+                print(f"Min order create time: {min(client.aver_time)} sec")
+                print(f"Max order create time: {max(client.aver_time)} sec")
+                print(f"Aver. order create time: {sum(client.aver_time) / len(client.aver_time)} sec")
+                print('RESPONSE')
+                print(f"Min order create time: {min(client.aver_time_response)} sec")
+                print(f"Max order create time: {max(client.aver_time_response)} sec")
+                print(f"Aver. order create time: {sum(client.aver_time_response) / len(client.aver_time_response)} sec")
+                print()
             # time.sleep(1)
             #
             # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
@@ -683,12 +718,25 @@ if __name__ == '__main__':
     # # client.get_real_balance()
     # print(client.get_positions())
     # time.sleep(2)
-    # asyncio.run(test_order())
+    asyncio.run(test_order())
     # client.get_position()
-    client.aver_time = []
+
     while True:
-        time.sleep(5)
-        client.get_fills('LTCPFC', '539ff78f-b341-45d3-886c-7b6042248f8c')
+        time.sleep(1)
+        # print(client.get_orderbook('MANAPFC'))
+        # print(client.get_positions())
+
+        # asyncio.run(test_order())
+        # print(f"Repeats (1 sec each): {len(client.aver_time)}")
+        # print('OWN')
+        # print(f"Min order create time: {min(client.aver_time)} sec")
+        # print(f"Max order create time: {max(client.aver_time)} sec")
+        # print(f"Aver. order create time: {sum(client.aver_time) / len(client.aver_time)} sec")
+        # print('RESPONSE')
+        # print(f"Min order create time: {min(client.aver_time_response)} sec")
+        # print(f"Max order create time: {max(client.aver_time_response)} sec")
+        # print(f"Aver. order create time: {sum(client.aver_time_response) / len(client.aver_time_response)} sec")
+        # print()
         # for market in client.markets.values():
         # print(client.get_orderbook('BTCPFC'))
         # print()
