@@ -715,7 +715,8 @@ class WhiteBitClient(BaseClient):
                 print(f"{self.EXCHANGE_NAME} CREATE ORDER ERROR\nAPI RESPONSE: {content}")
             # resp = self.session.post(url=self.BASE_URL + path, json=params)
             # response = resp.json()
-            print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
+            # print(resp.headers)
+            # print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
             # print(f"ORDER PLACING TIME: {time.time() - time_start}")
             # self.aver_time.append(time.time() - time_start)
             # self.aver_time_response.append(response['timestamp'] - time_start)
@@ -845,7 +846,7 @@ class WhiteBitClient(BaseClient):
         self.orderbook[symbol] = new_ob
         if new_ob['top_ask'][0] <= new_ob['top_bid'][0]:
             self.cut_extra_orders_from_ob(symbol, data)
-        if flag and ts_ms - ts_ob < 0.025:  # and self.finder:
+        if flag and ts_ms - ts_ob < 0.035:  # and self.finder:
             coin = symbol.split('_')[0]
             await self.finder.count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
         elif ts_ms - self.last_keep_alive > 25:
