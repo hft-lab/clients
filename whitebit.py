@@ -845,7 +845,7 @@ class WhiteBitClient(BaseClient):
         self.orderbook[symbol] = new_ob
         if new_ob['top_ask'][0] <= new_ob['top_bid'][0]:
             self.cut_extra_orders_from_ob(symbol, data)
-        if flag and ts_ms - ts_ob < 0.1:  # and self.finder:
+        if flag and ts_ms - ts_ob < 0.025:  # and self.finder:
             coin = symbol.split('_')[0]
             await self.finder.count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
         elif ts_ms - self.last_keep_alive > 25:
@@ -999,7 +999,7 @@ if __name__ == '__main__':
     # client.aver_time_response = []
     while True:
         time.sleep(1)
-        print(client.get_orderbook('EOS_PERP'))
+        # print(client.get_orderbook('EOS_PERP'))
         # asyncio.run(test_order())
         # print(f"Repeats (1 sec each): {len(client.aver_time)}")
         # print('OWN')

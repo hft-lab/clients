@@ -393,9 +393,11 @@ class BtseClient(BaseClient):
                 async for msg in ws:
                     data = json.loads(msg.data)
                     if 'update' in data.get('topic', ''):
+
                         if data.get('data') and data['data']['type'] == 'snapshot':
                             await update_orderbook_snapshot(data)
-                        elif data.get('data') and data['data']['type'] == 'delta':
+                        if data.get('data') and data['data']['type'] == 'delta':
+                            # print(time.time() - data['data']['timestamp'] / 1000)
                             await update_orderbook(data)
                         elif data.get('topic') == 'allPosition':
                             await update_positions(data)
@@ -599,7 +601,7 @@ class BtseClient(BaseClient):
             elif new_ask[1] != '0':
                 new_ob['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol] = new_ob
-        if flag and ts_ms - ts_ob < 0.1:  # and self.finder:
+        if flag and ts_ms - ts_ob < 0.03:  # and self.finder:
             coin = symbol.split('PFC')[0]
             await self.finder.count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
         elif ts_ms - self.last_keep_alive > 25:
@@ -751,8 +753,8 @@ if __name__ == '__main__':
     # time.sleep(1)
     # # client.get_real_balance()
     # print(client.get_positions())
-    time.sleep(2)
-    asyncio.run(test_order())
+    # time.sleep(2)
+    # asyncio.run(test_order())
     # client.get_position()
 
     while True:
