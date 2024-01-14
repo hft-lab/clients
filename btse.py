@@ -606,7 +606,7 @@ class BtseClient(BaseClient):
             self.last_keep_alive = ts_ms
             self.amount = self.instruments[symbol]['min_size']
             tick = self.instruments[symbol]['tick_size']
-            self.price = new_ob['top_bid'][0] - (100 * tick)
+            self.fit_sizes(self, new_ob['top_bid'][0] - (100 * tick), symbol)
             order = await self.create_fast_order(symbol, 'buy')
             self.LAST_ORDER_ID = 'default'
             await self.cancel_order(symbol, order['exchange_order_id'], self.async_session)
