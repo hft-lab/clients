@@ -84,8 +84,8 @@ class BtseClient(BaseClient):
 
         # self.market_to_check = {}
 
-    @try_exc_async
-    async def deals_thread_func(self):
+    @try_exc_regular
+    def deals_thread_func(self):
         while True:
             self._order_loop.run_until_complete(self._run_order_loop())
             # await self.cancel_all_tasks(self._order_loop)
