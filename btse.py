@@ -65,11 +65,10 @@ class BtseClient(BaseClient):
         #     self.wst_private = threading.Thread(target=self._run_ws_forever)
         self.price = 0
         self.amount = 0
-        self.requestLimit = 1200
         self.orderbook = {}
         self.orders = {}
         self.last_price = {}
-        self.taker_fee = 0.0005
+        self.taker_fee = float(keys['TAKER_FEE'])
         self.orig_sizes = {}
         # self.message_queue = asyncio.Queue(loop=self._loop)
         self.LAST_ORDER_ID = 'default'

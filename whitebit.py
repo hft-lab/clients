@@ -58,10 +58,9 @@ class WhiteBitClient(BaseClient):
         self._wst_ = threading.Thread(target=self._run_ws_forever)
         self._order_loop = asyncio.new_event_loop()
         self.orders_thread = threading.Thread(target=self.deals_thread_func)
-        self.requestLimit = 600
         self.last_price = {}
         self.LAST_ORDER_ID = 'default'
-        self.taker_fee = 0.00035
+        self.taker_fee = float(keys['TAKER_FEE'])
         self.subs = {}
         self.ob_push_limit = 0.1
         self.last_keep_alive = 0

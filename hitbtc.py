@@ -22,9 +22,8 @@ class HitbtcClient:
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=[self._loop_public])
         self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
         self.message_queue = asyncio.Queue(loop=self._loop_public)
-        self.requestLimit = 1200
         self.orderbook = {}
-        self.taker_fee = 0.0007
+        self.taker_fee = float(keys['TAKER_FEE'])
 
     # @try_exc_regular
     def _process_ws_line(self):

@@ -27,11 +27,11 @@ class TapbitClient:
         self.wst_public = threading.Thread(target=self._run_ws_forever, args=[self._loop_public])
         self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
         self.message_queue = asyncio.Queue(loop=self._loop_public)
-        self.requestLimit = 1200
         self.getting_ob = asyncio.Event()
         self.now_getting = ''
         self.orderbook = {}
-        self.taker_fee = 0.0006
+        self.taker_fee = float(keys['TAKER_FEE'])
+
 
     @try_exc_regular
     def get_markets(self):
