@@ -647,6 +647,7 @@ class BtseClient(BaseClient):
                 new_ob['top_bid'] = [float(new_bid[0]), float(new_bid[1])]
                 new_ob['top_bid_timestamp'] = data['data']['timestamp']
                 flag = True
+                side = 'sell'
             if new_ob['bids'].get(new_bid[0]) and new_bid[1] == '0':
                 del new_ob['bids'][new_bid[0]]
                 if float(new_bid[0]) == new_ob['top_bid'][0] and len(new_ob['bids']):
@@ -660,6 +661,7 @@ class BtseClient(BaseClient):
                 new_ob['top_ask'] = [float(new_ask[0]), float(new_ask[1])]
                 new_ob['top_ask_timestamp'] = data['data']['timestamp']
                 flag = True
+                side = 'buy'
             if new_ob['asks'].get(new_ask[0]) and new_ask[1] == '0':
                 del new_ob['asks'][new_ask[0]]
                 if float(new_ask[0]) == new_ob['top_ask'][0] and len(new_ob['asks']):
@@ -672,9 +674,9 @@ class BtseClient(BaseClient):
         if flag and ts_ms - ts_ob < 0.035:
             coin = symbol.split('PFC')[0]
             if self.state == 'Bot':
-                await self.finder.count_one_coin(coin, self.multibot.run_arbitrage)
+                await self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side, self.multibot.run_arbitrage)
             else:
-                await self.finder.count_one_coin(coin)
+                await self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side)
         # elif ts_ms - self.last_keep_alive > 15:
         #     self.last_keep_alive = ts_ms
         #     self.amount = self.instruments[symbol]['min_size']
