@@ -80,6 +80,7 @@ class BtseClient(BaseClient):
         self.response = None
         self.side = 'buy'
         self.symbol = None
+        self.last_symbol = None
 
         # self.market_to_check = {}
 
@@ -116,14 +117,13 @@ class BtseClient(BaseClient):
                     ts_ms = time.time()
                     if ts_ms - self.last_keep_alive > 15:
                         self.last_keep_alive = ts_ms
-                        symbol = list(self.markets.values())[randint(0, len(self.markets))]
-                        self.amount = self.instruments[symbol]['min_size']
-                        self.fit_sizes(self.orderbook[symbol]['top_bid'][0] * 0.9, symbol)
+                        self.amount = self.instruments[self.last_symbol]['min_size']
+                        self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] * 0.9, self.last_symbol)
                         self.side = 'buy'
-                        order = await self.create_fast_order(symbol, self.side)
+                        order = await self.create_fast_order(self.last_symbol, self.side)
                         print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
                         self.LAST_ORDER_ID = 'default'
-                        await self.cancel_order(symbol, order['exchange_order_id'], self.async_session)
+                        await self.cancel_order(self.last_symbol, order['exchange_order_id'], self.async_session)
                 await asyncio.sleep(0.0001)
 
     @staticmethod
@@ -624,6 +624,7 @@ class BtseClient(BaseClient):
     async def update_orderbook(self, data):
         flag = False
         symbol = data['data']['symbol']
+        self.last_symbol = symbol
         new_ob = self.orderbook[symbol].copy()
         ts_ms = time.time()
         new_ob['ts_ms'] = ts_ms
@@ -659,7 +660,7 @@ class BtseClient(BaseClient):
             elif new_ask[1] != '0':
                 new_ob['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol] = new_ob
-        if flag and ts_ms - ts_ob < 0.035:  # and self.finder:
+        if flag and ts_ms - ts_ob < 0.035 and self.finder:
             coin = symbol.split('PFC')[0]
             await self.finder.count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
         # elif ts_ms - self.last_keep_alive > 15:
@@ -732,8 +733,9 @@ class BtseClient(BaseClient):
         while set(self.orderbook) < set([self.markets[x] for x in self.markets_list if self.markets.get(x)]):
             # print(f'{self.EXCHANGE_NAME} waiting for full ob')
             time.sleep(0.1)
-        self.orders_thread.daemon = True
-        self.orders_thread.start()
+        if self.state == 'Bot':
+            self.orders_thread.daemon = True
+            self.orders_thread.start()
         # self._wst_orderbooks.daemon = True
         # self._wst_orderbooks.start()
         # if self.state == 'Bot':
