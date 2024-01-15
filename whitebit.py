@@ -460,31 +460,31 @@ class WhiteBitClient(BaseClient):
                                                             self.update_orderbook_snapshot))
             # await self.cancel_all_tasks(self._loop)
             # self._loop.stop()
-
-    @try_exc_regular
-    def _process_ws_line(self):
-        asyncio.run_coroutine_threadsafe(self.process_messages(), self._loop)
-
-    @try_exc_async
-    async def process_messages(self):
-        while True:
-            msg = await self.message_queue.get()
-            data = json.loads(msg.data)
-            if data.get('method') == 'depth_update':
-                # print(data)
-                if data['params'][0]:
-                    self.update_orderbook_snapshot(data)
-                else:
-                    self.update_orderbook(data)
-            if self.state == 'Bot':
-                if data.get('method') == 'balanceMargin_update':
-                    self.update_balances(data)
-                elif data.get('method') in ['ordersExecuted_update', 'ordersPending_update']:
-                    self.update_orders(data)
-            self.message_queue.task_done()
-            # if self.message_queue.qsize() > 100:
-            #     message = f'ALERT! {self.EXCHANGE_NAME} WS LINE LENGTH: {self.message_queue.qsize()}'
-            #     self.telegram_bot.send_message(message, self.alert_id)
+    #
+    # @try_exc_regular
+    # def _process_ws_line(self):
+    #     asyncio.run_coroutine_threadsafe(self.process_messages(), self._loop)
+    #
+    # @try_exc_async
+    # async def process_messages(self):
+    #     while True:
+    #         msg = await self.message_queue.get()
+    #         data = json.loads(msg.data)
+    #         if data.get('method') == 'depth_update':
+    #             # print(data)
+    #             if data['params'][0]:
+    #                 self.update_orderbook_snapshot(data)
+    #             else:
+    #                 self.update_orderbook(data)
+    #         if self.state == 'Bot':
+    #             if data.get('method') == 'balanceMargin_update':
+    #                 self.update_balances(data)
+    #             elif data.get('method') in ['ordersExecuted_update', 'ordersPending_update']:
+    #                 self.update_orders(data)
+    #         self.message_queue.task_done()
+    #         # if self.message_queue.qsize() > 100:
+    #         #     message = f'ALERT! {self.EXCHANGE_NAME} WS LINE LENGTH: {self.message_queue.qsize()}'
+    #         #     self.telegram_bot.send_message(message, self.alert_id)
 
     @try_exc_regular
     def run_updater(self):
@@ -496,13 +496,14 @@ class WhiteBitClient(BaseClient):
         if self.state == 'Bot':
             self.orders_thread.daemon = True
             self.orders_thread.start()
+            self.first_positions_update()
         # self._wst_processing_messages.daemon = True
         # self._wst_processing_messages.start()
         # self.crazy_treading_func()
         # if self.finder:
         #     self._extra_speed.daemon = True
         #     self._extra_speed.start()
-        self.first_positions_update()
+
 
     @try_exc_regular
     def get_orders(self):
@@ -869,7 +870,10 @@ class WhiteBitClient(BaseClient):
             self.cut_extra_orders_from_ob(symbol, data)
         if flag and ts_ms - ts_ob < 0.035 and self.finder:
             coin = symbol.split('_')[0]
-            await self.finder.count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
+            if self.state == 'Bot':
+                await self.finder.count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
+            else:
+                await self.finder.count_one_coin(coin)
 
     @try_exc_regular
     def cut_extra_orders_from_ob(self, symbol, data):
@@ -940,8 +944,7 @@ class WhiteBitClient(BaseClient):
     def first_positions_update(self):
         while set(self.orderbook.keys()) < set([self.markets[x] for x in self.markets_list if self.markets.get(x)]):
             time.sleep(0.01)
-        print('GOT ALL MARKETS')
-        if self.state == 'Bot':
+            print('WHITEBIT.GOT ALL MARKETS')
             self.get_position()
 
 

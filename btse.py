@@ -474,32 +474,32 @@ class BtseClient(BaseClient):
             resp = await resp.json()
             return resp
 
-    @try_exc_regular
-    def _process_ws_line(self):
-        # self._loop.create_task(self.process_messages())
-        asyncio.run_coroutine_threadsafe(self.process_messages(), self._loop)
-
-    @try_exc_async
-    async def process_messages(self):
-        while True:
-            msg = await self.message_queue.get()
-            data = json.loads(msg.data)
-            if 'update' in data.get('topic', ''):
-                if data.get('data') and data['data']['type'] == 'snapshot':
-                    self.update_orderbook_snapshot(data)
-                elif data.get('data') and data['data']['type'] == 'delta':
-                    self.update_orderbook(data)
-            elif self.state == 'Bot':
-                if data.get('topic') == 'allPosition':
-                    self.update_positions(data)
-                elif data.get('topic') == 'fills':
-                    self.update_fills(data)
-            self.message_queue.task_done()
-            # if self.message_queue.qsize() > 100:
-            #     message = f'ALERT! {self.EXCHANGE_NAME} WS LINE LENGTH: {self.message_queue.qsize()}'
-            #     self.telegram_bot.send_message(message, self.alert_id)
     # @try_exc_regular
-    # def update_private_data(self, data):
+    # def _process_ws_line(self):
+    #     # self._loop.create_task(self.process_messages())
+    #     asyncio.run_coroutine_threadsafe(self.process_messages(), self._loop)
+    #
+    # @try_exc_async
+    # async def process_messages(self):
+    #     while True:
+    #         msg = await self.message_queue.get()
+    #         data = json.loads(msg.data)
+    #         if 'update' in data.get('topic', ''):
+    #             if data.get('data') and data['data']['type'] == 'snapshot':
+    #                 self.update_orderbook_snapshot(data)
+    #             elif data.get('data') and data['data']['type'] == 'delta':
+    #                 self.update_orderbook(data)
+    #         elif self.state == 'Bot':
+    #             if data.get('topic') == 'allPosition':
+    #                 self.update_positions(data)
+    #             elif data.get('topic') == 'fills':
+    #                 self.update_fills(data)
+    #         self.message_queue.task_done()
+    #         # if self.message_queue.qsize() > 100:
+    #         #     message = f'ALERT! {self.EXCHANGE_NAME} WS LINE LENGTH: {self.message_queue.qsize()}'
+    #         #     self.telegram_bot.send_message(message, self.alert_id)
+    # # @try_exc_regular
+    # # def update_private_data(self, data):
 
     @try_exc_regular
     def get_order_status_by_fill(self, order_id, size):
@@ -661,9 +661,12 @@ class BtseClient(BaseClient):
             elif new_ask[1] != '0':
                 new_ob['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol] = new_ob
-        if flag and ts_ms - ts_ob < 0.035 and self.finder:
+        if flag and ts_ms - ts_ob < 0.035:
             coin = symbol.split('PFC')[0]
-            await self.finder.count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
+            if self.state == 'Bot':
+                await self.finder.count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
+            else:
+                await self.finder.count_one_coin(coin)
         # elif ts_ms - self.last_keep_alive > 15:
         #     self.last_keep_alive = ts_ms
         #     self.amount = self.instruments[symbol]['min_size']
