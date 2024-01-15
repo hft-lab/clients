@@ -672,7 +672,7 @@ class BtseClient(BaseClient):
         if flag and ts_ms - ts_ob < 0.035:
             coin = symbol.split('PFC')[0]
             if self.state == 'Bot':
-                await self.finder.count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
+                await self.finder.count_one_coin(coin, self.multibot.run_arbitrage)
             else:
                 await self.finder.count_one_coin(coin)
         # elif ts_ms - self.last_keep_alive > 15:

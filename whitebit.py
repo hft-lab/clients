@@ -867,10 +867,10 @@ class WhiteBitClient(BaseClient):
         self.orderbook[symbol] = new_ob
         if new_ob['top_ask'][0] <= new_ob['top_bid'][0]:
             self.cut_extra_orders_from_ob(symbol, data)
-        if flag and ts_ms - ts_ob < 0.035 and self.finder:
+        if flag and ts_ms - ts_ob < 0.035:
             coin = symbol.split('_')[0]
             if self.state == 'Bot':
-                await self.finder.count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
+                await self.finder.count_one_coin(coin, self.multibot.run_arbitrage)
             else:
                 await self.finder.count_one_coin(coin)
 
