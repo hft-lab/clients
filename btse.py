@@ -79,7 +79,7 @@ class BtseClient(BaseClient):
         self.response = None
         self.side = 'buy'
         self.symbol = None
-        self.last_symbol = self.markets[self.markets_list[0]]
+        self.last_symbol = None
 
         # self.market_to_check = {}
 
@@ -115,6 +115,8 @@ class BtseClient(BaseClient):
                 else:
                     ts_ms = time.time()
                     if ts_ms - self.last_keep_alive > 15:
+                        if not self.last_symbol:
+                            self.last_symbol =  self.markets[self.markets_list[0]]
                         self.last_keep_alive = ts_ms
                         self.amount = self.instruments[self.last_symbol]['min_size']
                         self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] * 0.9, self.last_symbol)
