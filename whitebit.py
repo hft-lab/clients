@@ -43,7 +43,6 @@ class WhiteBitClient(BaseClient):
             self.orders = {}
             self.balance = {}
             self.positions = {}
-            self.get_position()
             self.get_real_balance()
         self.ob_len = ob_len
         self.leverage = leverage
@@ -100,7 +99,7 @@ class WhiteBitClient(BaseClient):
                     self.deal = False
                 else:
                     ts_ms = time.time()
-                    if ts_ms - self.last_keep_alive > 10:
+                    if ts_ms - self.last_keep_alive > 25:
                         if not self.last_symbol:
                             self.last_symbol = self.markets[self.markets_list[0]]
                         self.last_keep_alive = ts_ms
@@ -111,6 +110,7 @@ class WhiteBitClient(BaseClient):
                         print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
                         self.LAST_ORDER_ID = 'default'
                         await self.cancel_order(self.last_symbol, order['exchange_order_id'], self.async_session)
+                        self.get_position()
                 await asyncio.sleep(0.0001)
 
                 # params = {"market": symbol,
