@@ -58,6 +58,8 @@ class BtseClient(BaseClient):
         self._connected = asyncio.Event()
         self._loop = asyncio.new_event_loop()
         self.wst_public = threading.Thread(target=self._run_ws_forever)
+        self._order_loop = asyncio.new_event_loop()
+        self.orders_thread = threading.Thread(target=self.deals_thread_func)
         # self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
         # if self.state == 'Bot':
         #     self.wst_private = threading.Thread(target=self._run_ws_forever)
@@ -73,6 +75,43 @@ class BtseClient(BaseClient):
         self.LAST_ORDER_ID = 'default'
         self.ob_push_limit = None
         self.last_keep_alive = 0
+        self.deal = False
+        self.response = None
+        self.side = 'buy'
+        self.symbol = list(self.markets.values())[0]
+        # self.market_to_check = {}
+
+    @try_exc_regular
+    def deals_thread_func(self):
+        while True:
+            self._order_loop.run_until_complete(self._run_order_loop())
+        # print(f"Thread {market} started")
+
+    @try_exc_async
+    async def _run_order_loop(self):
+        async with aiohttp.ClientSession() as self.async_session:
+            self.async_session.headers.update(self.headers)
+            while True:
+                if self.deal:
+                    print(f"{self.EXCHANGE_NAME} GOT DEAL {time.time()}")
+                    order = await self.create_fast_order(self.symbol, self.side)
+                    self.response = order
+                    self.last_keep_alive = time.time()
+                    self.side = 'buy'
+                    self.deal = False
+                else:
+                    ts_ms = time.time()
+                    if ts_ms - self.last_keep_alive > 15:
+                        self.last_keep_alive = ts_ms
+                        symbol = [x for x in self.orderbook if self.orderbook[x].get('top_bid')][0]
+                        self.amount = self.instruments[symbol]['min_size']
+                        tick = self.instruments[symbol]['tick_size']
+                        self.fit_sizes(self.orderbook[symbol]['top_bid'][0] - (100 * tick), symbol)
+                        order = await self.create_fast_order(symbol, self.side)
+                        print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
+                        self.LAST_ORDER_ID = 'default'
+                        await self.cancel_order(symbol, order['exchange_order_id'], self.async_session)
+                await asyncio.sleep(0.0001)
 
     @staticmethod
     @try_exc_regular
@@ -382,7 +421,7 @@ class BtseClient(BaseClient):
                 endpoint = self.PRIVATE_WS_ENDPOINT
             else:
                 endpoint = self.PUBLIC_WS_ENDPOINT
-                self.async_session = s
+                # self.async_session = s
             async with s.ws_connect(endpoint) as ws:
                 print(f"BTSE: connected {ws_type}")
                 self._connected.set()
@@ -574,6 +613,7 @@ class BtseClient(BaseClient):
         ts_ms = time.time()
         new_ob['ts_ms'] = ts_ms
         ts_ob = data['data']['timestamp']
+        # print(f'{self.EXCHANGE_NAME} {ts_ms - ts_ob / 1000}')
         if isinstance(ts_ob, int):
             ts_ob = ts_ob / 1000
         new_ob['timestamp'] = ts_ob
@@ -607,15 +647,15 @@ class BtseClient(BaseClient):
         if flag and ts_ms - ts_ob < 0.035:  # and self.finder:
             coin = symbol.split('PFC')[0]
             await self.finder.count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
-        elif ts_ms - self.last_keep_alive > 15:
-            self.last_keep_alive = ts_ms
-            self.amount = self.instruments[symbol]['min_size']
-            tick = self.instruments[symbol]['tick_size']
-            self.fit_sizes(new_ob['top_bid'][0] - (50 * tick), symbol)
-            order = await self.create_fast_order(symbol, 'buy')
-            print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
-            self.LAST_ORDER_ID = 'default'
-            await self.cancel_order(symbol, order['exchange_order_id'], self.async_session)
+        # elif ts_ms - self.last_keep_alive > 15:
+        #     self.last_keep_alive = ts_ms
+        #     self.amount = self.instruments[symbol]['min_size']
+        #     tick = self.instruments[symbol]['tick_size']
+        #     self.fit_sizes(new_ob['top_bid'][0] - (50 * tick), symbol)
+        #     order = await self.create_fast_order(symbol, 'buy')
+        #     print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
+        #     self.LAST_ORDER_ID = 'default'
+        #     await self.cancel_order(symbol, order['exchange_order_id'], self.async_session)
 
     @try_exc_async
     async def update_orderbook_snapshot(self, data):
@@ -674,6 +714,11 @@ class BtseClient(BaseClient):
     def run_updater(self):
         self.wst_public.daemon = True
         self.wst_public.start()
+        while set(self.orderbook) < set([self.markets[x] for x in self.markets_list if self.markets.get(x)]):
+            # print(f'{self.EXCHANGE_NAME} waiting for full ob')
+            time.sleep(0.1)
+        self.orders_thread.daemon = True
+        self.orders_thread.start()
         # self._wst_orderbooks.daemon = True
         # self._wst_orderbooks.start()
         # if self.state == 'Bot':

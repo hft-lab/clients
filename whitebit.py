@@ -55,9 +55,10 @@ class WhiteBitClient(BaseClient):
         self.symbol = None
         self.error_info = None
         self._loop = asyncio.new_event_loop()
-        # self._order_loop = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self._wst_ = threading.Thread(target=self._run_ws_forever)
+        self._order_loop = asyncio.new_event_loop()
+        self.orders_thread = threading.Thread(target=self.deals_thread_func)
         # self._wst_processing_messages = threading.Thread(target=self._process_ws_line)
         # self.run_order_loop = threading.Thread(target=self._run_order_loop, args=[self._loop])
         # self.run_order_loop.daemon = True
@@ -73,41 +74,44 @@ class WhiteBitClient(BaseClient):
         self.subs = {}
         self.ob_push_limit = 0.1
         self.last_keep_alive = 0
+        self.deal = False
+        self.response = None
+        self.side = 'buy'
+        self.symbol = list(self.markets.values())[0]
         # self.market_to_check = {}
 
     @try_exc_regular
     def deals_thread_func(self):
-        loop = asyncio.new_event_loop()
-        thread = threading.Thread(target=self._run_order_loop, args=[loop])
-        thread.daemon = True
-        thread.start()
+        while True:
+            self._order_loop.run_until_complete(self._run_order_loop())
         # print(f"Thread {market} started")
 
     @try_exc_async
     async def _run_order_loop(self):
-        async with aiohttp.ClientSession as session:
-            session.headers.update(self.headers)
-            i = 0
+        async with aiohttp.ClientSession() as self.async_session:
+            self.async_session.headers.update(self.headers)
             while True:
-                if not self.side or not self.symbol:
-                    await asyncio.sleep(0.001)
-                    i += 1
-                    if i > 25000:
-                        i = 0
-                        path = "/api/v4/order/collateral/limit"
-                        params = {'market': list(self.markets.values())[0],
-                                  'side': 'buy',
-                                  'amount': self.instruments[list(self.markets.values())[0]]['min_size'],
-                                  'price': self.instruments[list(self.markets.values())[0]]['tick_size']}
-                        params = self.get_auth_for_request(params, path)
-                        path += self._create_uri(params)
-                        async with session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
-                            try:
-                                response = await resp.json()
-                            except ContentTypeError as e:
-                                content = await resp.text()
-                            print(f"{self.EXCHANGE_NAME} CREATE ORDER ERROR\nAPI RESPONSE: {content}")
-                time_start = time.time()
+                if self.deal:
+                    print(f"{self.EXCHANGE_NAME} GOT DEAL {time.time()}")
+                    order = await self.create_fast_order(self.symbol, self.side)
+                    self.response = order
+                    self.last_keep_alive = time.time()
+                    self.side = 'buy'
+                    self.deal = False
+                else:
+                    ts_ms = time.time()
+                    if ts_ms - self.last_keep_alive > 15:
+                        self.last_keep_alive = ts_ms
+                        symbol = [x for x in self.orderbook if self.orderbook[x].get('top_bid')][0]
+                        self.amount = self.instruments[symbol]['min_size']
+                        tick = self.instruments[symbol]['tick_size']
+                        self.fit_sizes(self.orderbook[symbol]['top_bid'][0] - (100 * tick), symbol)
+                        order = await self.create_fast_order(symbol, self.side)
+                        print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
+                        self.LAST_ORDER_ID = 'default'
+                        await self.cancel_order(symbol, order['exchange_order_id'], self.async_session)
+                await asyncio.sleep(0.0001)
+
                 # params = {"market": symbol,
                 #           "side": side,
                 #           "amount": self.amount,
@@ -266,6 +270,9 @@ class WhiteBitClient(BaseClient):
         # print('GET_POSITION RESPONSE', response)
         self.positions = {}
         for pos in response:
+            if isinstance(pos, str):
+                print(f"{self.EXCHANGE_NAME} position update in get_position mistake {response}")
+                continue
             market = pos['market']
             ob = self.get_orderbook(market)
             if not ob:
@@ -479,6 +486,11 @@ class WhiteBitClient(BaseClient):
     def run_updater(self):
         self._wst_.daemon = True
         self._wst_.start()
+        while set(self.orderbook) < set([self.markets[x] for x in self.markets_list if self.markets.get(x)]):
+            # print(f'{self.EXCHANGE_NAME} waiting for full ob')
+            time.sleep(0.01)
+        self.orders_thread.daemon = True
+        self.orders_thread.start()
         # self._wst_processing_messages.daemon = True
         # self._wst_processing_messages.start()
         # self.crazy_treading_func()
@@ -500,8 +512,8 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_async
     async def _run_ws_loop(self, update_orders, update_orderbook, update_balances, update_orderbook_snapshot):
-        async with aiohttp.ClientSession() as self.async_session:
-            async with self.async_session.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(self.PUBLIC_WS_ENDPOINT) as ws:
                 self._connected.set()
                 self._ws = ws
                 # await self._loop.create_task(self.subscribe_privates())
@@ -548,6 +560,7 @@ class WhiteBitClient(BaseClient):
                 side = 'sell' if order['side'] == 1 else 'buy'
                 self.last_price.update({side: factual_price})
                 self.get_position()
+                print(f"WHITEBIT POSITIONS UPDATED")
             else:
                 factual_price = 0
             result = {'exchange_order_id': order['id'],
@@ -716,7 +729,7 @@ class WhiteBitClient(BaseClient):
             # resp = self.session.post(url=self.BASE_URL + path, json=params)
             # response = resp.json()
             # print(resp.headers)
-            # print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
+            print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
             # print(f"ORDER PLACING TIME: {time.time() - time_start}")
             # self.aver_time.append(time.time() - time_start)
             # self.aver_time_response.append(response['timestamp'] - time_start)
@@ -814,6 +827,7 @@ class WhiteBitClient(BaseClient):
         ts_ms = time.time()
         new_ob['ts_ms'] = ts_ms
         ts_ob = data['params'][1]['timestamp']
+        # print(f'{self.EXCHANGE_NAME} {ts_ms - ts_ob}')
         if isinstance(ts_ob, int):
             ts_ob = ts_ob / 1000
         new_ob['timestamp'] = ts_ob
@@ -849,15 +863,6 @@ class WhiteBitClient(BaseClient):
         if flag and ts_ms - ts_ob < 0.035:  # and self.finder:
             coin = symbol.split('_')[0]
             await self.finder.count_one_coin(coin, self.multibot.run_arbitrage, self._loop)
-        elif ts_ms - self.last_keep_alive > 25:
-            self.last_keep_alive = ts_ms
-            self.amount = self.instruments[symbol]['min_size']
-            tick = self.instruments[symbol]['tick_size']
-            self.fit_sizes(new_ob['top_bid'][0] - (50 * tick), symbol)
-            order = await self.create_fast_order(symbol, 'buy')
-            print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
-            self.LAST_ORDER_ID = 'default'
-            await self.cancel_order(symbol, order['exchange_order_id'], self.async_session)
 
     @try_exc_regular
     def cut_extra_orders_from_ob(self, symbol, data):
