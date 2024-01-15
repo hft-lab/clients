@@ -290,11 +290,9 @@ class BtseClient(BaseClient):
             res = await resp.json()
         # resp = self.session.post(url=self.BASE_URL + path, json=body)
         # res = resp.json()
-        #     print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {res}")
+            if self.deal:
+                print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {res}")
         #     print(resp.headers)
-
-
-
             # print(f"ORDER PLACING TIME: {time.time() - time_start}")
             # self.aver_time.append(time.time() - time_start)
             if len(res):

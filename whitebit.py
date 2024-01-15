@@ -729,7 +729,8 @@ class WhiteBitClient(BaseClient):
             # resp = self.session.post(url=self.BASE_URL + path, json=params)
             # response = resp.json()
             # print(resp.headers)
-            print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
+            if self.deal:
+                print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
             # print(f"ORDER PLACING TIME: {time.time() - time_start}")
             # self.aver_time.append(time.time() - time_start)
             # self.aver_time_response.append(response['timestamp'] - time_start)
