@@ -101,9 +101,9 @@ class WhiteBitClient(BaseClient):
                     self.deal = False
                 else:
                     ts_ms = time.time()
-                    if ts_ms - self.last_keep_alive > 10:
+                    if ts_ms - self.last_keep_alive > 15:
                         if not self.last_symbol:
-                            self.last_symbol = self.markets[self.markets_list[0]]
+                            self.last_symbol =  self.markets[self.markets_list[0]]
                         self.last_keep_alive = ts_ms
                         self.amount = self.instruments[self.last_symbol]['min_size']
                         self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] * 0.9, self.last_symbol)
@@ -532,16 +532,15 @@ class WhiteBitClient(BaseClient):
                 async for msg in ws:
                     data = json.loads(msg.data)
                     if data.get('method') == 'depth_update':
-                        print(time.time() - data['params'][1]['timestamp'])
                         # print(data)
-                        # if data['params'][0]:
-                        #     await update_orderbook_snapshot(data)
-                        # else:
-                        #     await update_orderbook(data)
-                    # elif data.get('method') == 'balanceMargin_update':
-                    #     await update_balances(data)
-                    # elif data.get('method') in ['ordersExecuted_update', 'ordersPending_update']:
-                    #     await update_orders(data)
+                        if data['params'][0]:
+                            await update_orderbook_snapshot(data)
+                        else:
+                            await update_orderbook(data)
+                    elif data.get('method') == 'balanceMargin_update':
+                        await update_balances(data)
+                    elif data.get('method') in ['ordersExecuted_update', 'ordersPending_update']:
+                        await update_orders(data)
                 await ws.close()
 
     @try_exc_async
@@ -836,6 +835,8 @@ class WhiteBitClient(BaseClient):
         new_ob['ts_ms'] = ts_ms
         ts_ob = data['params'][1]['timestamp']
         # print(f'{self.EXCHANGE_NAME} {ts_ms - ts_ob}')
+        # if isinstance(ts_ob, int):
+        #     ts_ob = ts_ob / 1000
         new_ob['timestamp'] = ts_ob
         for new_bid in data['params'][1].get('bids', []):
             if float(new_bid[0]) >= new_ob['top_bid'][0]:
@@ -952,7 +953,7 @@ if __name__ == '__main__':
     client = WhiteBitClient(keys=config['WHITEBIT'],
                             leverage=float(config['SETTINGS']['LEVERAGE']),
                             max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
-                            markets_list=['EOS', 'BTC'])
+                            markets_list=['EOS'])
 
 
     async def test_order():
