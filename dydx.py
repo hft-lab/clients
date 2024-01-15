@@ -33,7 +33,7 @@ class DydxClient(BaseClient):
     urlMarkets = "https://api.dydx.exchange/v3/markets/"
     urlOrderbooks = "https://api.dydx.exchange/v3/orderbook/"
 
-    def __init__(self, keys, leverage, markets_list=[], max_pos_part=20):
+    def __init__(self, keys, leverage, state='Bot', markets_list=[], max_pos_part=20):
         super().__init__()
         self.markets_list = markets_list
         self.max_pos_part = max_pos_part

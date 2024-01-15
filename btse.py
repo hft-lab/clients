@@ -340,9 +340,10 @@ class BtseClient(BaseClient):
         self.get_private_headers(path, body)
         async with session.post(url=self.BASE_URL + path, headers=self.session.headers, json=body) as resp:
             res = await resp.json()
+
             # self.aver_time.append(time.time() - time_start)
             # self.aver_time_response.append((res[0]['timestamp'] / 1000) - time_start)
-            print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {res}")
+            # print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {res}")
             if len(res):
                 status = self.get_order_response_status(res)
                 self.LAST_ORDER_ID = res[0].get('orderID', 'default')
@@ -504,6 +505,9 @@ class BtseClient(BaseClient):
     @try_exc_regular
     def get_order_status_by_fill(self, order_id, size):
         orig_size = self.orig_sizes.get(order_id)
+        print(f'Label 3 {orig_size=},{size=}')
+        if size == 0:
+            return OrderStatus.NOT_EXECUTED
         if orig_size == size:
             return OrderStatus.FULLY_EXECUTED
         else:
@@ -512,8 +516,13 @@ class BtseClient(BaseClient):
     @try_exc_async
     async def update_fills(self, data):
         for fill in data['data']:
+            start_time = time.time()
             self.last_price.update({fill['side'].lower(): float(fill['price'])})
             order_id = fill['orderId']
+            while order_id != self.LAST_ORDER_ID:
+                time.sleep(0.1)
+                if time.time() - start_time > 2:
+                    break
             size = float(fill['size']) * self.instruments[fill['symbol']]['contract_value']
             size_usd = size * float(fill['price'])
             if order := self.orders.get(order_id):
@@ -839,8 +848,32 @@ if __name__ == '__main__':
             # time.sleep(1)
             #
             # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
+    # async def test_order():
+    #     async with aiohttp.ClientSession() as session:
+    #         ob = await client.get_orderbook_by_symbol('ETHPFC')
+    #         price = ob['bids'][8][0]
+    #         loop = asyncio.get_event_loop()
+    #         client.amount = client.instruments['ETHPFC']['min_size']
+    #         tick = client.instruments['ETHPFC']['tick_size']
+    #         # client.price = price
+    #         # await client.create_order('ETHPFC', 'buy', session)
+    #         # print('CREATE_ORDER OUTPUT:', data)
+    #         tasks = []
+    #         time_start = time.time()
+    #         for price in ob['bids'][3:6]:
+    #             client.price = price[0] - tick
+    #             tasks.append(loop.create_task(client.create_order('ETHPFC', 'buy', session)))
+    #         data = await asyncio.gather(*tasks)
+    #         print(f"ALL TIME: {time.time() - time_start} sec")
+    #         print(data)
+    #         # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
+    #         time.sleep(1)
+    #         client.cancel_all_orders()
+    # time.sleep(1)
+    #
+    # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
 
-            # print('CANCEL_ALL_ORDERS RESPONSE:', data_cancel)
+    # print('CANCEL_ALL_ORDERS RESPONSE:', data_cancel)
 
     # client.markets_list = list(client.markets.keys())
     client.run_updater()
