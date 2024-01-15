@@ -16,14 +16,11 @@ class GlobeClient:
     BASE_URL = 'https://globe.exchange'
     EXCHANGE_NAME = 'GLOBE'
 
-<<<<<<< Updated upstream
     def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20, finder=None, ob_len=4):
         self.finder = finder
         self.ob_len = ob_len
-=======
-    def __init__(self, keys=None, state='Bot', leverage=None, markets_list=[], max_pos_part=20):
->>>>>>> Stashed changes
-        if keys:
+        self.state = state
+        if self.state == 'Bot':
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
             self.passphrase = keys['PASSPHRASE']
