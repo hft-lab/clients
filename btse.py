@@ -83,12 +83,23 @@ class BtseClient(BaseClient):
 
         # self.market_to_check = {}
 
-    @try_exc_regular
-    def deals_thread_func(self):
+    @try_exc_async
+    async def deals_thread_func(self):
         while True:
             self._order_loop.run_until_complete(self._run_order_loop())
+            await self.cancel_all_tasks(self._order_loop)
             self._order_loop.stop()
         # print(f"Thread {market} started")
+
+    @try_exc_async
+    async def cancel_all_tasks(self, loop):
+        tasks = [t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task()]
+        for task in tasks:
+            task.cancel()
+            try:
+                await task  # Wait for the task to be cancelled
+            except asyncio.CancelledError:
+                pass
 
     @try_exc_async
     async def _run_order_loop(self):
@@ -100,15 +111,14 @@ class BtseClient(BaseClient):
                     order = await self.create_fast_order(self.symbol, self.side)
                     self.response = order
                     self.last_keep_alive = order['timestamp'] / 1000
-                    self.side = 'buy'
                     self.deal = False
                 else:
                     ts_ms = time.time()
                     if ts_ms - self.last_keep_alive > 15:
                         self.last_keep_alive = ts_ms
                         self.amount = self.instruments[self.last_symbol]['min_size']
-                        tick = self.instruments[self.last_symbol]['tick_size']
-                        self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] - (100 * tick), self.last_symbol)
+                        self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] * 0.95, self.last_symbol)
+                        self.side = 'buy'
                         order = await self.create_fast_order(self.last_symbol, self.side)
                         print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
                         self.LAST_ORDER_ID = 'default'
@@ -159,21 +169,23 @@ class BtseClient(BaseClient):
                     'ts_exchange': orderbook['timestamp']}})
         return tops
 
-    @try_exc_regular
-    def _run_ws_forever(self):
-        self._loop.run_until_complete(self._run_ws_loop('public',
-                                                        self.update_orderbook_snapshot,
-                                                        self.update_orderbook,
-                                                        self.update_positions,
-                                                        self.update_fills))
-        if self.state == 'Bot':
-            asyncio.run_coroutine_threadsafe(self._run_ws_loop('private',
+    @try_exc_async
+    async def _run_ws_forever(self):
+        while True:
+            if self.state == 'Bot':
+                await self._loop.create_task(self._run_ws_loop('private',
                                                                self.update_orderbook_snapshot,
                                                                self.update_orderbook,
                                                                self.update_positions,
-                                                               self.update_fills
-                                                               ),
-                                             self._loop)
+                                                               self.update_fills))
+            self._loop.run_until_complete(self._run_ws_loop('public',
+                                                            self.update_orderbook_snapshot,
+                                                            self.update_orderbook,
+                                                            self.update_positions,
+                                                            self.update_fills))
+            await self.cancel_all_tasks(self._loop)
+            self._loop.stop()
+
             # self._loop.create_task(self._run_ws_loop(ws_type))
 
     @try_exc_regular

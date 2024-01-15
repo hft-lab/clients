@@ -70,12 +70,23 @@ class WhiteBitClient(BaseClient):
         self.side = 'buy'
         self.last_symbol = list(self.markets.values())[0]
 
-    @try_exc_regular
-    def deals_thread_func(self):
+    @try_exc_async
+    async def deals_thread_func(self):
         while True:
             self._order_loop.run_until_complete(self._run_order_loop())
+            await self.cancel_all_tasks(self._order_loop)
             self._order_loop.stop()
         # print(f"Thread {market} started")
+
+    @try_exc_async
+    async def cancel_all_tasks(self, loop):
+        tasks = [t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task()]
+        for task in tasks:
+            task.cancel()
+            try:
+                await task  # Wait for the task to be cancelled
+            except asyncio.CancelledError:
+                pass
 
     @try_exc_async
     async def _run_order_loop(self):
@@ -87,15 +98,14 @@ class WhiteBitClient(BaseClient):
                     order = await self.create_fast_order(self.symbol, self.side)
                     self.response = order
                     self.last_keep_alive = order['timestamp']
-                    self.side = 'buy'
                     self.deal = False
                 else:
                     ts_ms = time.time()
-                    if ts_ms - self.last_keep_alive > 20:
+                    if ts_ms - self.last_keep_alive > 15:
                         self.last_keep_alive = ts_ms
                         self.amount = self.instruments[self.last_symbol]['min_size']
-                        tick = self.instruments[self.last_symbol]['tick_size']
-                        self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] - (100 * tick), self.last_symbol)
+                        self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] * 0.95, self.last_symbol)
+                        self.side = 'buy'
                         order = await self.create_fast_order(self.last_symbol, self.side)
                         print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
                         self.LAST_ORDER_ID = 'default'
@@ -439,13 +449,14 @@ class WhiteBitClient(BaseClient):
     #                 # count += 1
     #                 # print(f"REAL REQUESTS FREQUENCY DATA:\nTIME: {time.time() - time_start}\nREQUESTS: {count}")
     # ### SUPERSONIC FEATURE ###
-    @try_exc_regular
-    def _run_ws_forever(self):
+    @try_exc_async
+    async def _run_ws_forever(self):
         while True:
             self._loop.run_until_complete(self._run_ws_loop(self.update_orders,
                                                             self.update_orderbook,
                                                             self.update_balances,
                                                             self.update_orderbook_snapshot))
+            await self.cancel_all_tasks(self._loop)
             self._loop.stop()
 
     @try_exc_regular
