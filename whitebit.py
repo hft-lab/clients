@@ -1,5 +1,4 @@
 import time
-import traceback
 import aiohttp
 import json
 import requests
@@ -59,17 +58,9 @@ class WhiteBitClient(BaseClient):
         self._wst_ = threading.Thread(target=self._run_ws_forever)
         self._order_loop = asyncio.new_event_loop()
         self.orders_thread = threading.Thread(target=self.deals_thread_func)
-        # self._wst_processing_messages = threading.Thread(target=self._process_ws_line)
-        # self.run_order_loop = threading.Thread(target=self._run_order_loop, args=[self._loop])
-        # self.run_order_loop.daemon = True
-        # self.run_order_loop.start()
-        # self._loop_supersonic = asyncio.new_event_loop()
-        # self._extra_speed = threading.Thread(target=self.run_super_sonic)
         self.requestLimit = 600
         self.last_price = {}
-        # self.own_orders = {}
         self.LAST_ORDER_ID = 'default'
-        # self.message_queue = asyncio.Queue(loop=self._loop)
         self.taker_fee = 0.00035
         self.subs = {}
         self.ob_push_limit = 0.1
@@ -77,8 +68,7 @@ class WhiteBitClient(BaseClient):
         self.deal = False
         self.response = None
         self.side = 'buy'
-        self.symbol = list(self.markets.values())[0]
-        # self.market_to_check = {}
+        self.last_symbol = list(self.markets.values())[0]
 
     @try_exc_regular
     def deals_thread_func(self):
@@ -93,24 +83,23 @@ class WhiteBitClient(BaseClient):
             self.async_session.headers.update(self.headers)
             while True:
                 if self.deal:
-                    print(f"{self.EXCHANGE_NAME} GOT DEAL {time.time()}")
+                    # print(f"{self.EXCHANGE_NAME} GOT DEAL {time.time()}")
                     order = await self.create_fast_order(self.symbol, self.side)
                     self.response = order
-                    self.last_keep_alive = time.time()
+                    self.last_keep_alive = order['timestamp']
                     self.side = 'buy'
                     self.deal = False
                 else:
                     ts_ms = time.time()
-                    if ts_ms - self.last_keep_alive > 15:
+                    if ts_ms - self.last_keep_alive > 20:
                         self.last_keep_alive = ts_ms
-                        symbol = [x for x in self.orderbook if self.orderbook[x].get('top_bid')][0]
-                        self.amount = self.instruments[symbol]['min_size']
-                        tick = self.instruments[symbol]['tick_size']
-                        self.fit_sizes(self.orderbook[symbol]['top_bid'][0] - (100 * tick), symbol)
-                        order = await self.create_fast_order(symbol, self.side)
+                        self.amount = self.instruments[self.last_symbol]['min_size']
+                        tick = self.instruments[self.last_symbol]['tick_size']
+                        self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] - (100 * tick), self.last_symbol)
+                        order = await self.create_fast_order(self.last_symbol, self.side)
                         print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
                         self.LAST_ORDER_ID = 'default'
-                        await self.cancel_order(symbol, order['exchange_order_id'], self.async_session)
+                        await self.cancel_order(self.last_symbol, order['exchange_order_id'], self.async_session)
                 await asyncio.sleep(0.0001)
 
                 # params = {"market": symbol,
@@ -731,15 +720,16 @@ class WhiteBitClient(BaseClient):
             # resp = self.session.post(url=self.BASE_URL + path, json=params)
             # response = resp.json()
             # print(resp.headers)
+            status = 'KEEP-ALIVE'
             if self.deal:
                 print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
+                self.update_order_after_deal(response)
+                status = self.get_order_response_status(response)
+                self.LAST_ORDER_ID = response.get('orderId', 'default')
             # print(f"ORDER PLACING TIME: {time.time() - time_start}")
             # self.aver_time.append(time.time() - time_start)
             # self.aver_time_response.append(response['timestamp'] - time_start)
             # self.aver_time.append(time.time() - time_start)
-            self.update_order_after_deal(response)
-            status = self.get_order_response_status(response)
-            self.LAST_ORDER_ID = response.get('orderId', 'default')
             return {'exchange_name': self.EXCHANGE_NAME,
                     'exchange_order_id': response.get('orderId'),
                     'timestamp': response.get('timestamp', time.time()),
@@ -826,6 +816,7 @@ class WhiteBitClient(BaseClient):
     async def update_orderbook(self, data):
         flag = False
         symbol = data['params'][2]
+        self.last_symbol = symbol
         new_ob = self.orderbook[symbol].copy()
         ts_ms = time.time()
         new_ob['ts_ms'] = ts_ms

@@ -3,7 +3,6 @@ import aiohttp
 import json
 import requests
 from datetime import datetime
-import asyncio
 import threading
 import hmac
 import hashlib
@@ -78,7 +77,9 @@ class BtseClient(BaseClient):
         self.deal = False
         self.response = None
         self.side = 'buy'
-        self.symbol = list(self.markets.values())[0]
+        self.symbol = None
+        self.last_symbol = list(self.markets.values())[0]
+
         # self.market_to_check = {}
 
     @try_exc_regular
@@ -94,24 +95,23 @@ class BtseClient(BaseClient):
             self.async_session.headers.update(self.headers)
             while True:
                 if self.deal:
-                    print(f"{self.EXCHANGE_NAME} GOT DEAL {time.time()}")
+                    # print(f"{self.EXCHANGE_NAME} GOT DEAL {time.time()}")
                     order = await self.create_fast_order(self.symbol, self.side)
                     self.response = order
-                    self.last_keep_alive = time.time()
+                    self.last_keep_alive = order['timestamp'] / 1000
                     self.side = 'buy'
                     self.deal = False
                 else:
                     ts_ms = time.time()
                     if ts_ms - self.last_keep_alive > 15:
                         self.last_keep_alive = ts_ms
-                        symbol = [x for x in self.orderbook if self.orderbook[x].get('top_bid')][0]
-                        self.amount = self.instruments[symbol]['min_size']
-                        tick = self.instruments[symbol]['tick_size']
-                        self.fit_sizes(self.orderbook[symbol]['top_bid'][0] - (100 * tick), symbol)
-                        order = await self.create_fast_order(symbol, self.side)
+                        self.amount = self.instruments[self.last_symbol]['min_size']
+                        tick = self.instruments[self.last_symbol]['tick_size']
+                        self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] - (100 * tick), self.last_symbol)
+                        order = await self.create_fast_order(self.last_symbol, self.side)
                         print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
                         self.LAST_ORDER_ID = 'default'
-                        await self.cancel_order(symbol, order['exchange_order_id'], self.async_session)
+                        await self.cancel_order(self.last_symbol, order['exchange_order_id'], self.async_session)
                 await asyncio.sleep(0.0001)
 
     @staticmethod
@@ -289,21 +289,22 @@ class BtseClient(BaseClient):
         # async with aiohttp.ClientSession() as session:
         async with self.async_session.post(url=self.BASE_URL + path, headers=self.session.headers, json=body) as resp:
             res = await resp.json()
-        # resp = self.session.post(url=self.BASE_URL + path, json=body)
-        # res = resp.json()
-            if self.deal:
-                print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {res}")
-        #     print(resp.headers)
+            # resp = self.session.post(url=self.BASE_URL + path, json=body)
+            # res = resp.json()
+            #     print(resp.headers)
             # print(f"ORDER PLACING TIME: {time.time() - time_start}")
             # self.aver_time.append(time.time() - time_start)
-            if len(res):
+            # if len(res):
+            status = 'KEEP-ALIVE'
+            if self.deal:
+                print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {res}")
                 status = self.get_order_response_status(res)
                 self.LAST_ORDER_ID = res[0].get('orderID', 'default')
                 self.orig_sizes.update({self.LAST_ORDER_ID: res[0].get('originalSize')})
-                return {'exchange_name': self.EXCHANGE_NAME,
-                        'exchange_order_id': self.LAST_ORDER_ID,
-                        'timestamp': res[0]['timestamp'] / 1000 if res[0].get('timestamp') else time.time(),
-                        'status': status}
+            return {'exchange_name': self.EXCHANGE_NAME,
+                    'exchange_order_id': self.LAST_ORDER_ID,
+                    'timestamp': res[0]['timestamp'] / 1000 if res[0].get('timestamp') else time.time(),
+                    'status': status}
             # res_example = [{'status': 2, 'symbol': 'BTCPFC', 'orderType': 76, 'price': 43490, 'side': 'BUY', 'size': 1,
             #             'orderID': '13a82711-f6e2-4228-bf9f-3755cd8d7885', 'timestamp': 1703535543583,
             #             'triggerPrice': 0, 'trigger': False, 'deviation': 100, 'stealth': 100, 'message': '',
@@ -608,6 +609,7 @@ class BtseClient(BaseClient):
     async def update_orderbook(self, data):
         flag = False
         symbol = data['data']['symbol']
+        self.last_symbol = symbol
         new_ob = self.orderbook[symbol].copy()
         ts_ms = time.time()
         new_ob['ts_ms'] = ts_ms
