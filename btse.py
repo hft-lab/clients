@@ -85,6 +85,7 @@ class BtseClient(BaseClient):
     def deals_thread_func(self):
         while True:
             self._order_loop.run_until_complete(self._run_order_loop())
+            self._order_loop.stop()
         # print(f"Thread {market} started")
 
     @try_exc_async

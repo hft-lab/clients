@@ -84,6 +84,7 @@ class WhiteBitClient(BaseClient):
     def deals_thread_func(self):
         while True:
             self._order_loop.run_until_complete(self._run_order_loop())
+            self._order_loop.stop()
         # print(f"Thread {market} started")
 
     @try_exc_async
@@ -456,6 +457,7 @@ class WhiteBitClient(BaseClient):
                                                             self.update_orderbook,
                                                             self.update_balances,
                                                             self.update_orderbook_snapshot))
+            self._loop.stop()
 
     @try_exc_regular
     def _process_ws_line(self):
