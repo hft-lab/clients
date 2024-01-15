@@ -128,6 +128,8 @@ class GlobeClient:
 
     @try_exc_regular
     def get_orderbook(self, symbol):
+        if not self.orderbook.get(symbol):
+            return {}
         ob = self.orderbook[symbol]
         if ob['asks'][0][0] <= ob['bids'][0][0]:
             print(f"ALARM! ORDERBOOK ERROR {self.EXCHANGE_NAME}: {ob}")

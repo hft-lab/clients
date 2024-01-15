@@ -157,8 +157,8 @@ class BitmakeClient:
         symbol = ob['s']
         self.orderbook[symbol] = {'asks': {x[0]: x[1] for x in ob['a']},
                                   'bids': {x[0]: x[1] for x in ob['b']},
-                                  'top_ask': [float(sorted(ob['a'])[0]), 0],
-                                  'top_bid': [float(sorted(ob['b'])[::-1][0]), 0],
+                                  'top_ask': [float(min(ob['a'], key=lambda x: float(x[0]))[0]),0],
+                                  'top_bid': [float(max(ob['b'], key=lambda x: float(x[0]))[0]),0],
                                   'timestamp': ob['t'],
                                   'ts_ms': time.time()}
 

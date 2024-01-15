@@ -16,7 +16,7 @@ class TapbitClient:
     def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20, finder=None, ob_len=4):
         self.finder = finder
         self.ob_len = ob_len
-        if keys:
+        if state == 'Bot':
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
         self.markets_list = markets_list
@@ -160,8 +160,8 @@ class TapbitClient:
         symbol = data['topic'].split('.')[1]
         self.orderbook[symbol] = {'asks': {x[0]: x[1] for x in ob['asks']},
                                   'bids': {x[0]: x[1] for x in ob['bids']},
-                                  'top_ask': [float(sorted(ob['asks'])[0]), 0],
-                                  'top_bid': [float(sorted(ob['bids'])[::-1][0]), 0],
+                                  'top_ask': [float(min(ob['asks'], key=lambda x: float(x[0]))[0]), 0],
+                                  'top_bid': [float(max(ob['bids'], key=lambda x: float(x[0]))[0]), 0],
                                   'timestamp': ob['timestamp'],
                                   'ts_ms': time.time()}
 

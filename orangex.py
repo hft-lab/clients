@@ -16,7 +16,7 @@ class OrangexClient:
     def __init__(self, keys=None, leverage=None, state='Bot', markets_list=[], max_pos_part=20, finder=None, ob_len=4):
         self.finder = finder
         self.ob_len = ob_len
-        if keys:
+        if state == 'Bot':
             self.api_key = keys['API_KEY']
             self.api_secret = keys['API_SECRET']
         self.headers = {'Content-Type': 'application/json'}
