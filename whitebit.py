@@ -68,7 +68,7 @@ class WhiteBitClient(BaseClient):
         self.deal = False
         self.response = None
         self.side = 'buy'
-        self.last_symbol = self.markets[self.markets_list[0]]
+        self.last_symbol = None
 
     @try_exc_regular
     def deals_thread_func(self):
