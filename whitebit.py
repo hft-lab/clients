@@ -12,6 +12,7 @@ from clients.core.enums import ResponseStatus, OrderStatus
 from core.wrappers import try_exc_regular, try_exc_async
 from clients.core.base_client import BaseClient
 from aiohttp.client_exceptions import ContentTypeError
+from random import randint
 
 
 class WhiteBitClient(BaseClient):
@@ -68,14 +69,13 @@ class WhiteBitClient(BaseClient):
         self.deal = False
         self.response = None
         self.side = 'buy'
-        self.last_symbol = list(self.markets.values())[0]
 
     @try_exc_async
     async def deals_thread_func(self):
         while True:
             self._order_loop.run_until_complete(self._run_order_loop())
-            await self.cancel_all_tasks(self._order_loop)
-            self._order_loop.stop()
+            # await self.cancel_all_tasks(self._order_loop)
+            # self._order_loop.stop()
         # print(f"Thread {market} started")
 
     @try_exc_async
@@ -103,13 +103,14 @@ class WhiteBitClient(BaseClient):
                     ts_ms = time.time()
                     if ts_ms - self.last_keep_alive > 15:
                         self.last_keep_alive = ts_ms
-                        self.amount = self.instruments[self.last_symbol]['min_size']
-                        self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] * 0.95, self.last_symbol)
+                        symbol = list(self.markets.values())[randint(0, len(self.markets))]
+                        self.amount = self.instruments[symbol]['min_size']
+                        self.fit_sizes(self.orderbook[symbol]['top_bid'][0] * 0.9, symbol)
                         self.side = 'buy'
-                        order = await self.create_fast_order(self.last_symbol, self.side)
+                        order = await self.create_fast_order(symbol, self.side)
                         print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
                         self.LAST_ORDER_ID = 'default'
-                        await self.cancel_order(self.last_symbol, order['exchange_order_id'], self.async_session)
+                        await self.cancel_order(symbol, order['exchange_order_id'], self.async_session)
                 await asyncio.sleep(0.0001)
 
                 # params = {"market": symbol,
@@ -456,8 +457,8 @@ class WhiteBitClient(BaseClient):
                                                             self.update_orderbook,
                                                             self.update_balances,
                                                             self.update_orderbook_snapshot))
-            await self.cancel_all_tasks(self._loop)
-            self._loop.stop()
+            # await self.cancel_all_tasks(self._loop)
+            # self._loop.stop()
 
     @try_exc_regular
     def _process_ws_line(self):
@@ -551,7 +552,7 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_async
     async def update_orders(self, data):
-        # print('ORDERS', data)
+        print(f'ORDERS UPDATE {self.EXCHANGE_NAME}', data)
         status_id = 0
         for order in data['params']:
             if isinstance(order, int):
@@ -562,7 +563,6 @@ class WhiteBitClient(BaseClient):
                 side = 'sell' if order['side'] == 1 else 'buy'
                 self.last_price.update({side: factual_price})
                 self.get_position()
-                print(f"WHITEBIT POSITIONS UPDATED")
             else:
                 factual_price = 0
             result = {'exchange_order_id': order['id'],
@@ -827,7 +827,6 @@ class WhiteBitClient(BaseClient):
     async def update_orderbook(self, data):
         flag = False
         symbol = data['params'][2]
-        self.last_symbol = symbol
         new_ob = self.orderbook[symbol].copy()
         ts_ms = time.time()
         new_ob['ts_ms'] = ts_ms

@@ -10,6 +10,7 @@ from clients.core.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
 from core.wrappers import try_exc_regular, try_exc_async
 from clients.core.base_client import BaseClient
 import asyncio
+from random import randint
 
 
 class BtseClient(BaseClient):
@@ -79,7 +80,6 @@ class BtseClient(BaseClient):
         self.response = None
         self.side = 'buy'
         self.symbol = None
-        self.last_symbol = list(self.markets.values())[0]
 
         # self.market_to_check = {}
 
@@ -87,8 +87,8 @@ class BtseClient(BaseClient):
     async def deals_thread_func(self):
         while True:
             self._order_loop.run_until_complete(self._run_order_loop())
-            await self.cancel_all_tasks(self._order_loop)
-            self._order_loop.stop()
+            # await self.cancel_all_tasks(self._order_loop)
+            # self._order_loop.stop()
         # print(f"Thread {market} started")
 
     @try_exc_async
@@ -116,13 +116,14 @@ class BtseClient(BaseClient):
                     ts_ms = time.time()
                     if ts_ms - self.last_keep_alive > 15:
                         self.last_keep_alive = ts_ms
-                        self.amount = self.instruments[self.last_symbol]['min_size']
-                        self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] * 0.95, self.last_symbol)
+                        symbol = list(self.markets.values())[randint(0, len(self.markets))]
+                        self.amount = self.instruments[symbol]['min_size']
+                        self.fit_sizes(self.orderbook[symbol]['top_bid'][0] * 0.9, symbol)
                         self.side = 'buy'
-                        order = await self.create_fast_order(self.last_symbol, self.side)
+                        order = await self.create_fast_order(symbol, self.side)
                         print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
                         self.LAST_ORDER_ID = 'default'
-                        await self.cancel_order(self.last_symbol, order['exchange_order_id'], self.async_session)
+                        await self.cancel_order(symbol, order['exchange_order_id'], self.async_session)
                 await asyncio.sleep(0.0001)
 
     @staticmethod
@@ -183,8 +184,8 @@ class BtseClient(BaseClient):
                                                             self.update_orderbook,
                                                             self.update_positions,
                                                             self.update_fills))
-            await self.cancel_all_tasks(self._loop)
-            self._loop.stop()
+            # await self.cancel_all_tasks(self._loop)
+            # self._loop.stop()
 
             # self._loop.create_task(self._run_ws_loop(ws_type))
 
@@ -455,6 +456,7 @@ class BtseClient(BaseClient):
                         elif data.get('data') and data['data']['type'] == 'snapshot':
                             await update_orderbook_snapshot(data)
                         elif data.get('topic') == 'allPosition':
+                            print(f"Position update came BTSE")
                             await update_positions(data)
                         elif data.get('topic') == 'fills':
                             await update_fills(data)
@@ -622,7 +624,6 @@ class BtseClient(BaseClient):
     async def update_orderbook(self, data):
         flag = False
         symbol = data['data']['symbol']
-        self.last_symbol = symbol
         new_ob = self.orderbook[symbol].copy()
         ts_ms = time.time()
         new_ob['ts_ms'] = ts_ms
