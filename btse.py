@@ -10,7 +10,6 @@ from clients.core.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
 from core.wrappers import try_exc_regular, try_exc_async
 from clients.core.base_client import BaseClient
 import asyncio
-from random import randint
 
 
 class BtseClient(BaseClient):
@@ -80,7 +79,7 @@ class BtseClient(BaseClient):
         self.response = None
         self.side = 'buy'
         self.symbol = None
-        self.last_symbol = None
+        self.last_symbol = self.markets[self.markets_list[0]]
 
         # self.market_to_check = {}
 
