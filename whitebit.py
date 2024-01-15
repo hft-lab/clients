@@ -836,8 +836,8 @@ class WhiteBitClient(BaseClient):
         new_ob['ts_ms'] = ts_ms
         ts_ob = data['params'][1]['timestamp']
         # print(f'{self.EXCHANGE_NAME} {ts_ms - ts_ob}')
-        if isinstance(ts_ob, int):
-            ts_ob = ts_ob / 1000
+        # if isinstance(ts_ob, int):
+        #     ts_ob = ts_ob / 1000
         new_ob['timestamp'] = ts_ob
         for new_bid in data['params'][1].get('bids', []):
             if float(new_bid[0]) >= new_ob['top_bid'][0]:
