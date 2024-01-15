@@ -9,6 +9,7 @@ import hashlib
 from clients.core.enums import ResponseStatus, OrderStatus, ClientsOrderStatuses
 from core.wrappers import try_exc_regular, try_exc_async
 from clients.core.base_client import BaseClient
+import asyncio
 
 
 class BtseClient(BaseClient):
