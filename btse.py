@@ -170,15 +170,15 @@ class BtseClient(BaseClient):
                     'ts_exchange': orderbook['timestamp']}})
         return tops
 
-    @try_exc_async
-    async def _run_ws_forever(self):
+    @try_exc_regular
+    def _run_ws_forever(self):
         while True:
             if self.state == 'Bot':
-                await self._loop.create_task(self._run_ws_loop('private',
-                                                               self.update_orderbook_snapshot,
-                                                               self.update_orderbook,
-                                                               self.update_positions,
-                                                               self.update_fills))
+                self._loop.create_task(self._run_ws_loop('private',
+                                                         self.update_orderbook_snapshot,
+                                                         self.update_orderbook,
+                                                         self.update_positions,
+                                                         self.update_fills))
             self._loop.run_until_complete(self._run_ws_loop('public',
                                                             self.update_orderbook_snapshot,
                                                             self.update_orderbook,
