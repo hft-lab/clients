@@ -68,7 +68,7 @@ class BtseClient(BaseClient):
         self.orderbook = {}
         self.orders = {}
         self.last_price = {}
-        self.taker_fee = float(keys['TAKER_FEE'])
+        self.taker_fee = float(keys['TAKER_FEE']) * 0.75
         self.orig_sizes = {}
         # self.message_queue = asyncio.Queue(loop=self._loop)
         self.LAST_ORDER_ID = 'default'

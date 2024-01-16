@@ -59,7 +59,7 @@ class WhiteBitClient(BaseClient):
         self.orders_thread = threading.Thread(target=self.deals_thread_func)
         self.last_price = {}
         self.LAST_ORDER_ID = 'default'
-        self.taker_fee = float(keys['TAKER_FEE'])
+        self.taker_fee = float(keys['TAKER_FEE']) * 0.6
         self.subs = {}
         self.ob_push_limit = 0.1
         self.last_keep_alive = 0
