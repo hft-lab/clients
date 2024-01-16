@@ -99,18 +99,25 @@ class WhiteBitClient(BaseClient):
                     self.deal = False
                 else:
                     ts_ms = time.time()
-                    if ts_ms - self.last_keep_alive > 25:
-                        if not self.last_symbol:
-                            self.last_symbol = self.markets[self.markets_list[0]]
+                    if ts_ms - self.last_keep_alive > 5:
                         self.last_keep_alive = ts_ms
-                        self.amount = self.instruments[self.last_symbol]['min_size']
-                        self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] * 0.9, self.last_symbol)
-                        self.side = 'buy'
-                        order = await self.create_fast_order(self.last_symbol, self.side)
-                        print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
-                        self.LAST_ORDER_ID = 'default'
-                        await self.cancel_order(self.last_symbol, order['exchange_order_id'], self.async_session)
-                        self.get_position()
+                        self._order_loop.create_task(self.get_position_async())
+                        # print(f"keep-alive {self.EXCHANGE_NAME} time: {time.time() - ts_ms}")
+
+                        # path = self.BASE_URL + "/api/v4/order/"
+                        # async with self.async_session.head(path) as response:
+                        #     print(f"Keep alive status {self.EXCHANGE_NAME}: {response.status}")
+                        #     print(f"{response.text}")
+
+                        # if not self.last_symbol:
+                        #     self.last_symbol = self.markets[self.markets_list[0]]
+                        # self.amount = self.instruments[self.last_symbol]['min_size']
+                        # self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] * 0.9, self.last_symbol)
+                        # self.side = 'buy'
+                        # order = await self.create_fast_order(self.last_symbol, self.side)
+                        # print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
+                        # self.LAST_ORDER_ID = 'default'
+                        # await self.cancel_order(self.last_symbol, order['exchange_order_id'], self.async_session)
                 await asyncio.sleep(0.0001)
 
                 # params = {"market": symbol,
@@ -260,6 +267,27 @@ class WhiteBitClient(BaseClient):
             'X-TXC-PAYLOAD': payload.decode('ascii')
         })
         return params
+
+    @try_exc_async
+    async def get_position_async(self):
+        path = "/api/v4/collateral-account/positions/open"
+        params = self.get_auth_for_request({}, path)
+        path += self._create_uri(params)
+        async with self.async_session.post(url=self.BASE_URL + path, json=params, headers=self.session.headers) as res:
+            response = await res.json()
+            # print(f'GET_POSITION RESPONSE {self.EXCHANGE_NAME}', response)
+            self.positions = {}
+            for pos in response:
+                if isinstance(pos, str):
+                    print(f"{self.EXCHANGE_NAME} position update in get_position mistake {response}")
+                    continue
+                market = pos['market']
+                ob = self.get_orderbook(market)
+                change = (ob['asks'][0][0] + ob['bids'][0][0]) / 2
+                self.positions.update({market: {'timestamp': int(datetime.utcnow().timestamp()),
+                                                'entry_price': float(pos['basePrice']) if pos['basePrice'] else 0,
+                                                'amount': float(pos['amount']),
+                                                'amount_usd': change * float(pos['amount'])}})
 
     @try_exc_regular
     def get_position(self):

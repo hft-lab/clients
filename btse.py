@@ -113,18 +113,20 @@ class BtseClient(BaseClient):
                     self.deal = False
                 else:
                     ts_ms = time.time()
-                    if ts_ms - self.last_keep_alive > 25:
-                        if not self.last_symbol:
-                            self.last_symbol = self.markets[self.markets_list[0]]
+                    if ts_ms - self.last_keep_alive > 5:
                         self.last_keep_alive = ts_ms
-                        self.amount = self.instruments[self.last_symbol]['min_size']
-                        self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] * 0.9, self.last_symbol)
-                        self.side = 'buy'
-                        order = await self.create_fast_order(self.last_symbol, self.side)
-                        print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
-                        self.LAST_ORDER_ID = 'default'
-                        await self.cancel_order(self.last_symbol, order['exchange_order_id'], self.async_session)
-                        self.get_position()
+                        self._order_loop.create_task(self.get_position_async())
+                        # print(f"keep-alive {self.EXCHANGE_NAME} time: {time.time() - ts_ms}")
+                        # if not self.last_symbol:
+                        #     self.last_symbol = self.markets[self.markets_list[0]]
+                        # self.amount = self.instruments[self.last_symbol]['min_size']
+                        # self.fit_sizes(self.orderbook[self.last_symbol]['top_bid'][0] * 0.9, self.last_symbol)
+                        # self.side = 'buy'
+                        # order = await self.create_fast_order(self.last_symbol, self.side)
+                        # print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
+                        # self.LAST_ORDER_ID = 'default'
+                        # await self.cancel_order(self.last_symbol, order['exchange_order_id'], self.async_session)
+                        # self.get_position()
                 await asyncio.sleep(0.0001)
 
     @staticmethod
@@ -228,6 +230,30 @@ class BtseClient(BaseClient):
         self.get_private_headers(path, data)
         response = self.session.post(self.BASE_URL + path, json=data)
         return response.text
+
+    @try_exc_async
+    async def get_position_async(self):
+        path = "/api/v2.1/user/positions"
+        self.get_private_headers(path)
+        async with self.async_session.get(self.BASE_URL + path, headers=self.session.headers) as res:
+            response = await res.json()
+            # print(f'GET_POSITION RESPONSE', response)
+            self.positions = {}
+            # if await response.status_code in ['200', 200, '201', 201]:
+            for pos in response:
+                contract_value = self.instruments[pos['symbol']]['contract_value']
+                if pos['side'] == 'BUY':
+                    size_usd = pos['orderValue']
+                    size_coin = pos['size'] * contract_value
+                else:
+                    size_usd = -pos['orderValue']
+                    size_coin = -pos['size'] * contract_value
+                self.positions.update({pos['symbol']: {'timestamp': int(datetime.utcnow().timestamp()),
+                                                       'entry_price': pos['entryPrice'],
+                                                       'amount': size_coin,
+                                                       'amount_usd': size_usd}})
+            # else:
+            #     print(f"ERROR IN GET_POSITION RESPONSE BTSE: {response.text=}")
 
     @try_exc_regular
     def get_position(self):
