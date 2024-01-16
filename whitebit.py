@@ -562,13 +562,13 @@ class WhiteBitClient(BaseClient):
                     if data.get('method') == 'depth_update':
                         # print(data)
                         if data['params'][0]:
-                            await update_orderbook_snapshot(data)
+                            self._loop.create_task(update_orderbook_snapshot(data))
                         else:
-                            await update_orderbook(data)
+                            self._loop.create_task(update_orderbook(data))
                     elif data.get('method') == 'balanceMargin_update':
-                        await update_balances(data)
+                        self._loop.create_task(update_balances(data))
                     elif data.get('method') in ['ordersExecuted_update', 'ordersPending_update']:
-                        await update_orders(data)
+                        self._loop.create_task(update_orders(data))
                 await ws.close()
 
     @try_exc_async

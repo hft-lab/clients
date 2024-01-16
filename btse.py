@@ -480,14 +480,13 @@ class BtseClient(BaseClient):
                     if 'update' in data.get('topic', ''):
                         if data.get('data') and data['data']['type'] == 'delta':
                             # print(time.time() - data['data']['timestamp'] / 1000)
-                            await update_orderbook(data)
+                            self._loop.create_task(update_orderbook(data))
                         elif data.get('data') and data['data']['type'] == 'snapshot':
-                            await update_orderbook_snapshot(data)
+                            self._loop.create_task(update_orderbook_snapshot(data))
                         elif data.get('topic') == 'allPosition':
-                            await update_positions(data)
+                            self._loop.create_task(update_positions(data))
                         elif data.get('topic') == 'fills':
-                            await update_fills(data)
-                            self.get_position()
+                            self._loop.create_task(update_fills(data))
             await ws.close()
 
     @try_exc_async
