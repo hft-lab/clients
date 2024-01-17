@@ -110,9 +110,7 @@ class BtseClient(BaseClient):
             while True:
                 if self.deal:
                     # print(f"{self.EXCHANGE_NAME} GOT DEAL {time.time()}")
-                    order = await self.create_fast_order(self.symbol, self.side)
-                    self.response = order
-                    self.last_keep_alive = order['timestamp'] / 1000
+                    self.order_loop.create_task(self.create_fast_order(self.symbol, self.side))
                     self.deal = False
                 else:
                     ts_ms = time.time()
@@ -320,7 +318,6 @@ class BtseClient(BaseClient):
 
     @try_exc_async
     async def create_fast_order(self, symbol, side, expire=10000, client_id=None, expiration=None):
-        # time_start = time.time()
         path = '/api/v2.1/order'
         contract_value = self.instruments[symbol]['contract_value']
         body = {"symbol": symbol,
@@ -330,17 +327,19 @@ class BtseClient(BaseClient):
                 'size': int(self.amount / contract_value)}
         print(f"{self.EXCHANGE_NAME} SENDING ORDER: {body}")
         self.get_private_headers(path, body)
-        # async with aiohttp.ClientSession() as session:
         async with self.async_session.post(url=self.BASE_URL + path, headers=self.session.headers, json=body) as resp:
             res = await resp.json()
             print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {res}")
             status = self.get_order_response_status(res)
             self.LAST_ORDER_ID = res[0].get('orderID', 'default')
             self.orig_sizes.update({self.LAST_ORDER_ID: res[0].get('originalSize')})
-            return {'exchange_name': self.EXCHANGE_NAME,
-                    'exchange_order_id': self.LAST_ORDER_ID,
-                    'timestamp': res[0]['timestamp'] / 1000 if res[0].get('timestamp') else time.time(),
-                    'status': status}
+            order_res = {'exchange_name': self.EXCHANGE_NAME,
+                         'exchange_order_id': self.LAST_ORDER_ID,
+                         'timestamp': res[0]['timestamp'] / 1000 if res[0].get('timestamp') else time.time(),
+                         'status': status}
+            self.response = order_res
+            self.last_keep_alive = order_res['timestamp']
+            return order_res
             # res_example = [{'status': 2, 'symbol': 'BTCPFC', 'orderType': 76, 'price': 43490, 'side': 'BUY', 'size': 1,
             #             'orderID': '13a82711-f6e2-4228-bf9f-3755cd8d7885', 'timestamp': 1703535543583,
             #             'triggerPrice': 0, 'trigger': False, 'deviation': 100, 'stealth': 100, 'message': '',
@@ -705,9 +704,10 @@ class BtseClient(BaseClient):
         if flag and ts_ms - ts_ob < 0.035 and self.finder:
             coin = symbol.split('PFC')[0]
             if self.state == 'Bot':
-                await self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side, self.multibot.run_arbitrage)
+                self._loop.create_task(self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side,
+                                                                  self.multibot.run_arbitrage))
             else:
-                await self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side)
+                self._loop.create_task(self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side))
         # elif ts_ms - self.last_keep_alive > 15:
         #     self.last_keep_alive = ts_ms
         #     self.amount = self.instruments[symbol]['min_size']

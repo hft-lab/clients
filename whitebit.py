@@ -58,7 +58,7 @@ class WhiteBitClient(BaseClient):
         self._loop = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self._wst_ = threading.Thread(target=self._run_ws_forever)
-        self._order_loop = asyncio.new_event_loop()
+        self.order_loop = asyncio.new_event_loop()
         self.orders_thread = threading.Thread(target=self.deals_thread_func)
         self.last_price = {}
         self.LAST_ORDER_ID = 'default'
@@ -74,9 +74,9 @@ class WhiteBitClient(BaseClient):
     @try_exc_regular
     def deals_thread_func(self):
         while True:
-            self._order_loop.run_until_complete(self._run_order_loop())
-            # await self.cancel_all_tasks(self._order_loop)
-            # self._order_loop.stop()
+            self.order_loop.run_until_complete(self._run_order_loop())
+            # await self.cancel_all_tasks(self.order_loop)
+            # self.order_loop.stop()
         # print(f"Thread {market} started")
 
     @try_exc_async
@@ -96,15 +96,13 @@ class WhiteBitClient(BaseClient):
             while True:
                 if self.deal:
                     # print(f"{self.EXCHANGE_NAME} GOT DEAL {time.time()}")
-                    order = await self.create_fast_order(self.symbol, self.side)
-                    self.response = order
-                    self.last_keep_alive = order['timestamp']
+                    self.order_loop.create_task(self.create_fast_order(self.symbol, self.side))
                     self.deal = False
                 else:
                     ts_ms = time.time()
                     if ts_ms - self.last_keep_alive > 5:
                         self.last_keep_alive = ts_ms
-                        self._order_loop.create_task(self.get_position_async())
+                        self.order_loop.create_task(self.get_position_async())
                         # print(f"keep-alive {self.EXCHANGE_NAME} time: {time.time() - ts_ms}")
 
                         # path = self.BASE_URL + "/api/v4/order/"
@@ -743,41 +741,26 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_async
     async def create_fast_order(self, symbol, side, expire=10000, client_id=None, mode='Order'):
-        # time_start = time.time()
         path = "/api/v4/order/collateral/limit"
         params = {"market": symbol,
                   "side": side,
                   "amount": self.amount,
                   "price": self.price}
-        # print(f"{self.EXCHANGE_NAME} SENDING ORDER: {params}")
-        # if client_id:
-        #     params['clientOrderId'] = client_id
         params = self.get_auth_for_request(params, path)
         path += self._create_uri(params)
-        # async with aiohttp.ClientSession() as session:
         async with self.async_session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
-            try:
-                response = await resp.json()
-            except ContentTypeError as e:
-                content = await resp.text()
-                print(f"{self.EXCHANGE_NAME} CREATE ORDER ERROR\nAPI RESPONSE: {content}")
-            # resp = self.session.post(url=self.BASE_URL + path, json=params)
-            # response = resp.json()
-            # print(resp.headers)
-            status = 'KEEP-ALIVE'
-            if self.deal:
-                print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
-                self.update_order_after_deal(response)
-                status = self.get_order_response_status(response)
-                self.LAST_ORDER_ID = response.get('orderId', 'default')
-            # print(f"ORDER PLACING TIME: {time.time() - time_start}")
-            # self.aver_time.append(time.time() - time_start)
-            # self.aver_time_response.append(response['timestamp'] - time_start)
-            # self.aver_time.append(time.time() - time_start)
-            return {'exchange_name': self.EXCHANGE_NAME,
-                    'exchange_order_id': response.get('orderId'),
-                    'timestamp': response.get('timestamp', time.time()),
-                    'status': status}
+            response = await resp.json()
+            print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {response}")
+            self.update_order_after_deal(response)
+            status = self.get_order_response_status(response)
+            self.LAST_ORDER_ID = response.get('orderId', 'default')
+            order_res = {'exchange_name': self.EXCHANGE_NAME,
+                         'exchange_order_id': response.get('orderId'),
+                         'timestamp': response.get('timestamp', time.time()),
+                         'status': status}
+            self.response = order_res
+            self.last_keep_alive = order_res['timestamp']
+            return order_res
             # example_executed = {'orderId': 395248275015, 'clientOrderId': '', 'market': 'BTC_PERP', 'side': 'buy',
             # 'type': 'margin limit',
             #  'timestamp': 1703664697.619855, 'dealMoney': '42.509', 'dealStock': '0.001', 'amount': '0.001',
@@ -903,9 +886,12 @@ class WhiteBitClient(BaseClient):
         if flag and ts_ms - ts_ob < 0.035:
             coin = symbol.split('_')[0]
             if self.state == 'Bot':
-                await self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side, self.multibot.run_arbitrage)
+                self._loop.create_task(self.finder.count_one_coin(coin,
+                                                                  self.EXCHANGE_NAME,
+                                                                  side,
+                                                                  self.multibot.run_arbitrage))
             else:
-                await self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side)
+                self._loop.create_task(self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side))
 
     @try_exc_regular
     def cut_extra_orders_from_ob(self, symbol, data):
