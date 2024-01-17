@@ -24,8 +24,11 @@ class WhiteBitClient(BaseClient):
                'Connection': 'keep-alive'}
 
     def __init__(self, multibot=None, keys=None, leverage=None, state='Bot',
-                 markets_list=[], max_pos_part=20, finder=None, ob_len=5):
+                 markets_list=[], max_pos_part=20, finder=None, ob_len=5, market_maker=False,
+                 market_finder=None):
         super().__init__()
+        self.market_finder = market_finder
+        self.market_maker = market_maker
         self.multibot = multibot
         self.state = state
         self.finder = finder

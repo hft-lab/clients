@@ -33,8 +33,11 @@ class BtseClient(BaseClient):
                       17: 'Request failed'}
 
     def __init__(self, multibot=None, keys=None, leverage=None, state='Bot', markets_list=[],
-                 max_pos_part=20, finder=None, ob_len=4):
+                 max_pos_part=20, finder=None, ob_len=4, market_maker=False,
+                 market_finder=None):
         super().__init__()
+        self.market_finder = market_finder
+        self.market_maker = market_maker
         self.multibot = multibot
         self.state = state
         self.finder = finder
@@ -58,7 +61,7 @@ class BtseClient(BaseClient):
         self._connected = asyncio.Event()
         self._loop = asyncio.new_event_loop()
         self.wst_public = threading.Thread(target=self._run_ws_forever)
-        self._order_loop = asyncio.new_event_loop()
+        self.order_loop = asyncio.new_event_loop()
         self.orders_thread = threading.Thread(target=self.deals_thread_func)
         # self._wst_orderbooks = threading.Thread(target=self._process_ws_line)
         # if self.state == 'Bot':
@@ -85,9 +88,9 @@ class BtseClient(BaseClient):
     @try_exc_regular
     def deals_thread_func(self):
         while True:
-            self._order_loop.run_until_complete(self._run_order_loop())
-            # await self.cancel_all_tasks(self._order_loop)
-            # self._order_loop.stop()
+            self.order_loop.run_until_complete(self._run_order_loop())
+            # await self.cancel_all_tasks(self.order_loop)
+            # self.order_loop.stop()
         # print(f"Thread {market} started")
 
     @try_exc_async
@@ -115,7 +118,7 @@ class BtseClient(BaseClient):
                     ts_ms = time.time()
                     if ts_ms - self.last_keep_alive > 5:
                         self.last_keep_alive = ts_ms
-                        self._order_loop.create_task(self.get_position_async())
+                        self.order_loop.create_task(self.get_position_async())
                         # print(f"keep-alive {self.EXCHANGE_NAME} time: {time.time() - ts_ms}")
                         # if not self.last_symbol:
                         #     self.last_symbol = self.markets[self.markets_list[0]]
@@ -325,23 +328,15 @@ class BtseClient(BaseClient):
                 "price": self.price,
                 "type": "LIMIT",
                 'size': int(self.amount / contract_value)}
-        # print(f"{self.EXCHANGE_NAME} SENDING ORDER: {body}")
+        print(f"{self.EXCHANGE_NAME} SENDING ORDER: {body}")
         self.get_private_headers(path, body)
         # async with aiohttp.ClientSession() as session:
         async with self.async_session.post(url=self.BASE_URL + path, headers=self.session.headers, json=body) as resp:
             res = await resp.json()
-            # resp = self.session.post(url=self.BASE_URL + path, json=body)
-            # res = resp.json()
-            #     print(resp.headers)
-            # print(f"ORDER PLACING TIME: {time.time() - time_start}")
-            # self.aver_time.append(time.time() - time_start)
-            # if len(res):
-            status = 'KEEP-ALIVE'
-            if self.deal:
-                print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {res}")
-                status = self.get_order_response_status(res)
-                self.LAST_ORDER_ID = res[0].get('orderID', 'default')
-                self.orig_sizes.update({self.LAST_ORDER_ID: res[0].get('originalSize')})
+            print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE: {res}")
+            status = self.get_order_response_status(res)
+            self.LAST_ORDER_ID = res[0].get('orderID', 'default')
+            self.orig_sizes.update({self.LAST_ORDER_ID: res[0].get('originalSize')})
             return {'exchange_name': self.EXCHANGE_NAME,
                     'exchange_order_id': self.LAST_ORDER_ID,
                     'timestamp': res[0]['timestamp'] / 1000 if res[0].get('timestamp') else time.time(),
@@ -483,10 +478,10 @@ class BtseClient(BaseClient):
                             self._loop.create_task(update_orderbook(data))
                         elif data.get('data') and data['data']['type'] == 'snapshot':
                             self._loop.create_task(update_orderbook_snapshot(data))
-                        elif data.get('topic') == 'allPosition':
-                            self._loop.create_task(update_positions(data))
-                        elif data.get('topic') == 'fills':
-                            self._loop.create_task(update_fills(data))
+                    elif data.get('topic') == 'allPosition':
+                        self._loop.create_task(update_positions(data))
+                    elif data.get('topic') == 'fills':
+                        self._loop.create_task(update_fills(data))
             await ws.close()
 
     @try_exc_async
@@ -540,6 +535,7 @@ class BtseClient(BaseClient):
 
     @try_exc_async
     async def update_fills(self, data):
+        print(f'FILLS UPDATE: {data}')
         for fill in data['data']:
             start_time = time.time()
             self.last_price.update({fill['side'].lower(): float(fill['price'])})
@@ -658,6 +654,7 @@ class BtseClient(BaseClient):
     @try_exc_async
     async def update_orderbook(self, data):
         flag = False
+        flag_market = False
         symbol = data['data']['symbol']
         self.last_symbol = symbol
         new_ob = self.orderbook[symbol].copy()
@@ -673,6 +670,7 @@ class BtseClient(BaseClient):
                 new_ob['top_bid'] = [float(new_bid[0]), float(new_bid[1])]
                 new_ob['top_bid_timestamp'] = data['data']['timestamp']
                 flag = True
+                flag_market = True
                 side = 'sell'
             if new_ob['bids'].get(new_bid[0]) and new_bid[1] == '0':
                 del new_ob['bids'][new_bid[0]]
@@ -680,12 +678,14 @@ class BtseClient(BaseClient):
                     top = sorted(new_ob['bids'])[-1]
                     new_ob['top_bid'] = [float(top), float(new_ob['bids'][top])]
                     new_ob['top_bid_timestamp'] = data['data']['timestamp']
+                    flag_market = True
             elif new_bid[1] != '0':
                 new_ob['bids'][new_bid[0]] = new_bid[1]
         for new_ask in data['data']['asks']:
             if float(new_ask[0]) <= new_ob['top_ask'][0]:
                 new_ob['top_ask'] = [float(new_ask[0]), float(new_ask[1])]
                 new_ob['top_ask_timestamp'] = data['data']['timestamp']
+                flag_market = True
                 flag = True
                 side = 'buy'
             if new_ob['asks'].get(new_ask[0]) and new_ask[1] == '0':
@@ -694,10 +694,15 @@ class BtseClient(BaseClient):
                     top = sorted(new_ob['asks'])[0]
                     new_ob['top_ask'] = [float(top), float(new_ob['asks'][top])]
                     new_ob['top_ask_timestamp'] = data['data']['timestamp']
+                    flag_market = True
             elif new_ask[1] != '0':
                 new_ob['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol] = new_ob
-        if flag and ts_ms - ts_ob < 0.035:
+        if flag_market and self.market_maker:
+            self._loop.create_task(self.market_finder.count_one_coin(coin,
+                                                                     self.EXCHANGE_NAME,
+                                                                     side))
+        if flag and ts_ms - ts_ob < 0.035 and self.finder:
             coin = symbol.split('PFC')[0]
             if self.state == 'Bot':
                 await self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side, self.multibot.run_arbitrage)
@@ -807,131 +812,13 @@ if __name__ == '__main__':
                         max_pos_part=int(config['SETTINGS']['PERCENT_PER_MARKET']),
                         markets_list=['MANA'])
 
-    import aiohttp
-    import asyncio
-
-    #
-    # async def test_keep_alive():
-    #     timeout = 5  # Start with a 5-second timeout
-    #     max_timeout = 60  # Set a maximum timeout to prevent infinite loop
-    #     keep_alive = True
-    #
-    #     async with aiohttp.ClientSession() as session:
-    #         path = "/api/v2.1/order/cancelAllAfter"
-    #         data = {"timeout": 10}
-    #         client.get_private_headers(path, data)
-    #         while keep_alive and timeout <= max_timeout:
-    #             try:
-    #                 await asyncio.sleep(timeout)  # Wait for `timeout` seconds
-    #                 response = await session.post(client.BASE_URL + path, json=data, headers=client.session.headers)  # Make a GET request
-    #                 a = await response.text()  # Read the response
-    #                 print(a)
-    #                 print(f"Success: Server kept the connection alive for at least {timeout} seconds")
-    #                 timeout += 5  # Increase the timeout for the next iteration
-    #             except aiohttp.ClientConnectorError:
-    #                 print(f"Failed: Server did not keep the connection alive for {timeout} seconds")
-    #                 keep_alive = False
-    #
-    #
-    # asyncio.run(test_keep_alive())
-
-    async def test_order():
-        async with aiohttp.ClientSession as session:
-            client.aver_time = []
-            client.aver_time_response = []
-            while True:
-                time.sleep(5)
-                ob = client.get_orderbook('MANAPFC')
-                # loop = asyncio.get_event_loop()
-                client.amount = client.instruments['MANAPFC']['min_size']
-                tick = client.instruments['MANAPFC']['tick_size']
-                client.price = client.fit_sizes('MANAPFC', ob['bids'][2][0] - (100 * tick))
-
-                data = await client.create_order('MANAPFC', 'buy', session)
-                await client.cancel_order('MANAPFC', data['exchange_order_id'], session)
-                print(f"Repeats (1 sec each): {len(client.aver_time)}")
-                print('OWN')
-                print(f"Min order create time: {min(client.aver_time)} sec")
-                print(f"Max order create time: {max(client.aver_time)} sec")
-                print(f"Aver. order create time: {sum(client.aver_time) / len(client.aver_time)} sec")
-                print('RESPONSE')
-                print(f"Min order create time: {min(client.aver_time_response)} sec")
-                print(f"Max order create time: {max(client.aver_time_response)} sec")
-                print(f"Aver. order create time: {sum(client.aver_time_response) / len(client.aver_time_response)} sec")
-                print()
-                # print('CREATE_ORDER OUTPUT:', data)
-                # await client.create_order('MANAPFC', 'buy', session)
-            # tasks = []
-            # time_start = time.time()
-            # for price in ob['bids'][3:6]:
-            #     client.price = price[0] - tick
-            #     tasks.append(loop.create_task())
-            # data = await asyncio.gather(*tasks)
-            # print(f"ALL TIME: {time.time() - time_start} sec")
-            # print(data)
-            # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
-            #     time.sleep(1)
-
-            # time.sleep(1)
-            #
-            # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
-    # async def test_order():
-    #     async with aiohttp.ClientSession() as session:
-    #         ob = await client.get_orderbook_by_symbol('ETHPFC')
-    #         price = ob['bids'][8][0]
-    #         loop = asyncio.get_event_loop()
-    #         client.amount = client.instruments['ETHPFC']['min_size']
-    #         tick = client.instruments['ETHPFC']['tick_size']
-    #         # client.price = price
-    #         # await client.create_order('ETHPFC', 'buy', session)
-    #         # print('CREATE_ORDER OUTPUT:', data)
-    #         tasks = []
-    #         time_start = time.time()
-    #         for price in ob['bids'][3:6]:
-    #             client.price = price[0] - tick
-    #             tasks.append(loop.create_task(client.create_order('ETHPFC', 'buy', session)))
-    #         data = await asyncio.gather(*tasks)
-    #         print(f"ALL TIME: {time.time() - time_start} sec")
-    #         print(data)
-    #         # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
-    #         time.sleep(1)
-    #         client.cancel_all_orders()
-    # time.sleep(1)
-    #
-    # print('GET ORDER_BY_ID OUTPUT:', client.get_order_by_id('asd', data['exchange_order_id']))
-
-    # print('CANCEL_ALL_ORDERS RESPONSE:', data_cancel)
-
-    # client.markets_list = list(client.markets.keys())
     client.run_updater()
-    # # time.sleep(1)
-    # # # client.get_real_balance()
-    # # print(client.get_positions())
-    # # time.sleep(2)
-    asyncio.run(test_order())
-    # # client.get_position()
+    time.sleep(3)
+    ob = client.get_orderbook('MANAPFC')
+    client.amount = client.instruments['MANAPFC']['min_size']
+    client.fit_sizes(ob['asks'][2][0], 'MANAPFC')
+    # client.order_loop.create_task(client.create_fast_order('MANAPFC', 'buy'))
+    while True:
+        time.sleep(1)
 
-    # while True:
-    #     time.sleep(1)
-        # print(client.get_orderbook('MANAPFC'))
-        # print(client.get_positions())
 
-        # asyncio.run(test_order())
-        # print(f"Repeats (1 sec each): {len(client.aver_time)}")
-        # print('OWN')
-        # print(f"Min order create time: {min(client.aver_time)} sec")
-        # print(f"Max order create time: {max(client.aver_time)} sec")
-        # print(f"Aver. order create time: {sum(client.aver_time) / len(client.aver_time)} sec")
-        # print('RESPONSE')
-        # print(f"Min order create time: {min(client.aver_time_response)} sec")
-        # print(f"Max order create time: {max(client.aver_time_response)} sec")
-        # print(f"Aver. order create time: {sum(client.aver_time_response) / len(client.aver_time_response)} sec")
-        # print()
-        # for market in client.markets.values():
-        # print(client.get_orderbook('BTCPFC'))
-        # print()
-        # print(client.get_all_tops())
-        # asyncio.run(test_order())
-        # print(f"Aver. order create time: {sum(client.aver_time) / len(client.aver_time)} sec")
-
-        # print(client.get_all_tops())
