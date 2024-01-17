@@ -55,7 +55,7 @@ class WhiteBitClient(BaseClient):
         self._loop = asyncio.new_event_loop()
         self._connected = asyncio.Event()
         self._wst_ = threading.Thread(target=self._run_ws_forever)
-        self._order_loop = asyncio.new_event_loop()
+        self.order_loop = asyncio.new_event_loop()
         self.orders_thread = threading.Thread(target=self.deals_thread_func)
         self.last_price = {}
         self.LAST_ORDER_ID = 'default'
@@ -71,9 +71,9 @@ class WhiteBitClient(BaseClient):
     @try_exc_regular
     def deals_thread_func(self):
         while True:
-            self._order_loop.run_until_complete(self._run_order_loop())
-            # await self.cancel_all_tasks(self._order_loop)
-            # self._order_loop.stop()
+            self.order_loop.run_until_complete(self._run_order_loop())
+            # await self.cancel_all_tasks(self.order_loop)
+            # self.order_loop.stop()
         # print(f"Thread {market} started")
 
     @try_exc_async
@@ -101,7 +101,7 @@ class WhiteBitClient(BaseClient):
                     ts_ms = time.time()
                     if ts_ms - self.last_keep_alive > 5:
                         self.last_keep_alive = ts_ms
-                        self._order_loop.create_task(self.get_position_async())
+                        self.order_loop.create_task(self.get_position_async())
                         # print(f"keep-alive {self.EXCHANGE_NAME} time: {time.time() - ts_ms}")
 
                         # path = self.BASE_URL + "/api/v4/order/"
@@ -957,7 +957,7 @@ class WhiteBitClient(BaseClient):
             self.get_position()
 
     @try_exc_async
-    async def create_aiohttp_order(self, symbol, side, session):
+    async def create_aiohttp_order(self, symbol, side):
         path = "/api/v4/order/collateral/limit"
         params = {"market": symbol,
                   "side": side,
@@ -966,7 +966,7 @@ class WhiteBitClient(BaseClient):
         params = self.get_auth_for_request(params, path)
         path += self._create_uri(params)
         time_start = time.time()
-        async with session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
+        async with self.async_session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
             response = await resp.json()
             # print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE AIOHTTP: {response}")
             # print(f"ORDER PLACING TIME AIOHTTP: {time.time() - time_start}")
@@ -977,8 +977,8 @@ class WhiteBitClient(BaseClient):
                     'exchange_order_id': response.get('orderId'),
                     'timestamp': response.get('timestamp', time.time())}
 
-    @try_exc_async
-    async def create_httpx_order(self, symbol, side, session):
+    @try_exc_regular
+    def create_httpx_order(self, symbol, side, session):
         path = "/api/v4/order/collateral/limit"
         params = {"market": symbol,
                   "side": side,
@@ -987,7 +987,7 @@ class WhiteBitClient(BaseClient):
         params = self.get_auth_for_request(params, path)
         path += self._create_uri(params)
         time_start = time.time()
-        response = await session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params)
+        response = session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params)
         response = response.json()
         # print(f"{self.EXCHANGE_NAME} ORDER CREATE RESPONSE HTTPX: {response}")
         # print(f"ORDER PLACING TIME HTTPX: {time.time() - time_start}")
@@ -1018,23 +1018,23 @@ class WhiteBitClient(BaseClient):
                 'exchange_order_id': response.get('orderId'),
                 'timestamp': response.get('timestamp', time.time())}
 
-    @try_exc_async
-    async def cancel_order_httpx(self, symbol: str, order_id: int, session):
+    @try_exc_regular
+    def cancel_order_httpx(self, symbol: str, order_id: int, session):
         path = '/api/v4/order/cancel'
         params = {"market": symbol,
                   "orderId": order_id}
         params = self.get_auth_for_request(params, path)
-        resp = await session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params)
+        resp = session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params)
         resp = resp.json()
         return resp
 
     @try_exc_async
-    async def cancel_order_aiohttp(self, symbol: str, order_id: int, session):
+    async def cancel_order_aiohttp(self, symbol: str, order_id: int):
         path = '/api/v4/order/cancel'
         params = {"market": symbol,
                   "orderId": order_id}
         params = self.get_auth_for_request(params, path)
-        async with session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
+        async with self.async_session.post(url=self.BASE_URL + path, headers=self.session.headers, json=params) as resp:
             resp = await resp.json()
             return resp
 
@@ -1059,6 +1059,12 @@ class WhiteBitClient(BaseClient):
         })
         return params
 
+    async def aiohttp_test_order(self):
+        ob = self.get_orderbook('EOS_PERP')
+        self.amount = self.instruments['EOS_PERP']['min_size']
+        self.price = ob['bids'][4][0] - (self.instruments['EOS_PERP']['tick_size'] * 100)
+        response = await self.create_aiohttp_order('EOS_PERP', 'buy')
+        await self.cancel_order_aiohttp('EOS_PERP', response['exchange_order_id'])
 
 if __name__ == '__main__':
     import configparser
@@ -1073,13 +1079,12 @@ if __name__ == '__main__':
     import httpx
 
 
-    async def httpx_test_order():
-        async with httpx.AsyncClient(http2=True) as session:
-            ob = client.get_orderbook('EOS_PERP')
-            client.amount = client.instruments['EOS_PERP']['min_size']
-            client.price = ob['bids'][4][0] - (client.instruments['EOS_PERP']['tick_size'] * 100)
-            response = await client.create_httpx_order('EOS_PERP', 'buy', session)
-            await client.cancel_order_httpx('EOS_PERP', response['exchange_order_id'], session)
+    def httpx_test_order(session):
+        ob = client.get_orderbook('EOS_PERP')
+        client.amount = client.instruments['EOS_PERP']['min_size']
+        client.price = ob['bids'][4][0] - (client.instruments['EOS_PERP']['tick_size'] * 100)
+        response = client.create_httpx_order('EOS_PERP', 'buy', session)
+        client.cancel_order_httpx('EOS_PERP', response['exchange_order_id'], session)
 
     def requests_test_order():
         ob = client.get_orderbook('EOS_PERP')
@@ -1089,12 +1094,11 @@ if __name__ == '__main__':
         client.cancel_order_requests('EOS_PERP', response['exchange_order_id'])
 
     async def aiohttp_test_order():
-        async with aiohttp.ClientSession() as session:
-            ob = client.get_orderbook('EOS_PERP')
-            client.amount = client.instruments['EOS_PERP']['min_size']
-            client.price = ob['bids'][4][0] - (client.instruments['EOS_PERP']['tick_size'] * 100)
-            response = await client.create_aiohttp_order('EOS_PERP', 'buy', session)
-            await client.cancel_order_httpx('EOS_PERP', response['exchange_order_id'], session)
+        ob = client.get_orderbook('EOS_PERP')
+        client.amount = client.instruments['EOS_PERP']['min_size']
+        client.price = ob['bids'][4][0] - (client.instruments['EOS_PERP']['tick_size'] * 100)
+        response = await client.create_aiohttp_order('EOS_PERP', 'buy')
+        await client.cancel_order_aiohttp('EOS_PERP', response['exchange_order_id'])
 
     client.markets_list = list(client.markets.keys())
     client.run_updater()
@@ -1105,10 +1109,12 @@ if __name__ == '__main__':
     client.aver_time_requests_response = []
     client.aver_time_aiohttp = []
     client.aver_time_aiohttp_response = []
+    httpx_client = httpx.Client(http2=True)
     while True:
         time.sleep(1)
+        client.order_loop.create_task(aiohttp_test_order())
         requests_test_order()
-        asyncio.run(aiohttp_test_order())
+        httpx_test_order(httpx_client)
         print(f"Repeats (1 sec each): {len(client.aver_time_requests)}")
         print('OWN REQUESTS')
         print(f"Min order create time: {min(client.aver_time_requests)} sec")
@@ -1118,6 +1124,16 @@ if __name__ == '__main__':
         print(f"Min order create time: {min(client.aver_time_requests_response)} sec")
         print(f"Max order create time: {max(client.aver_time_requests_response)} sec")
         print(f"Aver. order create time: {sum(client.aver_time_requests_response) / len(client.aver_time_requests_response)} sec")
+        print()
+        print(f"Repeats (1 sec each): {len(client.aver_time_httpx)}")
+        print('OWN HTTPX')
+        print(f"Min order create time: {min(client.aver_time_httpx)} sec")
+        print(f"Max order create time: {max(client.aver_time_httpx)} sec")
+        print(f"Aver. order create time: {sum(client.aver_time_httpx) / len(client.aver_time_httpx)} sec")
+        print('RESPONSE HTTPX')
+        print(f"Min order create time: {min(client.aver_time_httpx_response)} sec")
+        print(f"Max order create time: {max(client.aver_time_httpx_response)} sec")
+        print(f"Aver. order create time: {sum(client.aver_time_httpx_response) / len(client.aver_time_httpx_response)} sec")
         print()
         print(f"Repeats (1 sec each): {len(client.aver_time_aiohttp)}")
         print('OWN AIOHTTP')
@@ -1129,13 +1145,3 @@ if __name__ == '__main__':
         print(f"Max order create time: {max(client.aver_time_aiohttp_response)} sec")
         print(f"Aver. order create time: {sum(client.aver_time_aiohttp_response) / len(client.aver_time_aiohttp_response)} sec")
         print()
-        # print(f"Repeats (1 sec each): {len(client.aver_time_httpx)}")
-        # print('OWN HTTPX')
-        # print(f"Min order create time: {min(client.aver_time_httpx)} sec")
-        # print(f"Max order create time: {max(client.aver_time_httpx)} sec")
-        # print(f"Aver. order create time: {sum(client.aver_time_httpx) / len(client.aver_time_httpx)} sec")
-        # print('RESPONSE HTTPX')
-        # print(f"Min order create time: {min(client.aver_time_httpx_response)} sec")
-        # print(f"Max order create time: {max(client.aver_time_httpx_response)} sec")
-        # print(f"Aver. order create time: {sum(client.aver_time_httpx_response) / len(client.aver_time_httpx_response)} sec")
-        # print()
