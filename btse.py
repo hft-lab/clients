@@ -697,17 +697,15 @@ class BtseClient(BaseClient):
             elif new_ask[1] != '0':
                 new_ob['asks'][new_ask[0]] = new_ask[1]
         self.orderbook[symbol] = new_ob
-        if flag_market and self.market_maker:
-            self._loop.create_task(self.market_finder.count_one_coin(coin,
-                                                                     self.EXCHANGE_NAME,
-                                                                     side))
+        if self.market_maker and flag_market:
+            coin = symbol.split('PFC')[0]
+            await self.market_finder.count_one_coin(coin, self.EXCHANGE_NAME)
         if flag and ts_ms - ts_ob < 0.035 and self.finder:
             coin = symbol.split('PFC')[0]
             if self.state == 'Bot':
-                self._loop.create_task(self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side,
-                                                                  self.multibot.run_arbitrage))
+                await self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side, self.multibot.run_arbitrage)
             else:
-                self._loop.create_task(self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side))
+                await self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side)
         # elif ts_ms - self.last_keep_alive > 15:
         #     self.last_keep_alive = ts_ms
         #     self.amount = self.instruments[symbol]['min_size']

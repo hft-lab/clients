@@ -842,6 +842,7 @@ class WhiteBitClient(BaseClient):
     @try_exc_async
     async def update_orderbook(self, data):
         flag = False
+        flag_market = False
         symbol = data['params'][2]
         self.last_symbol = symbol
         new_ob = self.orderbook[symbol].copy()
@@ -883,15 +884,15 @@ class WhiteBitClient(BaseClient):
         self.orderbook[symbol] = new_ob
         if new_ob['top_ask'][0] <= new_ob['top_bid'][0]:
             self.cut_extra_orders_from_ob(symbol, data)
+        if self.market_maker and flag_market:
+            coin = symbol.split('_')[0]
+            await self.market_finder.count_one_coin(coin, self.EXCHANGE_NAME)
         if flag and ts_ms - ts_ob < 0.035:
             coin = symbol.split('_')[0]
             if self.state == 'Bot':
-                self._loop.create_task(self.finder.count_one_coin(coin,
-                                                                  self.EXCHANGE_NAME,
-                                                                  side,
-                                                                  self.multibot.run_arbitrage))
+                await self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side, self.multibot.run_arbitrage)
             else:
-                self._loop.create_task(self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side))
+                await self.finder.count_one_coin(coin, self.EXCHANGE_NAME, side)
 
     @try_exc_regular
     def cut_extra_orders_from_ob(self, symbol, data):
