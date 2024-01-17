@@ -102,21 +102,20 @@ class BtseClient(BaseClient):
 
     @try_exc_async
     async def _run_order_loop(self):
-        async with aiohttp.ClientSession() as self.async_session:
-            self.async_session.headers.update(self.headers)
-            while True:
-                if self.deal:
-                    # print(f"{self.EXCHANGE_NAME} GOT DEAL {time.time()}")
-                    order = await self.create_fast_order(self.symbol, self.side)
-                    self.response = order
-                    self.last_keep_alive = order['timestamp'] / 1000
-                    self.deal = False
-                else:
-                    ts_ms = time.time()
-                    if ts_ms - self.last_keep_alive > 5:
-                        self.last_keep_alive = ts_ms
-                        self._order_loop.create_task(self.get_position_async())
-                        # print(f"keep-alive {self.EXCHANGE_NAME} time: {time.time() - ts_ms}")
+        while True:
+            if self.deal:
+                # print(f"{self.EXCHANGE_NAME} GOT DEAL {time.time()}")
+                order = self.create_fast_order(self.symbol, self.side)
+                self.response = order
+                self.last_keep_alive = order['timestamp'] / 1000
+                self.deal = False
+            else:
+                ts_ms = time.time()
+                if ts_ms - self.last_keep_alive > 5:
+                    self.last_keep_alive = ts_ms
+                    self._order_loop.create_task(self.get_position_async())
+            await asyncio.sleep(0.0001)
+                    # print(f"keep-alive {self.EXCHANGE_NAME} time: {time.time() - ts_ms}")
                         # if not self.last_symbol:
                         #     self.last_symbol = self.markets[self.markets_list[0]]
                         # self.amount = self.instruments[self.last_symbol]['min_size']
@@ -127,7 +126,6 @@ class BtseClient(BaseClient):
                         # self.LAST_ORDER_ID = 'default'
                         # await self.cancel_order(self.last_symbol, order['exchange_order_id'], self.async_session)
                         # self.get_position()
-                await asyncio.sleep(0.0001)
 
     @staticmethod
     @try_exc_regular
@@ -314,8 +312,8 @@ class BtseClient(BaseClient):
         rounded_price = round(price / tick_size) * tick_size
         self.price = round(rounded_price, price_precision)
 
-    @try_exc_async
-    async def create_fast_order(self, symbol, side, expire=10000, client_id=None, expiration=None):
+    @try_exc_regular
+    def create_fast_order(self, symbol, side, expire=10000, client_id=None, expiration=None):
         # time_start = time.time()
         path = '/api/v2.1/order'
         contract_value = self.instruments[symbol]['contract_value']

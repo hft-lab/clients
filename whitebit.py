@@ -88,21 +88,21 @@ class WhiteBitClient(BaseClient):
 
     @try_exc_async
     async def _run_order_loop(self):
-        async with aiohttp.ClientSession() as self.async_session:
-            self.async_session.headers.update(self.headers)
-            while True:
-                if self.deal:
-                    # print(f"{self.EXCHANGE_NAME} GOT DEAL {time.time()}")
-                    order = self.create_fast_order(self.symbol, self.side)
-                    self.response = order
-                    self.last_keep_alive = order['timestamp']
-                    self.deal = False
-                else:
-                    ts_ms = time.time()
-                    if ts_ms - self.last_keep_alive > 5:
-                        self.last_keep_alive = ts_ms
-                        self._order_loop.create_task(self.get_position_async())
-                        # print(f"keep-alive {self.EXCHANGE_NAME} time: {time.time() - ts_ms}")
+        while True:
+            if self.deal:
+                # print(f"{self.EXCHANGE_NAME} GOT DEAL {time.time()}")
+                order = self.create_fast_order(self.symbol, self.side)
+                self.response = order
+                self.last_keep_alive = order['timestamp']
+                self.deal = False
+            else:
+                ts_ms = time.time()
+                if ts_ms - self.last_keep_alive > 5:
+                    self.last_keep_alive = ts_ms
+                    self._order_loop.create_task(self.get_position_async())
+            await asyncio.sleep(0.0001)
+
+                    # print(f"keep-alive {self.EXCHANGE_NAME} time: {time.time() - ts_ms}")
 
                         # path = self.BASE_URL + "/api/v4/order/"
                         # async with self.async_session.head(path) as response:
@@ -118,7 +118,6 @@ class WhiteBitClient(BaseClient):
                         # print(f"Create {self.EXCHANGE_NAME} keep-alive order time: {order['timestamp'] - ts_ms}")
                         # self.LAST_ORDER_ID = 'default'
                         # await self.cancel_order(self.last_symbol, order['exchange_order_id'], self.async_session)
-                await asyncio.sleep(0.0001)
 
                 # params = {"market": symbol,
                 #           "side": side,
